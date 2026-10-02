@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "indexed",
+        "failed",
+        "invalidated"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "detail": {
+      "additionalProperties": true,
+      "title": "Detail",
+      "type": "object"
+    },
+    "lease_token": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lease Token"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "KnowledgeAck",
+  "type": "object"
+}

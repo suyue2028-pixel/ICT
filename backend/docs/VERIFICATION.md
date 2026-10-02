@@ -1,0 +1,62 @@
+# 实际验证记录 · 2026-10-02
+
+项目 `D:\cit\后端开发`，Compose 名 `cit-backend-development`。本次恢复 Docker Desktop 后，在最新部署上实际复验；没有清空数据库、删除卷或修改 `D:\cit` 旧项目。下表统计快照为北京时间 **2026-10-02 17:41:06**，后台采集仍会继续增加数据。
+
+| 验证 | 实际结果 |
+|---|---|
+| 服务恢复 | Docker Linux/x86_64 引擎可用；api/postgres/redis/worker/beat 五个服务运行；API、PostgreSQL、Redis 健康；迁移容器退出 0 正常 |
+| 增量迁移 | 当前头为 `0005_document_invalidation`，`alembic check` 无模型结构差异；本轮新增 0004/0005，未改已执行迁移。迁移前逻辑备份 `output/pre0004.dump` 及早先 `output/semantic-pre-migration.dump` 保留，已校验归档目录；未换数据库镜像或卷 |
+| 自动化测试 | 最新 `pytest -q`：**52 passed**。覆盖采集分页/质量误判、保守关联、任务幂等/重试、语义版本/隔离、Agent 两轮/预算/归属/幂等、HTTP 超时/协议/引文、索引租约/确认/失效/重放、跨文档证据及评分口径。数据库测试事务回滚，外部 Agent/Embedding 返回为明确测试替身 |
+| Compose 离线端到端 | 最新 `scripts/verify.py --restart-check`：**23/23 通过**；包含 Linux 容器、配置解析、共享镜像、唯一 beat、数据库查询/Redis PING/API、202→outbox→Redis→worker→入库→查询、重复导入、定时验证任务、数据库正常重启留存和服务 stop/start |
+| 数据保留 | 虚构演示范围数据及专用持久化探针在正常重启后保留；既有真实 DeepSeek 两轮会话的 **4 条消息**也在本次重启后再次确认。验证不要求后台真实采集期间全库计数保持不变 |
+| Agent Tool 与权限 | 实际 HTTP 查询成功；无凭据访问 Tool 为 401，只读 Tool token 请求索引写接口为 401；用户 token 签发/撤销与外部网关缺配置状态此前已实测，模拟测试覆盖会话归属 |
+| 外部服务未配置 | `/agent/health` 实际返回 503 `agent_service_not_configured`；`/qa/semantic-search` 实际返回 503 `embedding_not_configured`，当前真实向量片段 **0**。没有把接口就绪、测试替身或关键词结果称为真实 RAG 成功 |
+| 真实 DeepSeek 多轮 | 2026-10-01 实际两轮 HTTP 200；第一轮 completed、4 条引用，第二轮 insufficient_evidence、0 条引用；均明确 keyword 检索。完整响应约 1025.221ms/1191.641ms；本次验证既有历史留存，未重复收费调用 |
+| 当前响应采样 | 2026-10-02 本机顺序 Tool 查询 10 次，完整响应 P50 **61.366ms**、P95/max **98.343ms**；从客户端请求到完整 HTTP 返回，未测首 token、未做并发或跨网络性能评测 |
+
+## 七类真实来源的实际结果
+
+以下是当前未失效、非演示文档数量，相关数来自 **rule-v4**，未经独立人工确认。十二个适配器均有 API→后台任务成功记录；Crossref 快照时下一页任务 queued，上次成功为当天 17:39:59；其余最新任务 succeeded。arXiv 按官方缓存特性每天调度，上次成功为前一天 23:27:56，并未为了消除告警伪造新成功时间。
+
+| 类别 | 适配器 | 已采集文档 | 规则相关文档 | 内容边界 |
+|---|---|---:|---:|---|
+| 漏洞库 | OSV | 144 | 144 | 包/版本、别名、结构化来源字段 |
+| 漏洞库 | NVD | 53 | 48 | CVE、CWE、版本化 CVSS、CPE、公开引用 |
+| 厂商公告 | Cisco | 50 | 0 | 当前批次 RSS 摘要；AI 发现漏洞宣传不算相关证据 |
+| 厂商公告 | NVIDIA | 10 | 10 | 官方 AI 产品公告目录行及真实链接，正文返回 403，未绕过 |
+| 安全社区 | SANS | 11 | 0 | 安全 RSS 摘要；本批次未判出 AI 相关项 |
+| 安全社区 | Hugging Face | 27 | 10 | 公开提示注入主题搜索摘要，普通 AI 帖子排除 |
+| 安全博客 | Trail of Bits | 10 | 3 | 官方 RSS，按载荷区分全文/摘要 |
+| 学术论文 | arXiv | 10 | 9 | 论文摘要/作者/类别，未抓取论文全文 |
+| 学术论文 | Crossref | 550 | 0 | 早期无关元数据保留；当前过滤并限制每轮分页，不算相关成绩 |
+| 技术标准/规范 | NIST | 2 | 2 | AI RMF 官方章节，自愿框架而非强制标准 |
+| 政策法规 | GOV.UK | 2 | 2 | 官方政策/指导内容，不冒充法律 |
+| 政策法规 | 中国政府网 | 1 | 1 | 《生成式人工智能服务管理暂行办法》法规正文/生效日期 |
+
+合计 **870 份真实文档、229 份规则相关文档，七类各有规则相关项**；另有 3 份明确虚构的离线演示资料。七类是项目采用的来源分类，仍需按比赛口径和独立审核确认，不能把 URL 数量或采集数量当准确率。
+
+当前文档类型：vulnerability 197、advisory 60、discussion 38、article 10、paper 560、standard 2、policy 2、regulation 1。metadata_only、summary 和完整正文分开保存；未把摘要叫全文。
+
+## 六种有源证据的富化维度与评测
+
+当前真实、相关、未失效文档的当前版本 known 字段证据：affected **167**、CWE **103**、CVSS **178**、remediation **50**、analysis **159**、POC 元数据 **4**。产品和版本算同一维；修复/分析链接只代表来源元数据，不代表执行分析或复现。证据可核对 document_id/hash、原文位置和 URL，未知值不编造，POC 未执行。
+
+相关性误判修复包括普通 AI 营销/课程翻译帖子和 Cisco 的 AI 发现漏洞宣传链接；已对旧原文重评并保留数据与历史。规则回归测试通过不等于独立标注准确率达到 95%。
+
+最新导出的版本固定审核集为 `output/evaluation-review-20261001T165027524223.json`（95 条），问答/追问候选为 `output/agent-cases-20261001T165028448695.json`（10 条）。均未独立审核，真实 Agent 响应尚未填入；实跑评分脚本的准确率、precision、recall 为 null。未覆盖人工审核文件。
+
+可观测“发布到首次入库”时差：近期到达组 25 条，P50 **14009.058273s（约 3.89h）**、P95 **61048.754825s（约 16.96h）**、最大约 22.24h；历史回填组 232 条，发布时间缺失 63 条，低精度日期另行排除。该分组按到达时差划分，并非独立 SLA 样本；**持续 ≤6h 尚未达标**。快照存在 arXiv 超过 6h 的 stale 告警，日级调度和官方缓存限制已说明。
+
+## 产物与仍需完成的联合验收
+
+- `output/verification.json`：本次 23 项完整环境/离线验证；采集持续进行，计数时间早于本页快照。
+- `output/resume-verification.json`：本次恢复后的 HTTP、权限、会话留存、来源/字段/延迟快照。
+- `output/runtime-verification.json`：此前真实 DeepSeek 两轮与用户 token 撤销记录。
+- `output/final-runtime.json`、`output/live-sources.json`：此前采集/运行快照，保留作历史记录；当前状态以 resume 文件和 `/ops/metrics` 为准。
+- `docs/AI_INTEGRATION.md`、`docs/contracts/`、`docs/openapi.json`：后端已实现的 V1 Tool/query/索引确认/证据回写协议；队友服务部分为待双方联验的协议。
+
+未完成：真实云端 Embedding 索引（需单独配置 Embedding Key/官方业务空间地址，DeepSeek Key 不能代替），或队友提供真实 RAG 索引；外部 Agent 服务与跨文档推理联调；独立标注后的准确率/召回率和持续监测 SLA。前端由队友负责；没有处理 GitHub。
+
+本次测试有两个非失败警告：现有 Starlette/httpx 集成弃用提示，以及 `.pytest_cache` 写入被系统拒绝；52 项测试均通过，缓存警告未影响数据库事务或验收结果。未为消除提示安装额外依赖或改动系统权限。
+
+历史基线：2026-10-01 早期为迁移 0003、25 项测试和 OSV/Cisco/SANS 三类、103 份来源文档。本页以新增迁移、质量规则和七类扩展后的实际复验为准，不再沿用旧“5/7 类未完成”结论。

@@ -1,0 +1,23 @@
+[project]
+name = "cit-backend-development"
+version = "0.1.0"
+description = "AI security intelligence backend development framework"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "pydantic-settings>=2.6,<3",
+    "sqlalchemy>=2.0,<3",
+    "alembic>=1.14,<2",
+    "psycopg[binary]>=3.2,<4",
+    "celery[redis]>=5.5,<6",
+    "redis>=5,<7",
+    "httpx>=0.28,<1",
+    "defusedxml>=0.7.1,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pyyaml>=6,<7"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

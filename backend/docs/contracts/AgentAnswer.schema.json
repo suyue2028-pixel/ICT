@@ -1,0 +1,304 @@
+{
+  "$defs": {
+    "AgentEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "format": "uuid",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "source": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "score_type": {
+          "default": "not_scored",
+          "enum": [
+            "cosine_similarity",
+            "relevance",
+            "not_scored"
+          ],
+          "title": "Score Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "content_hash",
+        "content",
+        "source",
+        "locator"
+      ],
+      "title": "AgentEvidence",
+      "type": "object"
+    },
+    "AgentSource": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "format": "uuid",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        },
+        "source_type": {
+          "maxLength": 30,
+          "title": "Source Type",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 100,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "published_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published Time"
+        }
+      },
+      "required": [
+        "document_id",
+        "content_hash",
+        "title",
+        "url",
+        "source_type",
+        "source_name"
+      ],
+      "title": "AgentSource",
+      "type": "object"
+    },
+    "ToolTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "empty"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "input_summary": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Summary"
+        },
+        "document_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Document Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tool",
+        "status",
+        "duration_ms"
+      ],
+      "title": "ToolTrace",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "partial",
+        "insufficient_evidence"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "answer": {
+      "maxLength": 12000,
+      "minLength": 1,
+      "title": "Answer",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/AgentSource"
+      },
+      "maxItems": 30,
+      "title": "Sources",
+      "type": "array"
+    },
+    "cve_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Cve Ids",
+      "type": "array"
+    },
+    "risk_level": {
+      "enum": [
+        "UNKNOWN",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/AgentEvidence"
+      },
+      "maxItems": 50,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "tool_calls": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 30,
+      "title": "Tool Calls",
+      "type": "array"
+    },
+    "tool_trace": {
+      "items": {
+        "$ref": "#/$defs/ToolTrace"
+      },
+      "maxItems": 30,
+      "title": "Tool Trace",
+      "type": "array"
+    },
+    "partial_errors": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Partial Errors",
+      "type": "array"
+    },
+    "retrieval_mode": {
+      "enum": [
+        "keyword",
+        "keyword_fallback",
+        "semantic",
+        "hybrid",
+        "structured"
+      ],
+      "title": "Retrieval Mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "answer",
+    "sources",
+    "cve_ids",
+    "risk_level",
+    "evidence",
+    "tool_calls",
+    "retrieval_mode"
+  ],
+  "title": "AgentAnswer",
+  "type": "object"
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "external_id": "demo-vuln-1", "title": "[离线虚构] AI 工具输入校验示例",
+    "source_url": "https://example.invalid/demo/vulnerability", "document_type": "vulnerability",
+    "content": "这是用于开发验证的虚构文档，不代表真实漏洞。示例 AI 工具需要验证输入。",
+    "vulnerability_id": "CVE-2099-10001", "severity": "high", "is_demo": true,
+    "published_at": "2026-01-01T00:00:00Z",
+    "source_fields": {"affected": {"product": "demo-ai-tool", "versions": ["0.0.1-demo"]}, "cwe": {"ids": ["CWE-20"]}, "remediation": {"description": "演示建议：校验输入；不是实际厂商修复公告。"}}
+  },
+  {
+    "external_id": "demo-advisory-1", "title": "[离线虚构] 同一漏洞的公告示例",
+    "source_url": "https://example.invalid/demo/advisory", "document_type": "advisory",
+    "content": "这是第二条虚构文档，明确关联 CVE-2099-10001，用于验证文档与漏洞的多对一关联。",
+    "vulnerability_id": "CVE-2099-10001", "severity": "medium", "is_demo": true,
+    "source_fields": {}
+  },
+  {
+    "external_id": "demo-paper-1", "title": "[离线虚构] AI 安全研究摘要示例",
+    "source_url": "https://example.invalid/demo/paper", "document_type": "paper",
+    "content": "独立研究文档可以保存而不强制关联漏洞。这是虚构摘要，不是已发表论文。",
+    "is_demo": true, "source_fields": {}
+  }
+]
