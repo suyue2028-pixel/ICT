@@ -1,0 +1,553 @@
+{
+  "split": "acceptance",
+  "reference_author": "implementation-authored from inspected source excerpts",
+  "human_review_status": "pending_human_review",
+  "note": "References fixed before evaluation; synthetic conflicts and injection cases live in tests, separate from these real sources. No human sign-off is claimed.",
+  "cases": [
+    {
+      "id": "A01",
+      "category": "chinese_concept",
+      "request": {
+        "question": "什么是提示注入风险？",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm01-prompt-injection",
+          "span": "A Prompt Injection Vulnerability occurs"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A02",
+      "category": "exact",
+      "request": {
+        "question": "CVE-2024-37032 的 CVSS 评分是什么？"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-37032",
+          "span": "Ollama before"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "gold_facts": [
+        {
+          "external_id": "CVE-2024-37032",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 8.8
+          }
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "category": "exact",
+      "request": {
+        "question": "CVE-2024-34359 的漏洞机制与评分"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-34359",
+          "span": "Server Side Template Injection"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "gold_facts": [
+        {
+          "external_id": "CVE-2024-34359",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 9.6
+          }
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "category": "exact",
+      "request": {
+        "question": "CVE-2024-5998 的反序列化风险和评分"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-5998",
+          "span": "pickle deserialization"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "gold_facts": [
+        {
+          "external_id": "CVE-2024-5998",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 7.8
+          }
+        },
+        {
+          "external_id": "CVE-2024-5998",
+          "field": "cvss",
+          "value": {
+            "version": "3.0",
+            "score": 5.2
+          }
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "category": "score_versions",
+      "request": {
+        "question": "CVE-2024-3571 的不同 CVSS 版本评分"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-3571",
+          "span": "LocalFileStore"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "gold_facts": [
+        {
+          "external_id": "CVE-2024-3571",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 8.8
+          }
+        },
+        {
+          "external_id": "CVE-2024-3571",
+          "field": "cvss",
+          "value": {
+            "version": "3.0",
+            "score": 6.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "category": "no_evidence",
+      "request": {
+        "question": "CVE-2099-9999999 的详情"
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A07",
+      "category": "multiple_ids",
+      "request": {
+        "question": "比较 CVE-2024-3571 和 CVE-2099-9999999"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-3571",
+          "span": "LocalFileStore"
+        }
+      ],
+      "expected_status": [
+        "partial"
+      ],
+      "missing_contains": "identifier:CVE-2099-9999999"
+    },
+    {
+      "id": "A08",
+      "category": "hard_product_filter",
+      "request": {
+        "question": "Ollama 漏洞",
+        "filters": {
+          "product": "vLLM"
+        }
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A09",
+      "category": "paper",
+      "request": {
+        "question": "indirect prompt injection attack vectors",
+        "filters": {
+          "doc_types": [
+            "paper"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "2302.12173",
+          "span": "Indirect Prompt Injection"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "expected_documents": [
+        "2302.12173"
+      ]
+    },
+    {
+      "id": "A10",
+      "category": "hard_date_filter",
+      "request": {
+        "question": "CVE-2024-37032",
+        "filters": {
+          "published_from": "2025-01-01T00:00:00Z"
+        }
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A11",
+      "category": "chinese_concept",
+      "request": {
+        "question": "系统提示泄漏为什么可能泄露敏感信息？",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm072025-system-prompt-leakage",
+          "span": "system prompts or instructions"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A12",
+      "category": "chinese_concept",
+      "request": {
+        "question": "如何限制智能体过度权限与自主行动？",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm062025-excessive-agency",
+          "span": "excessive permissions"
+        },
+        {
+          "external_id": "llm062025-excessive-agency",
+          "span": "Minimize extension permissions"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A13",
+      "category": "chinese_concept",
+      "request": {
+        "question": "训练和嵌入数据投毒有什么风险？",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm042025-data-and-model-poisoning",
+          "span": "Data poisoning occurs when"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A14",
+      "category": "chinese_concept",
+      "request": {
+        "question": "RAG 向量与嵌入的访问控制风险",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm082025-vector-and-embedding-weaknesses",
+          "span": "Inadequate or misaligned access controls"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A15",
+      "category": "standard_guidance",
+      "request": {
+        "question": "LLM supply chain pretrained model risks",
+        "filters": {
+          "doc_types": [
+            "standard"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "llm032025-supply-chain",
+          "span": "LLM supply chains are susceptible"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ]
+    },
+    {
+      "id": "A16",
+      "category": "policy",
+      "request": {
+        "question": "AI Act risk-based rules",
+        "filters": {
+          "doc_types": [
+            "policy"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "EU-AI-Act",
+          "span": "risk-based rules"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "expected_documents": [
+        "EU-AI-Act"
+      ]
+    },
+    {
+      "id": "A17",
+      "category": "paper",
+      "request": {
+        "question": "Universal transferable adversarial attack suffix",
+        "filters": {
+          "doc_types": [
+            "paper"
+          ]
+        }
+      },
+      "references": [
+        {
+          "external_id": "2307.15043",
+          "span": "our approach finds a suffix"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "expected_documents": [
+        "2307.15043"
+      ]
+    },
+    {
+      "id": "A18",
+      "category": "cross_document",
+      "request": {
+        "question": "比较 CVE-2024-3571 和 CVE-2024-5998 的漏洞机制"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-3571",
+          "span": "LocalFileStore"
+        },
+        {
+          "external_id": "CVE-2024-5998",
+          "span": "pickle deserialization"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "expected_documents": [
+        "CVE-2024-3571",
+        "CVE-2024-5998"
+      ]
+    },
+    {
+      "id": "A19",
+      "category": "multi_turn",
+      "request": {
+        "question": "它的 CVSS 评分是什么？",
+        "history": [
+          {
+            "role": "user",
+            "content": "介绍 CVE-2024-37032"
+          },
+          {
+            "role": "assistant",
+            "content": "之前的模型回答不能用作事实证据"
+          }
+        ]
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-37032",
+          "span": "Ollama before"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "gold_facts": [
+        {
+          "external_id": "CVE-2024-37032",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 8.8
+          }
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "category": "ambiguous_history",
+      "request": {
+        "question": "它的修复版本是什么？",
+        "history": [
+          {
+            "role": "user",
+            "content": "比较 CVE-2024-3571 和 CVE-2024-5998"
+          }
+        ]
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A21",
+      "category": "unknown_fix",
+      "request": {
+        "question": "CVE-2024-5998 的修复版本"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-5998",
+          "span": "pickle deserialization"
+        }
+      ],
+      "expected_status": [
+        "partial"
+      ],
+      "missing_contains": "fixed_version"
+    },
+    {
+      "id": "A22",
+      "category": "hard_score_filter",
+      "request": {
+        "question": "CVE-2024-37032",
+        "filters": {
+          "min_cvss_score": 8,
+          "cvss_version": "4.0"
+        }
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A23",
+      "category": "hard_score_product",
+      "request": {
+        "question": "LangChain 路径遍历风险",
+        "filters": {
+          "product": "LangChain",
+          "min_cvss_score": 8,
+          "cvss_version": "3.1"
+        }
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-3571",
+          "span": "path traversal"
+        }
+      ],
+      "expected_status": [
+        "ok"
+      ],
+      "expected_documents": [
+        "CVE-2024-3571"
+      ]
+    },
+    {
+      "id": "A24",
+      "category": "no_evidence",
+      "request": {
+        "question": "海底香蕉量子发动机"
+      },
+      "references": [],
+      "expected_status": [
+        "insufficient_evidence"
+      ],
+      "no_evidence": true
+    },
+    {
+      "id": "A25",
+      "category": "affected_range",
+      "request": {
+        "question": "CVE-2024-37032 的受影响范围"
+      },
+      "references": [
+        {
+          "external_id": "CVE-2024-37032",
+          "span": "Ollama before"
+        }
+      ],
+      "expected_status": [
+        "partial"
+      ],
+      "missing_contains": "unparsed_CPE"
+    }
+  ]
+}

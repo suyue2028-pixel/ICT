@@ -1,1 +1,92 @@
-# ICT
+# ICT RAG Agent
+
+已实现可运行的 AI 安全情报 RAG 模块，代码保存在本仓库 `packages/rag_agent`。团队前端和后端通过服务契约接入。Agent 使用独立分支 `agent-dev`。
+
+## 团队分支
+
+| 负责模块 | 分支 | 主要目录 |
+|---|---|---|
+| 前端 | `codex/frontend-demo` | `frontend/` |
+| 后端 | `feature/backend-integration` | `backend/` |
+| Agent / RAG | `agent-dev` | `packages/rag_agent/`，以及配套 docs/scripts/examples/reports |
+
+三人分别在自己的分支提交和推送。此阶段各模块独立开发；前后端与 Agent 接口联调按 `docs/contracts.md` 约定开展。
+
+## 当前真实完成状态
+
+- Python 3.11、LangGraph、Pydantic、SQLite 版本化存储；原文、证据、断言和 float32 向量原子提交。
+- 精确编号检索、jieba/BM25 + E5 余弦检索与 RRF、硬过滤、已记录实体关系的一跳扩展。
+- 证据不足/部分回答/冲突/指代澄清/最多一次检索改写；最多 3 次模型 HTTP 请求、8 次工具调用和 30 秒总超时。
+- 证据详情、带来源的 CVSS 和原始 CPE 条件；没有来源的修复版本保持 unknown。规则关联不等于攻击链确认。
+- 19 篇真实资料、4 种文档类型、4 类采样渠道。来源覆盖 NVD、OWASP、arXiv、欧盟委员会；OWASP 内容为行业指导，不是正式规范性标准。固定源采样不是持续监测。
+- 本机 CPU 已运行固定版本 `intfloat/multilingual-e5-small`；当前回答为 `extractive`，未接入远程生成模型。远程 DeepSeek JSON 请求适配已完成并由 HTTP 测试替身验证，缺密钥未实调。
+
+人工引用支持率、中文生成质量、跨文档推理正确率均待评测，不能把下列演示指标解释为比赛达标。
+
+本次验证：54 项合成回归通过，25 个真实资料用例通过自动检查，13 项本机 HTTP 检查通过。验证汇总、硬件、指标分母和限制见 [docs/validation.md](docs/validation.md)，结构化结果见 `reports/validation_summary.json`。
+
+## 已有本机环境直接运行
+
+从 `/Users/gshy/Desktop/ICT-RAG` 执行。该目录已经创建 Python 3.11.16 虚拟环境、下载模型并导入 `data/ict.db`。
+
+```bash
+cd /Users/gshy/Desktop/ICT-RAG
+source .venv/bin/activate
+export PYTHONPATH="$PWD/packages/rag_agent/src"
+export HF_HOME="$PWD/.cache/huggingface"
+export HF_HUB_OFFLINE=1
+
+python -m rag_agent.cli health
+python -m rag_agent.cli query 'CVE-2024-37032 的评分和受影响范围'
+python -m rag_agent.cli query '什么是提示注入风险？' --filters '{"doc_types":["standard"]}'
+python -m rag_agent.cli query --request-file examples/queries/multi_turn.json
+python -m rag_agent.cli query --request-file examples/queries/compare.json
+python -m uvicorn examples.demo_api:app --host 127.0.0.1 --port 8000
+```
+
+浏览器访问 `http://127.0.0.1:8000/docs`。演示适配器提供 `GET /health`、`POST /demo/query`、`GET /demo/evidence/{evidence_id}`。
+
+## 新机器安装与重现
+
+需要 Python 3.11。当前验证机器为 macOS ARM64/CPU，其他平台需要自行核对 PyTorch wheel。
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.lock
+python -m pip install --no-deps --no-build-isolation packages/rag_agent
+export PYTHONPATH="$PWD/packages/rag_agent/src"
+export HF_HOME="$PWD/.cache/huggingface"
+
+python scripts/download_model.py
+python scripts/fetch_demo_sources.py
+export HF_HUB_OFFLINE=1
+python -m rag_agent.cli import data/demo/documents.jsonl
+```
+
+`requirements.lock` 锁定本次实际安装的直接和间接依赖。首次模型下载显式执行；正常导入和查询只读取本地模型缓存，缓存缺失时返回错误，不偷偷下载模型。中文问题的 token 数、标题和 query:/passage: 前缀均受 512 tokens 限制，不默默截断。
+
+采样记录在 `data/demo/manifest.json`，包括原始 URL、最终 URL、时间、SHA-256、重试次数、失败记录。下载文件和 `documents.jsonl` 被 Git 忽略。重现当前本机资料解析可执行 `python scripts/fetch_demo_sources.py --reparse`，它校验缓存 hash 后解析；重新抓取会得到来源的新快照，验收报告的 hash 应重新审查。
+
+## 验证命令
+
+```bash
+PYTHONPATH=packages/rag_agent/src python -m pytest packages/rag_agent/tests -q
+python -m rag_agent.evaluation.run --cases data/evaluation/acceptance.json --output reports/evaluation.json
+```
+
+离线合成边界测试在 `tests/fixtures`，明确标记 synthetic；没有混进真实资料。验收用例为 25 个预置来源片段与字段参考，冻结后执行，没有按同一验收结果调答案；**本次参考由实现方定义，尚未有人类评审签字**。人工工作表为 `reports/human_review.json`。评测口径、rubric 和限制见 `docs/evaluation.md`。
+
+真实重复导入结果为 19 unchanged、0 failed，generation 不变；安装后的 CLI 多轮/比较示例已执行，记录分别在 `reports/idempotence.json` 和 `reports/demo_examples.json`。
+
+## 远程生成配置
+
+配置字段见 `.env.example`；包不会自动读取 `.env`，请在终端或后端进程环境中设置变量。设置 `RAG_LLM_MODE=live`、`RAG_LLM_KEY`、`RAG_LLM_MODEL` 和可选 `RAG_LLM_BASE_URL`，才会调用远程模型。默认 provider 为 DeepSeek Chat Completions JSON 接口，model 可由后端配置。`live` 缺密钥会立即报配置错误；`mock` 为显式测试替身，`extractive` 为有来源的摘录。
+
+模型输出只提供 claims；facts 从存储断言渲染，引用 URL 从证据存储获取。非法引用、虚构结构字段和缺乏依据的编号/版本数字会触发有来源摘录回退。引用存在仍不意味着自然语言结论已被语义证明。
+
+## 团队交接
+
+后端调用四个异步接口 `ingest`、`enrich`、`query`、`get_evidence`，负责公开 `/api/v1/qa`、会话、采集任务和权限。契约和接入样例见 `docs/contracts.md`，机器可读 JSON Schema 位于 `docs/schemas/`。参考核查见 `docs/reference_review.md`；下一阶段分工与限制见 `docs/handoff.md`。
+
+密钥、模型权重、数据库、缓存和大型原文下载均被 `.gitignore` 排除。框架不会执行 POC、互联网资产扫描或任意 SQL/网络工具；后续资产匹配仅接入团队提供的授权资产清单。

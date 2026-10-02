@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "IngestItem": {
+      "additionalProperties": false,
+      "properties": {
+        "external_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Id"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Id"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "status": {
+          "enum": [
+            "inserted",
+            "updated",
+            "unchanged",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "IngestItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "inserted": {
+      "default": 0,
+      "title": "Inserted",
+      "type": "integer"
+    },
+    "updated": {
+      "default": 0,
+      "title": "Updated",
+      "type": "integer"
+    },
+    "unchanged": {
+      "default": 0,
+      "title": "Unchanged",
+      "type": "integer"
+    },
+    "failed": {
+      "default": 0,
+      "title": "Failed",
+      "type": "integer"
+    },
+    "document_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Document Ids",
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/IngestItem"
+      },
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "title": "IngestResult",
+  "type": "object"
+}

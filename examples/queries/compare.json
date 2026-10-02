@@ -1,0 +1,5 @@
+{
+  "question": "比较 CVE-2024-3571 和 CVE-2024-5998 的漏洞机制",
+  "filters": {"product":"LangChain"},
+  "timezone": "Asia/Shanghai"
+}

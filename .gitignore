@@ -1,0 +1,17 @@
+.venv/
+.python/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+.env
+*.db
+*.db-*
+data/demo/documents.jsonl
+data/demo/raw/
+data/demo/downloads/
+*.egg-info/
+build/
+dist/
+reports/local/

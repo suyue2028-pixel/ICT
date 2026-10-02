@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-10-01T12:59:04.960289+00:00",
+  "workspace": "/Users/gshy/Desktop/ICT-RAG",
+  "branch": "agent-dev",
+  "delivery": "local files; no push/deployment",
+  "environment": {
+    "cpu": "Apple M5",
+    "memory_bytes": 17179869184,
+    "memory_gib": 16,
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.16",
+    "device": "cpu",
+    "hardware_collection": "read-only sysctl; no serial numbers collected",
+    "dependency_check": "83 installed packages compatible",
+    "installation": "non-editable package reinstalled; installed CLI executed without PYTHONPATH"
+  },
+  "synthetic_regression": {
+    "tests": 54,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": true,
+    "fixture": "fictional CVE-2099 records; MockEmbedding/MockLLM; not a semantic model benchmark",
+    "result": "reports/regression.xml"
+  },
+  "real_data_evaluation": {
+    "configuration": {
+      "python": "3.11.16",
+      "platform": "macOS-26.5.1-arm64-arm-64bit",
+      "processor": "arm",
+      "embedding": {
+        "model_id": "intfloat/multilingual-e5-small",
+        "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+        "dimension": 384,
+        "prefix_policy": "e5-query-passage-v1"
+      },
+      "embedding_mode": "live",
+      "generation_mode": "extractive",
+      "device": "cpu",
+      "documents": 19,
+      "chunks": 97,
+      "generation": 20,
+      "dependencies": {
+        "langgraph": "1.2.12",
+        "sentence-transformers": "6.1.0",
+        "pydantic": "2.13.5",
+        "numpy": "2.4.6",
+        "torch": "2.14.1"
+      }
+    },
+    "metrics": {
+      "sample_count": 25,
+      "automated_passed": 25,
+      "retrieval_recall_at_5": 0.9649122807017544,
+      "recall_scored_questions": 19,
+      "citation_locatable_rate": 1.0,
+      "citation_sample_count": 75,
+      "field_accuracy_within_declared_cvss_reference_slots": 1.0,
+      "field_accuracy_answered_count": 7,
+      "field_coverage": 1.0,
+      "field_expected_count": 7,
+      "human_citation_support_rate": null,
+      "cross_document_reasoning_correctness": null,
+      "human_evaluation_status": "pending_human_review",
+      "cold_first_query_ms": 3805.151249995106,
+      "warm_same_query_ms": 13.70029199460987,
+      "end_to_end_p50_ms": 3.7877080030739307,
+      "end_to_end_p95_ms": 27.666674999636566,
+      "all_cases_elapsed_ms": 4019.256499988842,
+      "llm_calls": 0,
+      "tool_calls": 47
+    },
+    "cases_sha256": "93b752fc507b671a89d935f2398827488f6e9e83ad110401b1b090951677139e",
+    "result": "reports/evaluation.json",
+    "reference_status": "pending_human_review"
+  },
+  "http_demo": {
+    "checks": {
+      "health_http_200": true,
+      "exact_http_200": true,
+      "exact_explicit_mode": true,
+      "hybrid_http_200": true,
+      "hybrid_explicit_mode": true,
+      "compare_http_200": true,
+      "compare_explicit_mode": true,
+      "evidence_roundtrip": true,
+      "evidence_404": true,
+      "invalid_timezone_422": true,
+      "missing_fix_partial": true,
+      "cross_document_coverage": true,
+      "no_llm_calls": true
+    },
+    "passed": true,
+    "result": "reports/http_validation.json",
+    "transport": "real HTTP on loopback",
+    "embedding": "real E5 CPU",
+    "generation": "extractive; no remote model calls"
+  },
+  "idempotence": {
+    "passed": true,
+    "unchanged": 19,
+    "failed": 0,
+    "before_generation": 20,
+    "after_generation": 20,
+    "result": "reports/idempotence.json"
+  },
+  "cli_examples": {
+    "passed": true,
+    "names": [
+      "multi_turn",
+      "compare"
+    ],
+    "result": "reports/demo_examples.json"
+  },
+  "remote_generation": {
+    "provider": "DeepSeek configurable Chat Completions JSON adapter",
+    "live_calls": 0,
+    "verification": "HTTP test double only; no RAG_LLM_KEY provided"
+  },
+  "limitations": [
+    "Human-reviewed gold evidence/support/reasoning metrics pending; implementation-authored source references do not fulfill human signoff.",
+    "CPE Boolean applicability saved, not resolved; missing fix remains unknown.",
+    "NIST sample pages unavailable; bounded fetch failures retained in manifest.",
+    "Scheduled collection, public business API, sessions, logs, frontend and deployment belong to teammates.",
+    "CPU worker cancellation cannot kill the running model thread; no high concurrency benchmark performed."
+  ],
+  "source_sha256": {
+    "examples/demo_api.py": "e17969a5a140c758b252de88a5d3b922e0b305d162be10847dbab0d2195fdd48",
+    "packages/rag_agent/pyproject.toml": "2f6f598160ff46dc13fc4dfc395fb2a2e4f6f1ae45ed9f187b07c54b49c90d2d",
+    "packages/rag_agent/src/rag_agent/__init__.py": "378bc8cb66989314c6b122c356385e8e4523065c33fadc751e88d79c3aab809a",
+    "packages/rag_agent/src/rag_agent/agent/graph.py": "59262cef25d6910bced03fb202bfcc11990d6171c568786e74c1f3b274332d9f",
+    "packages/rag_agent/src/rag_agent/agent/nodes.py": "bb9373e6a383c62b7691c60bf5ce3a77d23d639d25956da6a5273a858db8f5f0",
+    "packages/rag_agent/src/rag_agent/agent/state.py": "9957c101ddc8888b09aa2bb8996f595952b9a46ddad23c414d9f48d8a868471a",
+    "packages/rag_agent/src/rag_agent/agent/tools.py": "59abdd49c5960ff9e025ab1e8eb488955a80dbc8c9ac735f6a824fa9d214b74b",
+    "packages/rag_agent/src/rag_agent/cli.py": "44f707dd3d88a99d914e58017cea146cc5e642c204cfd8b64ecfd18890205941",
+    "packages/rag_agent/src/rag_agent/config.py": "36377206043f8bc3d9f3b0e71c92cca59b4302834af717021688a371bbcca88d",
+    "packages/rag_agent/src/rag_agent/enrichment/rules.py": "29ebd6d68d8573de2868b3e6cb8bfb45252626433483ea122652460f5cf7dcd3",
+    "packages/rag_agent/src/rag_agent/evaluation/run.py": "ab43f2080b88215843c876456c7e284218ff3806a8e6992406e17067f4636cdf",
+    "packages/rag_agent/src/rag_agent/ingestion/chunk.py": "448473e0d861922e6c2c569507f228ed3d186766c8c774b867ef5a4366869d0d",
+    "packages/rag_agent/src/rag_agent/ingestion/extract.py": "2527a7544f293e1c1174202d47564848ab1cf5d26f35ddecce5fc96ac3dd18e3",
+    "packages/rag_agent/src/rag_agent/ingestion/normalize.py": "a333f9ee8b3b47383016252dff281be1a818140cc227254e79d3dbd2fd13ed94",
+    "packages/rag_agent/src/rag_agent/providers/embedding.py": "3d9133da858233c6cb96729cd591df33ba3872345ee17859c1ef46dcdd93b6bf",
+    "packages/rag_agent/src/rag_agent/providers/llm.py": "243389f0ec2ce503c38ca9a7f0dac98244b011086a945256361f9234adb327bd",
+    "packages/rag_agent/src/rag_agent/providers/mock.py": "f7ad18e355d775d7dd8f8ac43d5fb0be87ba70ce32696a7545470c68f721a5e1",
+    "packages/rag_agent/src/rag_agent/retrieval/exact.py": "bb6245590d90a69bb3d5838f59aa39bd2f334b0de1f9e6216dbbbb8f782d04f0",
+    "packages/rag_agent/src/rag_agent/retrieval/hybrid.py": "79086dd43efe9ff3d8dd039340290f1aeccc05147bbf1819aaade247f90aded4",
+    "packages/rag_agent/src/rag_agent/retrieval/relations.py": "c0878f36d62f0f643c0bb367522eca30be7fbff7d89330f7fdafc925477d9beb",
+    "packages/rag_agent/src/rag_agent/schemas.py": "94628e7d2a383cdaa12792f01804f7c327c0f52b4a4020dbe729fba3ced96185",
+    "packages/rag_agent/src/rag_agent/service.py": "9c7015e85560fd660a091629640acabf02be04aae597b3ed1850210e13c80c56",
+    "packages/rag_agent/src/rag_agent/storage/sqlite.py": "c755d144831915ccac152e98acf7f012e9370522e0600cd7cc58af1a9a2202f9",
+    "packages/rag_agent/tests/conftest.py": "8657eb88409b51d9f7789faf50423c8432cd8fe0e74a2f7b25fc0bb7b7a46a55",
+    "packages/rag_agent/tests/test_agent.py": "aca5cb50eefebd19325515c4c10b05146ee857f4f7ac1660475b08118a16b61b",
+    "packages/rag_agent/tests/test_api_provider.py": "6904c93b78bb389cd18c0d73806d2feb3f554f1af7c7f05ab7fe2a42f7448a4b",
+    "packages/rag_agent/tests/test_constraints.py": "3b54e140be70a87dbd082a3ea1d62250ddda60e9be19631f1916057ea5cec061",
+    "packages/rag_agent/tests/test_storage.py": "a0567e6cc42b39cdd59e294c89e623f18364c40a25d50e3e9c0699fe36d02412",
+    "requirements.lock": "9eb6b6c54913698b6214b6ed2cb5a1d318a4da70b4eeba95b7e3c737bedd9f55",
+    "scripts/download_model.py": "d12d5ce27f1af6c943c5e7982d3c132ae519c60be29ab9d6d027bc14019b5d99",
+    "scripts/export_schemas.py": "d7ff708ac12297e5c090d774dc2a17b961ca2dc50e0b14ee237de7ea2134b168",
+    "scripts/fetch_demo_sources.py": "6d8e4aff7de3e15769a99dcd1aac9e1f71bc498c2f7a3002bdf8f0271c5a7c03",
+    "scripts/import_jsonl.py": "353ae7a3a5d577da884627333136480dcd957116863a91e8057051a5206e03e8"
+  }
+}

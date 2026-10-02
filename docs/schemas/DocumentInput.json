@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "AIScope": {
+      "additionalProperties": false,
+      "properties": {
+        "relevant": {
+          "default": true,
+          "title": "Relevant",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "source concerns AI security",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "AIScope",
+      "type": "object"
+    },
+    "Identifier": {
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Namespace",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "value"
+      ],
+      "title": "Identifier",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "external_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "External Id"
+    },
+    "source_name": {
+      "minLength": 1,
+      "title": "Source Name",
+      "type": "string"
+    },
+    "source_kind": {
+      "minLength": 1,
+      "title": "Source Kind",
+      "type": "string"
+    },
+    "source_url": {
+      "title": "Source Url",
+      "type": "string"
+    },
+    "doc_type": {
+      "enum": [
+        "vulnerability",
+        "advisory",
+        "paper",
+        "standard",
+        "policy",
+        "blog"
+      ],
+      "title": "Doc Type",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "language": {
+      "default": "en",
+      "title": "Language",
+      "type": "string"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Published At"
+    },
+    "source_modified_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Modified At"
+    },
+    "collected_at": {
+      "format": "date-time",
+      "title": "Collected At",
+      "type": "string"
+    },
+    "identifiers": {
+      "items": {
+        "$ref": "#/$defs/Identifier"
+      },
+      "title": "Identifiers",
+      "type": "array"
+    },
+    "product_entities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Product Entities",
+      "type": "array"
+    },
+    "ai_scope": {
+      "$ref": "#/$defs/AIScope"
+    },
+    "risk_category": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Risk Category",
+      "type": "array"
+    },
+    "raw_payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Payload"
+    }
+  },
+  "required": [
+    "source_name",
+    "source_kind",
+    "source_url",
+    "doc_type",
+    "title",
+    "text",
+    "collected_at"
+  ],
+  "title": "DocumentInput",
+  "type": "object"
+}
