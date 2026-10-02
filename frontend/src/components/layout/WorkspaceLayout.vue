@@ -1,0 +1,65 @@
+<script setup lang="ts">
+import { computed, useTemplateRef } from 'vue'
+import { ChatDotRound, Clock, Right } from '@element-plus/icons-vue'
+import { useIntelligenceStore } from '@/stores/intelligence'
+import WorkspaceNavigation from './WorkspaceNavigation.vue'
+import WorkspaceSearch from './WorkspaceSearch.vue'
+import SidebarSwipeFeedback from './SidebarSwipeFeedback.vue'
+import { useSidebarSwipeNavigation } from '@/composables/useSidebarSwipeNavigation'
+
+const store = useIntelligenceStore()
+const sampleDate = computed(() => store.latest[0]?.publishedAt || '暂无数据')
+const sidebar = useTemplateRef<HTMLElement>('sidebar')
+const { feedback } = useSidebarSwipeNavigation(sidebar)
+</script>
+
+<template>
+  <a class="skip-link" href="#main-content">跳转到主要内容</a>
+  <div class="app-shell">
+    <header class="workspace-header">
+      <router-link to="/" class="workspace-identity" aria-label="安全情报工作台首页">
+        <span class="brand-mark mobile-brand" aria-hidden="true" translate="no">AI</span>
+        <span class="brand-copy"
+          ><strong>安全情报<span>工作台</span></strong
+          ><small>智能体驱动的 AI 安全知识情报系统</small></span
+        >
+      </router-link>
+      <WorkspaceSearch />
+      <div class="header-sample-date">
+        <Clock aria-hidden="true" /><span
+          ><small>样本最新日期</small><time>{{ sampleDate }}</time></span
+        >
+      </div>
+      <span class="demo-pill">演示数据</span>
+      <WorkspaceNavigation mode="tabs" />
+    </header>
+    <aside ref="sidebar" class="sidebar" aria-label="工作台导航">
+      <router-link to="/" class="sidebar-brand" aria-label="情报工作台首页">
+        <span class="brand-mark" aria-hidden="true" translate="no">AI</span>
+        <span>情报工作台</span>
+      </router-link>
+      <p class="sidebar-label">工作空间</p>
+      <WorkspaceNavigation mode="rail" />
+      <SidebarSwipeFeedback :feedback="feedback" />
+      <router-link class="sidebar-assistant" to="/qa">
+        <span class="assistant-icon"><ChatDotRound aria-hidden="true" /></span>
+        <strong>可追溯问答</strong>
+        <p>查看回答与情报引用<br />本地模拟 · 尚未接入 RAG</p>
+        <span class="assistant-arrow"><Right aria-hidden="true" /></span>
+      </router-link>
+    </aside>
+    <div class="workspace">
+      <main id="main-content" class="page-content" tabindex="-1">
+        <div class="demo-notice" role="note">
+          <span class="notice-icon" aria-hidden="true">i</span>
+          <span
+            ><strong>演示环境</strong> · 情报、图谱、任务与问答均为本地模拟，尚未连接后端或
+            RAG。</span
+          >
+        </div>
+        <slot />
+      </main>
+      <footer class="workspace-footer">安全情报工作台 <span>本地演示 · 接口待联调</span></footer>
+    </div>
+  </div>
+</template>
