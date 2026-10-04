@@ -78,6 +78,10 @@ class DocumentRead(ORMModel):
     source_updated_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    source_reported_severity: Literal["unknown", "low", "medium", "high", "critical"] | None = None
+    excerpt: str = ""
+    source_products: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
 
 
 class VulnerabilityRead(ORMModel):

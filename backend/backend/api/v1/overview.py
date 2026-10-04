@@ -12,16 +12,20 @@ router = APIRouter(tags=["统计与关系"])
 
 @router.get("/stats")
 def stats(db: Database, is_demo: bool = False):
-    document_count = db.scalar(select(func.count()).select_from(Document).where(Document.is_demo == is_demo))
+    active_vulnerabilities = select(VulnerabilityDocument.vulnerability_id).join(
+        Document, Document.id == VulnerabilityDocument.document_id).where(
+        Document.is_demo == is_demo, Document.deleted_at.is_(None))
+    document_count = db.scalar(select(func.count()).select_from(Document).where(
+        Document.is_demo == is_demo, Document.deleted_at.is_(None)))
     vulnerability_count = db.scalar(select(func.count()).select_from(Vulnerability).where(
-        Vulnerability.is_demo == is_demo))
+        Vulnerability.is_demo == is_demo, Vulnerability.id.in_(active_vulnerabilities)))
     source_counts = db.execute(select(DataSource.category, func.count(Document.id)).join(
-        Document, Document.source_id == DataSource.id).where(Document.is_demo == is_demo)
+        Document, Document.source_id == DataSource.id).where(Document.is_demo == is_demo, Document.deleted_at.is_(None))
         .group_by(DataSource.category)).all()
     severity_counts = db.execute(select(Vulnerability.severity, func.count()).where(
-        Vulnerability.is_demo == is_demo).group_by(Vulnerability.severity)).all()
+        Vulnerability.is_demo == is_demo, Vulnerability.id.in_(active_vulnerabilities)).group_by(Vulnerability.severity)).all()
     trend = db.execute(select(func.date(Document.first_collected_at), func.count()).where(
-        Document.is_demo == is_demo).group_by(func.date(Document.first_collected_at))
+        Document.is_demo == is_demo, Document.deleted_at.is_(None)).group_by(func.date(Document.first_collected_at))
         .order_by(func.date(Document.first_collected_at))).all()
     task_kind = "offline_demo" if is_demo else "collect"
     statuses = dict(db.execute(select(TaskRun.status, func.count()).where(
@@ -29,10 +33,10 @@ def stats(db: Database, is_demo: bool = False):
     terminal = statuses.get("succeeded", 0) + statuses.get("failed", 0)
     delay = db.execute(select(func.count(), func.avg(func.extract(
         "epoch", Document.first_collected_at - Document.published_at))).where(
-        Document.is_demo == is_demo, Document.published_at.is_not(None),
+        Document.is_demo == is_demo, Document.deleted_at.is_(None), Document.published_at.is_not(None),
         Document.first_collected_at >= Document.published_at)).one()
     missing_date = db.scalar(select(func.count()).select_from(Document).where(
-        Document.is_demo == is_demo, Document.published_at.is_(None)))
+        Document.is_demo == is_demo, Document.deleted_at.is_(None), Document.published_at.is_(None)))
     return {"is_demo": is_demo, "documents": document_count,
             "vulnerabilities": vulnerability_count, "source_categories": dict(source_counts),
             "category_count": len(source_counts), "risk_distribution": dict(severity_counts),
@@ -50,7 +54,8 @@ def relations(vulnerability_id: UUID, db: Database):
     vulnerability = require_record(db, Vulnerability, vulnerability_id)
     documents = db.scalars(select(Document).join(VulnerabilityDocument,
         VulnerabilityDocument.document_id == Document.id).where(
-        VulnerabilityDocument.vulnerability_id == vulnerability_id)).all()
+        VulnerabilityDocument.vulnerability_id == vulnerability_id, Document.deleted_at.is_(None),
+        Document.is_demo == vulnerability.is_demo)).all()
     return {"nodes": [{"id": vulnerability.id, "type": "vulnerability", "label": vulnerability.identifier},
                       *[{"id": doc.id, "type": doc.document_type, "label": doc.title} for doc in documents]],
             "edges": [{"from": vulnerability.id, "to": doc.id, "type": "documented_by",

@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -11,6 +12,13 @@ from backend.core.config import get_settings
 
 app = FastAPI(title=get_settings().app_name, version="0.1.0",
               description="后端采集、处理、语义检索与问答；云端向量服务需单独配置，演示样本均为虚构。")
+app.add_middleware(
+    CORSMiddleware, allow_origins=get_settings().cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID", "Idempotency-Key"],
+    expose_headers=["X-Request-ID", "X-RAG-Answer-Mode", "X-RAG-Embedding-Mode", "X-RAG-LLM-Calls"],
+)
 app.include_router(health_router)
 app.include_router(api_router)
 
@@ -32,7 +40,10 @@ def error_response(request, status, code):
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, error: HTTPException):
-    return error_response(request, error.status_code, str(error.detail))
+    response = error_response(request, error.status_code, str(error.detail))
+    if error.headers:
+        response.headers.update(error.headers)
+    return response
 
 
 @app.exception_handler(RequestValidationError)

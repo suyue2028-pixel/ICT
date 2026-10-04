@@ -34,6 +34,7 @@ def list_intelligence(db: Database, page: PageNumber = 1, page_size: PageSize = 
     if any(value is not None for value in (product, source_id, published_from, published_to)):
         matches = select(VulnerabilityDocument.vulnerability_id).join(
             Document, Document.id == VulnerabilityDocument.document_id).where(Document.deleted_at.is_(None))
+        matches = matches.where(Document.is_demo == is_demo)
         if product:
             matches = matches.where(or_(Document.content.icontains(product, autoescape=True),
                 cast(Document.raw_payload, String).icontains(product, autoescape=True)))
@@ -52,7 +53,8 @@ def intelligence_detail(vulnerability_id: UUID, db: Database):
     vulnerability = require_record(db, Vulnerability, vulnerability_id)
     documents = db.scalars(select(Document).join(VulnerabilityDocument,
         Document.id == VulnerabilityDocument.document_id).where(
-        VulnerabilityDocument.vulnerability_id == vulnerability_id, Document.deleted_at.is_(None))).all()
+        VulnerabilityDocument.vulnerability_id == vulnerability_id, Document.deleted_at.is_(None),
+        Document.is_demo == vulnerability.is_demo)).all()
     evidence = db.scalars(select(Evidence).where(Evidence.document_id.in_([doc.id for doc in documents]))).all()
     aliases = db.scalars(select(VulnerabilityAlias.value).where(
         VulnerabilityAlias.vulnerability_id == vulnerability_id)).all()

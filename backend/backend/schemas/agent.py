@@ -2,7 +2,7 @@
 from typing import Literal
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, PrivateAttr, field_validator
 
 
 class StrictModel(BaseModel):
@@ -52,6 +52,7 @@ class ToolTrace(StrictModel):
 
 
 class AgentAnswer(StrictModel):
+    _rag_headers: dict[str, str] = PrivateAttr(default_factory=dict)
     schema_version: Literal["1"]
     status: Literal["completed", "partial", "insufficient_evidence"]
     answer: str = Field(min_length=1, max_length=12000)

@@ -3,8 +3,8 @@ import hashlib
 from datetime import timedelta
 from time import perf_counter
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from sqlalchemy import case, func, select
 from backend.api.dependencies import Database, PageNumber, PageSize, require_record
 from backend.core.config import get_settings
 from backend.core.security import User, require_admin
@@ -25,7 +25,7 @@ def own_session(db, session_id, owner):
 
 @router.post("/query", response_model=AgentQueryResponse)
 def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
-                idempotency_key: str | None = Header(default=None, max_length=128)):
+                idempotency_key: str | None = Header(default=None, max_length=128), response: Response = None):
     settings = get_settings()
     agent_gateway.endpoint(settings)
     digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
@@ -69,7 +69,7 @@ def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
         db.flush()
     history = list(reversed(db.scalars(select(ConversationMessage).where(
         ConversationMessage.conversation_id == conversation.id).order_by(
-            ConversationMessage.created_at.desc(), ConversationMessage.id.desc()).limit(8)).all()))
+            ConversationMessage.created_at.desc(), case((ConversationMessage.role == "assistant", 1), else_=0).desc(), ConversationMessage.id.desc()).limit(8)).all()))
     invocation = AgentInvocation(owner_id=owner, conversation_id=conversation.id,
         request_id=request.state.request_id, idempotency_key=idempotency_key,
         request_hash=digest, status="running", tool_trace=[])
@@ -84,6 +84,8 @@ def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
     started = perf_counter()
     try:
         answer = agent_gateway.call_agent(settings, payload)
+        if response is not None:
+            response.headers.update(answer._rag_headers)
         agent_gateway.validate_answer(db, answer, body.is_demo)
         response = AgentQueryResponse(**answer.model_dump(), session_id=conversation_id,
             invocation_id=invocation_id, request_id=request.state.request_id)
@@ -127,9 +129,9 @@ def sessions(db: Database, owner: User, page: PageNumber = 1, page_size: PageSiz
 def session_detail(session_id: UUID, db: Database, owner: User):
     row = own_session(db, session_id, owner)
     messages = db.scalars(select(ConversationMessage).where(ConversationMessage.conversation_id == row.id)
-        .order_by(ConversationMessage.created_at, ConversationMessage.id)).all()
+        .order_by(ConversationMessage.created_at, case((ConversationMessage.role == "user", 0), else_=1), ConversationMessage.id)).all()
     return {"session_id": row.id, "is_demo": row.is_demo, "turn_count": row.turn_count,
-            "messages": [{"role": m.role, "content": m.content, "citations": m.citations,
+            "messages": [{"id": m.id, "created_at": m.created_at, "role": m.role, "content": m.content, "citations": m.citations,
                           "retrieval_mode": m.retrieval_mode} for m in messages]}
 
 

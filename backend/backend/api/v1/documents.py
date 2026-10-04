@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import or_, select
 
 from backend.api.dependencies import Database, PageNumber, PageSize, paginate, require_record
 from backend.models import Document, DocumentRevision, Evidence, KnowledgeEvent
@@ -15,7 +15,8 @@ router = APIRouter(prefix="/documents", tags=["原始文档"])
 @router.get("", response_model=Page[DocumentRead])
 def list_documents(db: Database, page: PageNumber = 1, page_size: PageSize = 20,
                    is_demo: bool = False, source_id: UUID | None = None,
-                   document_type: str | None = None, ai_relevant: bool | None = None):
+                   document_type: str | None = None, ai_relevant: bool | None = None,
+                   keyword: str | None = Query(default=None, max_length=200)):
     query = select(Document).where(Document.is_demo == is_demo, Document.deleted_at.is_(None))
     if source_id:
         query = query.where(Document.source_id == source_id)
@@ -23,6 +24,10 @@ def list_documents(db: Database, page: PageNumber = 1, page_size: PageSize = 20,
         query = query.where(Document.document_type == document_type)
     if ai_relevant is not None:
         query = query.where(Document.ai_relevant == ai_relevant)
+    if keyword:
+        query = query.where(or_(Document.title.icontains(keyword, autoescape=True),
+                               Document.content.icontains(keyword, autoescape=True),
+                               Document.external_id.icontains(keyword, autoescape=True)))
     return paginate(db, query.order_by(Document.created_at.desc()), DocumentRead, page, page_size)
 
 

@@ -14,12 +14,15 @@ router = APIRouter(prefix="/tasks", tags=["后台任务"])
 
 @router.get("", response_model=Page[TaskRead])
 def list_tasks(db: Database, page: PageNumber = 1, page_size: PageSize = 20,
-               source_id: UUID | None = None, status: str | None = None):
+               source_id: UUID | None = None, status: str | None = None,
+               is_demo: bool | None = None):
     query = select(TaskRun).order_by(TaskRun.created_at.desc())
     if source_id:
         query = query.where(TaskRun.source_id == source_id)
     if status:
         query = query.where(TaskRun.status == status)
+    if is_demo is not None:
+        query = query.where(TaskRun.kind == ("offline_demo" if is_demo else "collect"))
     return paginate(db, query, TaskRead, page, page_size)
 
 

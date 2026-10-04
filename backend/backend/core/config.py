@@ -3,7 +3,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from typing import Literal
-from pydantic import SecretStr, Field
+from pydantic import SecretStr, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -45,6 +45,27 @@ class Settings(BaseSettings):
     user_queries_per_minute: int = Field(default=10, ge=1, le=100)
     user_queries_per_day: int = Field(default=100, ge=1, le=10000)
     nvd_api_key: SecretStr | None = None
+    cors_origins: list[str] = Field(default_factory=lambda: [
+        "http://127.0.0.1:5173", "http://localhost:5173",
+    ])
+
+    @field_validator("cors_origins")
+    @classmethod
+    def valid_origins(cls, values):
+        from urllib.parse import urlsplit
+        result = []
+        for value in values:
+            parsed = urlsplit(value)
+            try:
+                parsed.port
+            except ValueError:
+                raise ValueError("invalid CORS origin") from None
+            if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                    or parsed.username or parsed.password or parsed.query or parsed.fragment
+                    or parsed.path not in {"", "/"}):
+                raise ValueError("CORS origins must contain only scheme, hostname and optional port")
+            result.append(value.rstrip("/"))
+        return list(dict.fromkeys(result))
 
     @property
     def embedding_configured(self) -> bool:

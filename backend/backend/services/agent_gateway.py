@@ -37,7 +37,16 @@ def call_agent(settings, payload):
                     if size > 500000:
                         raise HTTPException(502, "agent_response_too_large")
                     parts.append(part)
-                return AgentAnswer.model_validate_json(b"".join(parts))
+                answer = AgentAnswer.model_validate_json(b"".join(parts))
+                for name, allowed in (("X-RAG-Answer-Mode", {"live", "extractive", "mock"}),
+                                      ("X-RAG-Embedding-Mode", {"live", "mock"})):
+                    value = response.headers.get(name)
+                    if value in allowed:
+                        answer._rag_headers[name] = value
+                count = response.headers.get("X-RAG-LLM-Calls", "")
+                if count in {"0", "1", "2", "3"}:
+                    answer._rag_headers["X-RAG-LLM-Calls"] = count
+                return answer
     except httpx.TimeoutException:
         raise HTTPException(504, "agent_timeout") from None
     except httpx.HTTPError:

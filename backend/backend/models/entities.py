@@ -43,6 +43,24 @@ class Document(IdentityMixin, TimestampMixin, Base):
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
+    @property
+    def source_reported_severity(self) -> str | None:
+        value = (self.raw_payload or {}).get("severity")
+        return value if value in {"unknown", "low", "medium", "high", "critical"} else None
+
+    @property
+    def excerpt(self) -> str:
+        """Original source text only; this is not a model-written summary."""
+        return (self.content or "")[:240]
+
+    @property
+    def source_products(self) -> list[str]:
+        return [value for value in (self.raw_payload or {}).get("products", []) if isinstance(value, str)]
+
+    @property
+    def source_aliases(self) -> list[str]:
+        return [value for value in (self.raw_payload or {}).get("aliases", []) if isinstance(value, str)]
+
 
 class DocumentRevision(IdentityMixin, TimestampMixin, Base):
     __tablename__ = "document_revisions"
