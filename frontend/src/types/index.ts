@@ -1,4 +1,4 @@
-export type Severity = 'critical' | 'high' | 'medium' | 'low'
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown'
 export interface Evidence {
   title: string
   url?: string
@@ -18,6 +18,11 @@ export interface IntelligenceItem {
   recommendation?: string
   evidence: Evidence[]
   tags: string[]
+  contentHash?: string
+  content?: string
+  isDemo?: boolean
+  documentType?: string
+  completeness?: string
 }
 export interface GraphNode {
   id: string
@@ -43,6 +48,7 @@ export interface TaskRecord {
   error?: string
 }
 export interface Citation {
+  contentHash?: string
   intelligenceId: string
   label: string
 }
@@ -53,4 +59,8 @@ export interface ChatMessage {
   time: string
   citations?: Citation[]
   simulated?: boolean
+  generationMode?: string
+  warnings?: string[]
+  evidence?: { document_id: string; content_hash: string; content: string; source: string; locator: string }[]
+  requestId?: string
 }

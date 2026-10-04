@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef, watch } from 'vue'
+import { errorMessage } from '@/api/http'
 import type { EChartsOption } from 'echarts'
 import ChartCanvas from '@/components/ChartCanvas.vue'
 import PageState from '@/components/PageState.vue'
 import { useIntelligenceStore } from '@/stores/intelligence'
 
 const store = useIntelligenceStore()
-const selectedId = shallowRef('i-1')
+const selectedId = shallowRef('')
+const graphLoading = shallowRef(false), graphError = shallowRef('')
+async function loadGraph() { graphLoading.value = true; graphError.value = ''; try { await store.loadGraph(); selectedId.value = store.graphNodes[0]?.id || '' } catch (error) { graphError.value = errorMessage(error) } finally { graphLoading.value = false } }
+onMounted(() => { void loadGraph() })
+watch(() => store.isDemo, () => { void loadGraph() })
 const selected = computed(() => store.graphNodes.find((node) => node.id === selectedId.value))
 const related = computed(
   () =>
@@ -14,8 +19,8 @@ const related = computed(
       .map((id) => store.findById(id))
       .filter((item) => item !== undefined) || [],
 )
-const categories = ['情报', '产品', '弱点', '来源']
-const colors = ['#8670b5', '#549e99', '#b39a5c', '#7e9e62']
+const categories = ['情报', '漏洞', '产品', '弱点', '来源']
+const colors = ['#8670b5', '#ed6171', '#549e99', '#b39a5c', '#7e9e62']
 const graphOption = computed<EChartsOption>(() => ({
   tooltip: { show: false },
   legend: [
@@ -101,20 +106,20 @@ const graphOption = computed<EChartsOption>(() => ({
       <h1>知识关联图谱</h1>
       <p>点击图谱节点或下方实体名称，查看说明及关联情报。</p>
     </div>
-    <span class="heading-count">{{ store.graphNodes.length }} 个演示实体</span>
+    <span class="heading-count">{{ store.graphNodes.length }} 个来源实体</span>
   </div>
   <PageState
-    :loading="store.loading || !store.initialized"
-    :error="store.error"
+    :loading="graphLoading"
+    :error="graphError"
     :empty="store.graphNodes.length === 0"
-    @retry="store.loadDemo"
+    @retry="loadGraph"
   >
     <div class="graph-layout">
       <section class="panel graph-panel">
         <div class="panel-title">
           <div>
             <h2>实体关系网络</h2>
-            <p>关系根据本地演示记录构建</p>
+            <p>后端记录的漏洞与文档关联；最多展示30个漏洞</p>
           </div>
           <span class="panel-index">拖拽 · 缩放 · 点击</span>
         </div>
@@ -122,7 +127,7 @@ const graphOption = computed<EChartsOption>(() => ({
           :option="graphOption"
           height="540px"
           renderer="svg"
-          label="演示实体关系图；下方提供可用键盘选择的实体列表"
+          label="来源实体关系图；下方提供可用键盘选择的实体列表"
           @node-click="selectedId = $event"
         />
         <div class="graph-entity-list" aria-label="选择图谱实体">

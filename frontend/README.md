@@ -1,3 +1,15 @@
+# 前端真实接口联调（2026-10-04）
+
+已接业务后端 documents/sources/tasks/stats/intelligence/relations 与 /agent/query，不导入原 mock 数据来填充页面。真实/虚构范围独立，会话持久保存于后端；引用按 document_id + content_hash 打开对应原文版本。
+
+本机根项目的 `scripts/run_fullstack.py start --detach` 同时启动三模块，页面 http://127.0.0.1:5173。前端独立启动需要 Node 24.12+、npm ci，后端默认 http://127.0.0.1:8010，可设置 ICT_BACKEND_ORIGIN。
+
+用户令牌只在内存中；本地开发可通过 ICT_LOCAL_SESSION_FILE 指定后端签发的普通短期用户session JSON文件（access_token/expires_at）。该文件不能提交。Vite /__local/session 仅校验本机Host和同源Origin，no-store；生产需要后端登录或手动短期用户令牌。不要向前端注入管理员、服务或模型密钥。
+
+问答显示真实响应头/模式说明，模型失败后摘录与无模型摘录分别说明。历史消息尚无持久生成模式，明确显示未知。缺失评分为unknown，未知结构字段不造值，图谱只显示后端记录的来源关联（最多30个漏洞）。
+
+本轮 vue-tsc --build 和 vite build 通过，页面验证问答/追问/刷新恢复/scope/详情/列表/图谱/任务。真实模型生成未验证。整体接入及数据口径见 agent-dev 的 docs/fullstack_local.md 和 docs/fullstack_validation.md。以下为此前前端阶段资料：
+
 # 智能体驱动的 AI 安全知识情报系统 · 前端
 
 Vue 3 + Vite + TypeScript 比赛演示前端，使用 Vue Router、Pinia、Element Plus、Axios 和 ECharts。当前所有业务页面均显示 **演示数据** 标记。

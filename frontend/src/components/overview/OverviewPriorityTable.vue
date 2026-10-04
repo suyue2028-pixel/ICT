@@ -15,7 +15,7 @@ defineProps<{ items: IntelligenceItem[] }>()
     <div v-if="items.length" class="table-scroll">
       <table class="data-table overview-table">
         <caption class="sr-only">
-          当前时间范围内的严重及高危演示情报
+          当前时间范围内的严重及高危来源资料
         </caption>
         <thead>
           <tr>

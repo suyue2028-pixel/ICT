@@ -70,6 +70,6 @@ onBeforeUnmount(() => {
     class="chart"
     :style="{ height: height || '280px' }"
     role="img"
-    :aria-label="label || '演示数据图表'"
+    :aria-label="label || '资料统计图表'"
   />
 </template>

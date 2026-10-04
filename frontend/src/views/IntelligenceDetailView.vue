@@ -1,22 +1,38 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { onMounted, shallowRef, watch } from 'vue'
+import type { IntelligenceItem } from '@/types'
+import { errorMessage } from '@/api/http'
 import { useRoute } from 'vue-router'
 import PageState from '@/components/PageState.vue'
 import { severityNames, useIntelligenceStore } from '@/stores/intelligence'
 
 const route = useRoute()
 const store = useIntelligenceStore()
-const item = computed(() => store.findById(String(route.params.id)))
+const item = shallowRef<IntelligenceItem | null>(null)
+const detailLoading = shallowRef(false), detailError = shallowRef('')
+let detailRequest = 0
+async function loadDetail() {
+  const version = ++detailRequest
+  detailLoading.value = true; detailError.value = ''; item.value = null
+  try {
+    const result = await store.loadDetail(String(route.params.id), typeof route.query.content_hash === 'string' ? route.query.content_hash : undefined)
+    if (version === detailRequest) item.value = result
+  } catch (error) {
+    if (version === detailRequest) detailError.value = error instanceof Error && !('isAxiosError' in error) ? error.message : errorMessage(error)
+  } finally { if (version === detailRequest) detailLoading.value = false }
+}
+onMounted(() => { void loadDetail() })
+watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { void loadDetail() })
 </script>
 
 <template>
   <div class="back-line"><router-link to="/intelligence">← 返回情报中心</router-link></div>
   <PageState
-    :loading="store.loading || !store.initialized"
-    :error="store.error"
+    :loading="detailLoading"
+    :error="detailError"
     :empty="!item"
-    empty-text="未找到这条演示情报。"
-    @retry="store.loadDemo"
+    empty-text="未找到这条来源资料。"
+    @retry="loadDetail"
   >
     <template v-if="item">
       <div class="detail-hero">
@@ -28,7 +44,7 @@ const item = computed(() => store.findById(String(route.params.id)))
             <span :class="['severity-badge', item.severity]">{{
               severityNames[item.severity]
             }}</span
-            ><span>发布日期 {{ item.publishedAt }}</span
+            ><span>发布日期 {{ item.publishedAt || '来源未提供' }}</span
             ><span>来源 {{ item.source }}</span>
           </div>
         </div>
@@ -62,7 +78,7 @@ const item = computed(() => store.findById(String(route.params.id)))
             <div class="panel-title">
               <div>
                 <h2>影响与建议</h2>
-                <p>仅供演示，不构成实际安全评估</p>
+                <p>仅展示来源已记录的信息</p>
               </div>
             </div>
             <div class="detail-section">
@@ -83,7 +99,7 @@ const item = computed(() => store.findById(String(route.params.id)))
             <div class="panel-title">
               <div>
                 <h2>来源与证据</h2>
-                <p>演示证据，不可作为真实漏洞证明</p>
+                <p>引用版本原文；摘要与全文按来源区分</p>
               </div>
             </div>
             <div class="source-line">
@@ -118,9 +134,9 @@ const item = computed(() => store.findById(String(route.params.id)))
           </section>
           <section class="panel callout-panel">
             <span class="eyebrow">来源追溯</span>
-            <h2>追溯说明</h2>
+            <h2>追溯说明</h2><p>版本：<code style="overflow-wrap:anywhere">{{ item.contentHash }}</code></p><p>{{ item.isDemo ? "虚构测试资料" : "真实来源资料" }} · {{ item.completeness }}</p>
             <p>
-              当前编号、字段与证据均由本地演示数据生成。待真实接口交付后，再展示实际采集来源与处理过程。
+              资料由后端保存，保留原文及版本。来源记录不等于独立人工核验。
             </p>
             <router-link to="/graph">查看关联图谱 →</router-link>
           </section>

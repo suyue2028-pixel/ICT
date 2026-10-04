@@ -26,7 +26,7 @@ defineProps<{
       <ChartCanvas
         :option="trendOption"
         height="238px"
-        label="按发布日期和风险等级统计的演示情报趋势图"
+        label="按发布日期和风险等级统计的来源资料趋势图"
       />
     </section>
     <section class="panel risk-panel">
@@ -35,7 +35,7 @@ defineProps<{
       </div>
       <div class="risk-content">
         <div class="risk-donut">
-          <ChartCanvas :option="severityOption" height="238px" label="演示情报风险等级分布图" />
+          <ChartCanvas :option="severityOption" height="238px" label="来源资料风险等级分布图" />
           <div class="donut-caption">
             <strong>{{ total }}</strong
             ><small>情报总数</small>
@@ -59,10 +59,10 @@ defineProps<{
     <div class="panel-title">
       <div>
         <h2><Collection class="section-icon" aria-hidden="true" />来源统计</h2>
-        <p>按当前时间范围内的情报统计，所有来源均为演示类别</p>
+        <p>按当前时间范围内的情报统计，统计来自当前已加载的来源资料</p>
       </div>
-      <span class="panel-index">演示来源</span>
+      <span class="panel-index">已记录来源</span>
     </div>
-    <ChartCanvas :option="sourceOption" height="205px" label="演示情报来源统计图" />
+    <ChartCanvas :option="sourceOption" height="205px" label="来源资料来源统计图" />
   </section>
 </template>

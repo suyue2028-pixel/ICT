@@ -59,7 +59,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
     }),
   )
   const metrics = computed<OverviewMetric[]>(() => [
-    { label: '情报总数', value: items.value.length, caption: '本地演示记录', tone: 'blue' },
+    { label: '情报总数', value: items.value.length, caption: '当前时间范围来源记录', tone: 'blue' },
     {
       label: '严重风险',
       value: items.value.filter((item) => item.severity === 'critical').length,
@@ -67,15 +67,15 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
       tone: 'red',
     },
     {
-      label: '来源类别',
+      label: '来源数量',
       value: new Set(items.value.map((item) => item.source)).size,
-      caption: '均为模拟来源',
+      caption: '已记录来源',
       tone: 'teal',
     },
     {
       label: '关联产品',
       value: new Set(items.value.flatMap((item) => item.products)).size,
-      caption: '示例资产',
+      caption: '来源记录的产品',
       tone: 'violet',
     },
   ])

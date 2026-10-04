@@ -27,10 +27,11 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
       <WorkspaceSearch />
       <div class="header-sample-date">
         <Clock aria-hidden="true" /><span
-          ><small>样本最新日期</small><time>{{ sampleDate }}</time></span
+          ><small>资料最新发布日期</small><time>{{ sampleDate }}</time></span
         >
       </div>
-      <span class="demo-pill">演示数据</span>
+      <select class="native-select" aria-label="资料范围" :value="String(store.isDemo)" :disabled="store.loading" @change="store.setScope(($event.target as HTMLSelectElement).value === 'true')"><option value="false">真实资料</option><option value="true">虚构样本</option></select>
+      <button type="button" class="demo-pill" :disabled="store.loading" @click="store.loadDemo">刷新资料</button>
       <WorkspaceNavigation mode="tabs" />
     </header>
     <aside ref="sidebar" class="sidebar" aria-label="工作台导航">
@@ -44,7 +45,7 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
       <router-link class="sidebar-assistant" to="/qa">
         <span class="assistant-icon"><ChatDotRound aria-hidden="true" /></span>
         <strong>可追溯问答</strong>
-        <p>查看回答与情报引用<br />本地模拟 · 尚未接入 RAG</p>
+        <p>查看回答与情报引用<br />后端资料 · Agent 检索</p>
         <span class="assistant-arrow"><Right aria-hidden="true" /></span>
       </router-link>
     </aside>
@@ -53,13 +54,12 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
         <div class="demo-notice" role="note">
           <span class="notice-icon" aria-hidden="true">i</span>
           <span
-            ><strong>演示环境</strong> · 情报、图谱、任务与问答均为本地模拟，尚未连接后端或
-            RAG。</span
+            ><strong>本地环境</strong> · 当前连接后端与 Agent。未配置大模型时使用资料摘录；虚构样本与真实资料分开。</span
           >
         </div>
         <slot />
       </main>
-      <footer class="workspace-footer">安全情报工作台 <span>本地演示 · 接口待联调</span></footer>
+      <footer class="workspace-footer">安全情报工作台 <span>本地集成环境</span></footer>
     </div>
   </div>
 </template>

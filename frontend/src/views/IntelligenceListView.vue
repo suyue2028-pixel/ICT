@@ -57,7 +57,7 @@ function changePage(next: number) {
     <div>
       <span class="eyebrow">工作空间 / 情报记录</span>
       <h1>情报中心</h1>
-      <p>检索、筛选并查看演示情报的证据链。</p>
+      <p>检索、筛选并查看来源资料的证据链。</p>
     </div>
     <div class="heading-count">
       共 <strong>{{ filtered.length }}</strong> 条结果
@@ -69,7 +69,7 @@ function changePage(next: number) {
       :loading="store.loading || !store.initialized"
       :error="store.error"
       :empty="filtered.length === 0"
-      empty-text="没有符合条件的演示情报，请调整搜索或筛选。"
+      empty-text="没有符合条件的来源资料，请调整搜索或筛选。"
       @retry="store.loadDemo"
     >
       <IntelligenceTable

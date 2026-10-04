@@ -27,7 +27,7 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
     <div>
       <span class="eyebrow">工作空间 / 总览</span>
       <h1>情报总览</h1>
-      <p>从情报采集到可追溯问答，一屏查看演示流程。</p>
+      <p>从情报采集到可追溯问答，一屏查看真实运行记录。</p>
     </div>
     <div class="overview-heading-actions">
       <router-link class="primary-link overview-all-link" to="/intelligence"
@@ -46,7 +46,7 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
             {{ option.label }}
           </button>
         </div>
-        <small>截至样本日期 {{ latestDate || '暂无数据' }}</small>
+        <small>截至资料日期 {{ latestDate || '暂无数据' }}</small>
       </div>
     </div>
   </div>
@@ -64,7 +64,7 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
           <span class="flow-number">0{{ index + 1 }}</span
           ><strong>{{ step }}</strong>
         </div>
-        <small>演示流程 · 尚未连接后端</small>
+        <small>后端采集 · Agent 检索</small>
       </section>
       <OverviewInsights
         :severity-option="severityOption"

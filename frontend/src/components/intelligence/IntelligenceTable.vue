@@ -10,7 +10,7 @@ const emit = defineEmits<{ changePage: [page: number] }>()
   <div class="table-scroll">
     <table class="data-table">
       <caption class="sr-only">
-        演示情报列表，共
+        情报列表，共
         {{
           total
         }}

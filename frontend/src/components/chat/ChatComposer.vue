@@ -44,6 +44,6 @@ function submit(value = question.value) {
         {{ sending ? '生成中…' : '发送 ↗' }}
       </button>
     </form>
-    <small>仅使用本地演示记录进行关键词匹配；回答可能不完整或不准确。</small>
+    <small>从当前资料范围检索证据；回答方式见消息标签，来源不足时会明确说明。</small>
   </div>
 </template>

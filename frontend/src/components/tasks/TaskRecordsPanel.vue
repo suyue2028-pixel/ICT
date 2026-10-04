@@ -31,7 +31,7 @@ const statusClass: Record<TaskStatus, string> = {
     <div class="panel-title">
       <div>
         <h2><Tickets class="section-icon" aria-hidden="true" />任务记录</h2>
-        <p>状态和时间均为演示样例，不反映后台执行</p>
+        <p>状态和时间来自后端任务记录</p>
       </div>
       <div class="task-filters">
         <label for="task-stage">任务阶段</label>
@@ -41,7 +41,7 @@ const statusClass: Record<TaskStatus, string> = {
         </select>
       </div>
     </div>
-    <PageState :empty="rows.length === 0" empty-text="当前阶段暂无演示任务。">
+    <PageState :empty="rows.length === 0" empty-text="当前阶段暂无任务记录。">
       <div class="task-list">
         <article v-for="task in rows" :key="task.id" class="task-row">
           <span :class="['task-icon', `stage-${task.stage}`]" aria-hidden="true">
