@@ -37,19 +37,20 @@ cd /Users/gshy/Desktop/ICT-RAG
 ```sh
 git fetch origin agent-dev codex/frontend-demo feature/backend-integration
 git switch agent-dev
-# 在没有 frontend/backend 目录的 Agent 工作目录导出对应分支。
-git archive origin/codex/frontend-demo frontend | tar -x
-git archive origin/feature/backend-integration backend | tar -x
+# 在没有运行副本时导出到被 Git 忽略的目录。
+mkdir -p reports/local/integration
+git archive origin/codex/frontend-demo frontend | tar -x -C reports/local/integration
+git archive origin/feature/backend-integration backend | tar -x -C reports/local/integration
 
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 .venv/bin/python -m pip install --no-deps --no-build-isolation packages/rag_agent
 .venv/bin/python scripts/download_model.py
-python3.12 -m venv backend/.venv
-backend/.venv/bin/python -m pip install ./backend
-cd frontend
+python3.12 -m venv reports/local/integration/backend/.venv
+reports/local/integration/backend/.venv/bin/python -m pip install --require-hashes -r reports/local/integration/backend/requirements.txt
+cd reports/local/integration/frontend
 npm ci
-cd ..
+cd ../../../..
 .venv/bin/python scripts/setup_local_services.py
 .venv/bin/python scripts/run_fullstack.py start --detach
 ```
