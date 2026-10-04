@@ -88,3 +88,7 @@ Agent代码、独立验证和真实端到端联调是不同验收项。本机后
 后端同学接入顺序：基础服务ready→配置三类令牌及Agent URL→INDEX_PROVIDER=external→采集产生事件→worker同步→后端自身来源核验通过→前端接真实问答。前端的代理/CORS、用户token和字段转换仍由前后端同学完成。
 
 本次验证结果另见 [Agent V1 验证记录](agent_v1_validation.md)。模型中文生成质量、人工引用支持率和跨文档推理正确率仍需真实模型及人工评测。
+
+## 本机整链补充（10月4日）
+
+真实前端、PostgreSQL/Redis/Celery后端已接入，运行与26项HTTP结果见 [fullstack_local.md](fullstack_local.md)、[fullstack_validation.md](fullstack_validation.md)。同步可用 `scripts/sync_backend.py --all-scopes` 在同一E5进程依次消费两个隔离范围；默认仍只消费真实范围，`--is-demo`仅消费虚构范围。不能同时指定两种选项。

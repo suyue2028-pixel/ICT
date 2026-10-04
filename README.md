@@ -12,6 +12,21 @@
 
 三人分别在自己的分支提交和推送。核心Python契约见 `docs/contracts.md`；与当前后端真实分支的HTTP接入见 [docs/backend_agent_v1.md](docs/backend_agent_v1.md)。
 
+## 10月4日全栈联调
+
+前端、PostgreSQL/Redis/Celery 业务后端、真实 E5 Agent 已在本机跑通。浏览器访问 **http://127.0.0.1:5173**；资料由后端采集，Agent 消费知识事件、索引/ACK并检索，前端通过后端网关问答与追问。
+
+```sh
+.venv/bin/python scripts/run_fullstack.py start --detach
+.venv/bin/python scripts/run_fullstack.py status
+.venv/bin/python scripts/verify_fullstack.py
+.venv/bin/python scripts/run_fullstack.py stop
+```
+
+已有服务运行时直接打开页面。当前47份真实资料/47个indexed事件，另有明确隔离的虚构样本。默认 **extractive 来源摘录，远程模型调用0**；Flash接口配置可复用团队密钥，真实生成尚待验证。
+
+运行目录、首次安装、密钥、模块接口与部署边界见 [全栈运行与交接](docs/fullstack_local.md)，结果见 [本轮验证](docs/fullstack_validation.md)。下列19篇资料及旧验证数字保留为此前独立Agent阶段记录，当前整链状态以上述报告为准。
+
 ## 后端 HTTP V1 接入
 
 新增带服务认证的 `/v1/health`、`/v1/query`、`/v1/indexes/verify`，保留后端UUID/hash与原始来源证据；同步worker消费后端带租约的知识事件，维护真实/demo隔离、精确版本映射与删除失效。默认使用独立 `data/backend-rag.db`，与原有19篇演示资料分开。
@@ -28,7 +43,7 @@
 .venv/bin/python scripts/sync_backend.py --once
 ```
 
-完整环境变量、后端配置和同步流程见 [V1接入文档](docs/backend_agent_v1.md)。后端PostgreSQL/Redis/迁移尚待就绪，Agent独立验证不能代替完整三模块联调。大模型可使用本人或团队的API账号，支持本地密钥文件；见 [大模型配置](docs/llm_configuration.md)。
+完整环境变量、后端配置和同步流程见 [V1接入文档](docs/backend_agent_v1.md)。本机PostgreSQL/Redis/迁移与三模块整链现已验证，见全栈报告。独立Agent用例仍不代替业务整链验收。大模型可使用本人或团队的API账号，支持本地密钥文件；见 [大模型配置](docs/llm_configuration.md)。
 
 ## 当前真实完成状态
 

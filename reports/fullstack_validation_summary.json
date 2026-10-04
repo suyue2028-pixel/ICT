@@ -1,0 +1,199 @@
+{
+  "date": "2026-10-04",
+  "backend": "real PostgreSQL/Redis/Celery/HTTP",
+  "embedding": "real multilingual-e5-small CPU",
+  "generation": "extractive",
+  "remote_llm_calls": 0,
+  "real_documents": 47,
+  "indexed_events": 47,
+  "passed": 28,
+  "total": 28,
+  "checks": [
+    {
+      "name": "real_postgres_redis_migration_ready",
+      "passed": true,
+      "detail": {
+        "status": "ready",
+        "checks": {
+          "postgres": true,
+          "redis": true,
+          "migration": true
+        }
+      }
+    },
+    {
+      "name": "frontend_dev_user_session",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "session_not_cacheable",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "cross_origin_session_denied",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "real_documents_collected",
+      "passed": true,
+      "detail": {
+        "total": 47
+      }
+    },
+    {
+      "name": "vite_proxy_reads_real_backend",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "real_index_events_acknowledged",
+      "passed": true,
+      "detail": {
+        "total": 47
+      }
+    },
+    {
+      "name": "agent_real_e5_health",
+      "passed": true,
+      "detail": {
+        "schema_version": "1",
+        "status": "ok",
+        "llm_mode": "extractive",
+        "embedding_provider": "e5",
+        "embedding_mode": "live",
+        "backend_documents": {
+          "real": 47,
+          "demo": 1
+        }
+      }
+    },
+    {
+      "name": "real_index_proof_6b666d7b-df44-4c5d-803f-283a38cd915f",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "real_index_proof_9a49d8b6-bced-47dc-85a4-657d862b5441",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "real_index_proof_0233ed42-02e3-49c5-bc96-9baa8fdaa54c",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "frontend_proxy_backend_agent_query",
+      "passed": true,
+      "detail": {
+        "http": 200,
+        "duration_ms": 51.94,
+        "target": "CVE-2024-8309"
+      }
+    },
+    {
+      "name": "backend_accepted_real_sources",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "extractive_mode_disclosed",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "gateway_preserves_real_generation_headers",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "structured_source_quotes_pass_revision_validation",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "answer_uses_public_citation_numbers",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "original_excerpt_and_locator_0",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "original_excerpt_and_locator_1",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "original_excerpt_and_locator_2",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "original_excerpt_and_locator_3",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "idempotent_same_response",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "followup_same_backend_session",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "backend_persisted_four_messages",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "history_order_and_restore_fields",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "query_requires_user_token",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "agent_requires_service_token",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "real_documents_not_leaked_to_demo",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "limitations": [
+    "No real DeepSeek call or independent answer quality review in this run"
+  ],
+  "agent_regression_passed": 72,
+  "backend_regression_passed": 52,
+  "frontend_typecheck": "passed",
+  "frontend_build": "passed",
+  "branches": {
+    "frontend": {
+      "branch": "codex/frontend-demo",
+      "commit": "06889e9b237ded87f27bea5732747c27b2dfde61",
+      "tree": "378bdcec3e0bc7fed2d6cdc8dae168cd71c118d9",
+      "directory": "reports/local/integration/frontend"
+    },
+    "backend": {
+      "branch": "feature/backend-integration",
+      "commit": "ee78ebff994237f40aa92c56e8bcc6b50774c8a6",
+      "tree": "d0e2a6a30f76649315e00933ab28cdf3c1c6b1ba",
+      "directory": "reports/local/integration/backend"
+    }
+  }
+}

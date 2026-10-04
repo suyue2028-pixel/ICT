@@ -1,0 +1,19 @@
+{
+  "repository": "suyue2028-pixel/ICT",
+  "modules": {
+    "frontend": {
+      "branch": "codex/frontend-demo",
+      "commit": "06889e9b237ded87f27bea5732747c27b2dfde61",
+      "tree": "378bdcec3e0bc7fed2d6cdc8dae168cd71c118d9",
+      "directory": "reports/local/integration/frontend"
+    },
+    "backend": {
+      "branch": "feature/backend-integration",
+      "commit": "ee78ebff994237f40aa92c56e8bcc6b50774c8a6",
+      "tree": "d0e2a6a30f76649315e00933ab28cdf3c1c6b1ba",
+      "directory": "reports/local/integration/backend"
+    }
+  },
+  "agent_branch": "agent-dev",
+  "main_unchanged": "31392b03e7771f28062122461d367fcc8794b8d1"
+}

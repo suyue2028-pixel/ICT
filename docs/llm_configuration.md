@@ -50,6 +50,10 @@ export RAG_LLM_MODE=live
 
 包不会自动加载 `.env` 文件；`.env.example` 是配置清单。运行进程需要接收到实际环境变量。服务启动后修改配置需要重启进程。
 
+## Flash 请求适配
+
+官方 DeepSeek HTTPS 接口发送 `thinking={"type":"disabled"}`，兼容服务不会自动收到该供应商参数。`finish_reason=length`、其他中断、空内容或非JSON对象不会被当成成功回答。新增回归使用HTTP测试替身；未进行真实付费调用。全栈启动方法见 [fullstack_local.md](fullstack_local.md)。
+
 ## 预算与失败行为
 
 - 总请求预算默认 30 秒，V1 后端适配层上限 25 秒，为后端默认 30 秒网关留出余量。

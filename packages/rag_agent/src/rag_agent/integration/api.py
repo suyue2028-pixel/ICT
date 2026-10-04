@@ -21,6 +21,40 @@ _CVE = re.compile(r"CVE-\d{4}-\d{4,}", re.I)
 _RISK_ORDER = ("UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
 
+def _original_structured_excerpt(excerpt: str, locator: dict, revision: dict) -> str | None:
+    """Restore source key order only for an identical recorded JSON object.
+
+    The ingestion store canonicalizes JSON field quotes. Backend revisions keep
+    source key order. A match must preserve the complete JSON value, including
+    types and array order; internal normalized identifier records are excluded.
+    The returned quote still has to pass the ordinary substring/locator check.
+    """
+    pointer = locator.get("pointer", "")
+    if (locator.get("kind") != "json_pointer" or not isinstance(pointer, str)
+            or not (pointer.startswith("/raw_payload/source_fields/")
+                    or pointer.startswith("/raw_payload/cve/")
+                    or pointer == "/product_entities")):
+        return None
+    try:
+        value = json.loads(excerpt)
+        if not isinstance(value, (dict, list)):
+            return None
+        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        pending = [revision]
+        while pending:
+            candidate = pending.pop()
+            if isinstance(candidate, (dict, list)):
+                if json.dumps(candidate, ensure_ascii=False, sort_keys=True, allow_nan=False) == canonical:
+                    original = json.dumps(candidate, ensure_ascii=False, allow_nan=False)
+                    # Compare the complete value before applying the transport
+                    # quote bound. Never parse a truncated canonical JSON quote.
+                    return original[:2000]
+                pending.extend(candidate.values() if isinstance(candidate, dict) else candidate)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return None
+
+
 def _locator(original: str, revision_text: str, excerpt: str) -> str:
     """Locate the validated excerpt in the backend's original representation."""
     start = original.find(excerpt)
@@ -39,6 +73,17 @@ def _source(metadata: dict[str, Any]) -> AgentSource:
         source_type=metadata["source_type"], source_name=metadata["source_name"],
         published_time=metadata.get("published_time"),
     )
+
+
+def _public_references(answer: str, references: dict[str, int]) -> str:
+    def replace(match):
+        identifiers = match.group(1).split(",")
+        if all(identifier in references for identifier in identifiers):
+            return "[" + ",".join(str(references[identifier]) for identifier in identifiers) + "]"
+        return match.group(0)
+    # A source field may contain an unfinished/truncated JSON array before its
+    # citation. Start at the innermost bracket so that citation is still mapped.
+    return re.sub(r"\[([^\[\]\n]+)\]", replace, answer)
 
 
 def _backend_trace(summary, mappings):
@@ -154,6 +199,8 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
         original = content if isinstance(content, str) else ""
         excerpt = item.excerpt[:2000]
         revision_text = json.dumps(revision, ensure_ascii=False)
+        if excerpt not in original and excerpt not in revision_text:
+            excerpt = _original_structured_excerpt(item.excerpt, item.locator, revision) or excerpt
         if (not excerpt or item.url != metadata.get("source_url")
                 or (excerpt not in original and excerpt not in revision_text)):
             rejected = True
@@ -215,13 +262,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
         else:
             references = {item.evidence_id: number for number, item in enumerate(result.sources, 1)}
 
-            def replace_reference(match):
-                identifiers = match.group(1).split(",")
-                if all(identifier in references for identifier in identifiers):
-                    return "[" + ",".join(str(references[identifier]) for identifier in identifiers) + "]"
-                return match.group(0)
-
-            answer = re.sub(r"\[([^\]\n]+)\]", replace_reference, result.answer)
+            answer = _public_references(result.answer, references)
         risk = _risk(result.facts, valid_ids)
     if len(answer) > 12000:
         answer = answer[:11940] + "\n回答超过传输长度限制，已截断；请缩小查询范围。"
