@@ -11,6 +11,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT OR IGNORE INTO schema_meta VALUES ('schema_version','1'),('generation','0');
 CREATE TABLE IF NOT EXISTS documents(document_id TEXT PRIMARY KEY, current_version INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS document_tombstones(document_id TEXT PRIMARY KEY REFERENCES documents(document_id));
 CREATE TABLE IF NOT EXISTS document_versions(document_id TEXT NOT NULL, version INTEGER NOT NULL,
  content_hash TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(document_id,version),
  FOREIGN KEY(document_id) REFERENCES documents(document_id));
@@ -78,6 +79,34 @@ class SQLiteStore:
         if row and json.loads(row[0]) != signature:
             raise ValueError("embedding index mismatch: rebuild into a new database; mixed vectors are forbidden")
 
+    def deactivate(self, doc_id):
+        """Remove a document from current retrieval while retaining every version."""
+        with self.connection() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                if c.execute("SELECT 1 FROM documents WHERE document_id=?", (doc_id,)).fetchone():
+                    before = c.total_changes
+                    c.execute("INSERT OR IGNORE INTO document_tombstones VALUES (?)", (doc_id,))
+                    if c.total_changes > before:
+                        c.execute("UPDATE schema_meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'")
+                c.execute("COMMIT")
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
+
+    def activate(self, doc_id):
+        with self.connection() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                before = c.total_changes
+                c.execute("DELETE FROM document_tombstones WHERE document_id=?", (doc_id,))
+                if c.total_changes > before:
+                    c.execute("UPDATE schema_meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'")
+                c.execute("COMMIT")
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
+
     def commit_version(self, doc, doc_id, version, content_hash, chunks, vectors, signature, evidence, assertions):
         if vectors.shape != (len(chunks), signature["dimension"]) or not np.isfinite(vectors).all():
             raise ValueError("invalid embedding shape or non-finite vectors")
@@ -101,28 +130,33 @@ class SQLiteStore:
                 for a in assertions:
                     c.execute("INSERT INTO assertions VALUES (?,?,?,?)", (a.assertion_id, doc_id, version, a.model_dump_json()))
                 c.execute("UPDATE documents SET current_version=? WHERE document_id=?", (version, doc_id))
+                c.execute("DELETE FROM document_tombstones WHERE document_id=?", (doc_id,))
                 c.execute("UPDATE schema_meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'")
                 c.execute("COMMIT")
             except BaseException:
                 c.execute("ROLLBACK")
                 raise
 
-    def snapshot(self):
+    def snapshot(self, document_ids=None, document_versions=None):
         # All tables are read inside one SQLite snapshot, including generation.
         with self.connection() as c:
             c.execute("BEGIN")
             meta = dict(c.execute("SELECT key,value FROM schema_meta").fetchall())
-            rows = c.execute("SELECT v.* FROM document_versions v JOIN documents d ON v.document_id=d.document_id AND v.version=d.current_version").fetchall()
+            rows = c.execute("SELECT v.* FROM document_versions v JOIN documents d ON v.document_id=d.document_id AND v.version=d.current_version WHERE NOT EXISTS (SELECT 1 FROM document_tombstones t WHERE t.document_id=d.document_id)").fetchall()
+            rows = [r for r in rows if (document_ids is None or r["document_id"] in document_ids)
+                    and (document_versions is None or document_versions.get(r["document_id"]) == r["version"])]
             docs = {r["document_id"]: DocumentInput.model_validate_json(r["payload"]) for r in rows}
             versions = {r["document_id"]: r["version"] for r in rows}
             chunks = []
             for r in c.execute("SELECT k.*,e.vector,e.dimension FROM chunks k JOIN documents d ON k.document_id=d.document_id AND k.version=d.current_version JOIN embeddings e ON e.chunk_id=k.chunk_id"):
+                if r["document_id"] not in docs:
+                    continue
                 v = np.frombuffer(r["vector"], dtype="<f4").copy()
                 if len(v) != r["dimension"] or not np.isfinite(v).all():
                     raise ValueError("corrupt stored embedding")
                 chunks.append({**dict(r), "vector": v})
             def records(table, cls):
-                return [cls.model_validate_json(r[0]) for r in c.execute(f"SELECT t.payload FROM {table} t JOIN documents d ON t.document_id=d.document_id AND t.version=d.current_version")]
+                return [cls.model_validate_json(r["payload"]) for r in c.execute(f"SELECT t.document_id,t.payload FROM {table} t JOIN documents d ON t.document_id=d.document_id AND t.version=d.current_version") if r["document_id"] in docs]
             evidence = {e.evidence_id: e for e in records("evidence", EvidenceDetail)}
             assertions = records("assertions", Assertion)
             relations = records("relations", Relation)

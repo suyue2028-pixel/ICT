@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "AgentEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "format": "uuid",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "source": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "score_type": {
+          "default": "not_scored",
+          "enum": [
+            "cosine_similarity",
+            "relevance",
+            "not_scored"
+          ],
+          "title": "Score Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "content_hash",
+        "content",
+        "source",
+        "locator"
+      ],
+      "title": "AgentEvidence",
+      "type": "object"
+    },
+    "BackendHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 2000,
+          "title": "Content",
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/AgentEvidence"
+          },
+          "maxItems": 50,
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "BackendHistory",
+      "type": "object"
+    },
+    "QueryLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tool_calls": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_answer_tokens": {
+          "maximum": 1200,
+          "minimum": 1,
+          "title": "Max Answer Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_tool_calls",
+        "max_answer_tokens"
+      ],
+      "title": "QueryLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "query": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "is_demo": {
+      "title": "Is Demo",
+      "type": "boolean"
+    },
+    "request_id": {
+      "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "invocation_id": {
+      "format": "uuid",
+      "title": "Invocation Id",
+      "type": "string"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/BackendHistory"
+      },
+      "maxItems": 8,
+      "title": "History",
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/QueryLimits"
+    },
+    "state_owner": {
+      "const": "backend",
+      "title": "State Owner",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "query",
+    "session_id",
+    "is_demo",
+    "request_id",
+    "invocation_id",
+    "limits",
+    "state_owner"
+  ],
+  "title": "BackendQuery",
+  "type": "object"
+}

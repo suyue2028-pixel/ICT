@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "index_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Index Id",
+      "type": "string"
+    },
+    "is_demo": {
+      "title": "Is Demo",
+      "type": "boolean"
+    },
+    "queryable": {
+      "title": "Queryable",
+      "type": "boolean"
+    },
+    "removed": {
+      "title": "Removed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "document_id",
+    "content_hash",
+    "index_id",
+    "is_demo",
+    "queryable",
+    "removed"
+  ],
+  "title": "IndexProof",
+  "type": "object"
+}

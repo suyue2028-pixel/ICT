@@ -1,8 +1,10 @@
 from __future__ import annotations
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, model_validator
 from .schemas import Model
 
@@ -27,6 +29,11 @@ class Settings(Model):
 
     @model_validator(mode="after")
     def valid(self):
+        parsed = urlsplit(self.llm_base_url)
+        if (not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or parsed.scheme not in {"http", "https"}
+                or (parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"})):
+            raise ValueError("LLM base URL must use HTTPS or loopback HTTP without embedded credentials")
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap must be below chunk size")
         if self.embedding_provider == "e5" and not re.fullmatch(r"[a-f0-9]{40}", self.embedding_revision):
@@ -42,6 +49,29 @@ class Settings(Model):
             "RAG_EMBEDDING_MODEL": "embedding_model", "RAG_EMBEDDING_REVISION": "embedding_revision",
             "RAG_EMBEDDING_DEVICE": "embedding_device", "RAG_LLM_MODE": "llm_mode",
             "RAG_LLM_BASE_URL": "llm_base_url", "RAG_LLM_MODEL": "llm_model", "RAG_LLM_KEY": "llm_key",
-            "RAG_TIMEOUT": "request_timeout",
+            "RAG_TIMEOUT": "request_timeout", "RAG_LLM_TIMEOUT": "llm_timeout",
         }
-        return cls(**{v: os.environ[k] for k, v in mapping.items() if k in os.environ})
+        values = {v: os.environ[k] for k, v in mapping.items() if k in os.environ}
+        key_file = os.environ.get("RAG_LLM_KEY_FILE")
+        if key_file:
+            if values.get("llm_key"):
+                raise ValueError("configure RAG_LLM_KEY or RAG_LLM_KEY_FILE, not both")
+            try:
+                path = Path(key_file).expanduser()
+                descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                with os.fdopen(descriptor, "rb") as handle:
+                    info = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(info.st_mode) or info.st_size > 16384:
+                        raise ValueError("key file must be a small regular file")
+                    raw = handle.read(16385)
+                    if len(raw) > 16384:
+                        raise ValueError("key file is too large")
+                    key = raw.decode("utf-8").strip()
+            except (OSError, UnicodeError, ValueError):
+                raise ValueError("unable to read LLM key file") from None
+            if not key or any(c.isspace() for c in key) or "\x00" in key:
+                raise ValueError("LLM key file must contain a single nonempty key")
+            values["llm_key"] = key
+        if "llm_key" in values:
+            values["llm_key"] = SecretStr(values["llm_key"])
+        return cls(**values)

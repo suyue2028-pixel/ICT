@@ -16,6 +16,7 @@ class Budget:
     tool_calls: int = 0
     retries: int = 0
     events: list[dict] = field(default_factory=list)
+    max_answer_tokens: int = 2048
 
     def remaining(self):
         seconds = self.deadline - time.monotonic()
@@ -34,7 +35,10 @@ class Budget:
         if self.tool_calls >= self.max_tools:
             raise BudgetExceeded("tool call budget exhausted")
         self.tool_calls += 1
-        self.events.append({"tool": name, "at": time.monotonic()})
+        event = {"tool": name, "at": time.monotonic(), "status": "running", "duration_ms": 0,
+                 "document_ids": [], "input_summary": "validated local retrieval"}
+        self.events.append(event)
+        return event
 
 
 class AgentState(TypedDict, total=False):

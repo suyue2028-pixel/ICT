@@ -10,7 +10,25 @@
 | 后端 | `feature/backend-integration` | `backend/` |
 | Agent / RAG | `agent-dev` | `packages/rag_agent/`，以及配套 docs/scripts/examples/reports |
 
-三人分别在自己的分支提交和推送。此阶段各模块独立开发；前后端与 Agent 接口联调按 `docs/contracts.md` 约定开展。
+三人分别在自己的分支提交和推送。核心Python契约见 `docs/contracts.md`；与当前后端真实分支的HTTP接入见 [docs/backend_agent_v1.md](docs/backend_agent_v1.md)。
+
+## 后端 HTTP V1 接入
+
+新增带服务认证的 `/v1/health`、`/v1/query`、`/v1/indexes/verify`，保留后端UUID/hash与原始来源证据；同步worker消费后端带租约的知识事件，维护真实/demo隔离、精确版本映射与删除失效。默认使用独立 `data/backend-rag.db`，与原有19篇演示资料分开。
+
+从仓库根目录设置 `RAG_SERVICE_TOKEN`（与后端 `AGENT_SERVICE_TOKEN` 一致）、`PYTHONPATH/HF_HOME` 后运行：
+
+```sh
+.venv/bin/python -m uvicorn examples.backend_api:app --host 127.0.0.1 --port 9001
+```
+
+在另一个终端设置后端地址、读写令牌和相同数据库，再启动同步：
+
+```sh
+.venv/bin/python scripts/sync_backend.py --once
+```
+
+完整环境变量、后端配置和同步流程见 [V1接入文档](docs/backend_agent_v1.md)。后端PostgreSQL/Redis/迁移尚待就绪，Agent独立验证不能代替完整三模块联调。大模型可使用本人或团队的API账号，支持本地密钥文件；见 [大模型配置](docs/llm_configuration.md)。
 
 ## 当前真实完成状态
 
@@ -24,6 +42,8 @@
 人工引用支持率、中文生成质量、跨文档推理正确率均待评测，不能把下列演示指标解释为比赛达标。
 
 本次验证：54 项合成回归通过，25 个真实资料用例通过自动检查，13 项本机 HTTP 检查通过。验证汇总、硬件、指标分母和限制见 [docs/validation.md](docs/validation.md)，结构化结果见 `reports/validation_summary.json`。
+
+10月4日补充验证：原54项回归重新通过，新后端V1适配27项实际本机HTTP检查通过（合成后端身份/资料、真实E5、远程LLM调用0）。本轮状态见 [Agent V1验证记录](docs/agent_v1_validation.md)。这不代表真实PostgreSQL/Redis后端整链或真实大模型生成已经验收。
 
 ## 已有本机环境直接运行
 
@@ -81,12 +101,12 @@ python -m rag_agent.evaluation.run --cases data/evaluation/acceptance.json --out
 
 ## 远程生成配置
 
-配置字段见 `.env.example`；包不会自动读取 `.env`，请在终端或后端进程环境中设置变量。设置 `RAG_LLM_MODE=live`、`RAG_LLM_KEY`、`RAG_LLM_MODEL` 和可选 `RAG_LLM_BASE_URL`，才会调用远程模型。默认 provider 为 DeepSeek Chat Completions JSON 接口，model 可由后端配置。`live` 缺密钥会立即报配置错误；`mock` 为显式测试替身，`extractive` 为有来源的摘录。
+配置字段见 `.env.example`；包不会自动读取 `.env`，请在终端或后端进程环境中设置变量。设置 `RAG_LLM_MODE=live`、`RAG_LLM_KEY` 或 `RAG_LLM_KEY_FILE`、`RAG_LLM_MODEL` 和可选 `RAG_LLM_BASE_URL`，才会调用远程模型。默认 provider 为 DeepSeek Chat Completions JSON 接口，model 可配置。`live` 缺密钥会立即报配置错误；`mock` 为显式测试替身，`extractive` 为有来源的摘录。
 
 模型输出只提供 claims；facts 从存储断言渲染，引用 URL 从证据存储获取。非法引用、虚构结构字段和缺乏依据的编号/版本数字会触发有来源摘录回退。引用存在仍不意味着自然语言结论已被语义证明。
 
 ## 团队交接
 
-后端调用四个异步接口 `ingest`、`enrich`、`query`、`get_evidence`，负责公开 `/api/v1/qa`、会话、采集任务和权限。契约和接入样例见 `docs/contracts.md`，机器可读 JSON Schema 位于 `docs/schemas/`。参考核查见 `docs/reference_review.md`；下一阶段分工与限制见 `docs/handoff.md`。
+核心Python接口为 `ingest`、`enrich`、`query`、`get_evidence`；当前业务后端通过HTTP V1接入，负责公开 `/api/v1/agent/query`、会话、采集任务和用户权限。契约和接入样例见 `docs/contracts.md` 与 `docs/backend_agent_v1.md`，机器可读 JSON Schema 位于 `docs/schemas/`。参考核查见 `docs/reference_review.md`；下一阶段分工与限制见 `docs/handoff.md`。
 
 密钥、模型权重、数据库、缓存和大型原文下载均被 `.gitignore` 排除。框架不会执行 POC、互联网资产扫描或任意 SQL/网络工具；后续资产匹配仅接入团队提供的授权资产清单。

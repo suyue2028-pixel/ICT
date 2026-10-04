@@ -23,14 +23,18 @@ class HybridRetriever:
     def __init__(self, embedding):
         self.embedding = embedding
         self._generation = None
+        self._cache_key = None
         self._matrix = None
 
     async def search(self, snapshot, query, filters, limit=8):
         if snapshot.signature and snapshot.signature != self.embedding.signature():
             raise ValueError("query embedding does not match index; rebuild required")
-        if self._generation != snapshot.generation:
+        # Demo/real queries can have different matrices at the same generation.
+        cache_key = (snapshot.generation, tuple(c["chunk_id"] for c in snapshot.chunks))
+        if self._cache_key != cache_key:
             self._matrix = np.stack([c["vector"] for c in snapshot.chunks]) if snapshot.chunks else np.empty((0, self.embedding.dimension), dtype=np.float32)
             self._generation = snapshot.generation
+            self._cache_key = cache_key
         # Retain a local reference: another request may replace the cache later.
         matrix = self._matrix
         indices = [i for i, c in enumerate(snapshot.chunks) if matches(c["document_id"], snapshot.documents[c["document_id"]], filters, snapshot)]

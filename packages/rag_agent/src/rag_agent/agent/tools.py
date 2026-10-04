@@ -1,4 +1,5 @@
 from pydantic import Field
+import time
 from ..schemas import Model, Filters
 from ..retrieval.exact import exact_lookup
 from ..retrieval.relations import related_evidence
@@ -31,7 +32,21 @@ class Tools:
     async def call(self, name, args, state):
         if name not in self.ALLOWED:
             raise ValueError("tool not in whitelist")
-        state["budget"].tool(name)
+        event = state["budget"].tool(name)
+        try:
+            result = await self._execute(name, args, state)
+            records = result[0] if isinstance(result, tuple) else result
+            event["status"] = "completed" if records else "empty"
+            event["document_ids"] = list(dict.fromkeys(r.document_id for r in records))
+            return result
+        except BaseException as exc:
+            event["status"] = "failed"
+            event["error_code"] = type(exc).__name__
+            raise
+        finally:
+            event["duration_ms"] = max(0, round((time.monotonic() - event["at"]) * 1000))
+
+    async def _execute(self, name, args, state):
         snapshot, filters = state["snapshot"], state["explicit_filters"]
         if name == "exact_lookup":
             parsed = ExactArgs.model_validate(args)

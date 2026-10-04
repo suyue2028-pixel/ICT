@@ -47,6 +47,7 @@ class RAGService:
                     self.store.check_signature(self.embedding.signature())
                     current = self.store.current(doc_id)
                     if current and current["content_hash"] == digest:
+                        self.store.activate(doc_id)
                         item = IngestItem(external_id=doc.external_id, document_id=doc_id, version=current["version"], status="unchanged")
                     else:
                         version = current["version"] + 1 if current else 1
@@ -80,14 +81,31 @@ class RAGService:
     async def get_evidence(self, evidence_id):
         return await asyncio.to_thread(self.store.get_evidence, evidence_id)
 
+    async def deactivate(self, document_id):
+        async with self._write_lock:
+            await asyncio.to_thread(self.store.deactivate, document_id)
+
     def get_run_summary(self, trace_id):
         """Bounded, process-local diagnostic summaries; backend persists sessions/logs."""
         return deepcopy(self._run_summaries[trace_id])
 
-    async def query(self, request: QueryRequest) -> QueryResponse:
+    async def query(self, request: QueryRequest, *, document_ids=None, document_versions=None,
+                    max_tool_calls=None, max_answer_tokens=None, timeout=None) -> QueryResponse:
+        """Trusted adapter controls: scope and limits are never model-generated."""
         request = QueryRequest.model_validate(request)
+        if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 1):
+            raise ValueError("max_tool_calls must be a positive integer")
+        if max_answer_tokens is not None and (type(max_answer_tokens) is not int or max_answer_tokens < 1):
+            raise ValueError("max_answer_tokens must be a positive integer")
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 300):
+            raise ValueError("timeout must be between zero and 300 seconds")
+        duration = min(timeout, self.settings.request_timeout) if timeout is not None else self.settings.request_timeout
+        tools_limit = min(max_tool_calls, self.settings.max_tool_calls) if max_tool_calls is not None else self.settings.max_tool_calls
+        answer_limit = min(max_answer_tokens, 2048) if max_answer_tokens is not None else 2048
+        scope = frozenset(document_ids) if document_ids is not None else None
+        versions = dict(document_versions) if document_versions is not None else None
         started = time.monotonic()
-        budget = Budget(started + self.settings.request_timeout, self.settings.max_llm_calls, self.settings.max_tool_calls)
+        budget = Budget(started + duration, self.settings.max_llm_calls, tools_limit, max_answer_tokens=answer_limit)
         state = {"request": request, "original_question": request.question, "resolved_question": request.question,
                  "explicit_filters": request.filters, "plan": None, "subqueries": [], "evidence": [], "assertions": [],
                  "missing_fields": [], "conflicts": [], "retry_count": 0, "budget": budget, "deadline": budget.deadline,
@@ -95,8 +113,8 @@ class RAGService:
         if self.embedding.mode == "mock":
             state["warnings"].append("mock_embedding:仅用于流程回归，不代表真实语义检索")
         try:
-            async with asyncio.timeout(self.settings.request_timeout):
-                snapshot = await asyncio.to_thread(self.store.snapshot)
+            async with asyncio.timeout(duration):
+                snapshot = await asyncio.to_thread(self.store.snapshot, scope, versions)
                 state["snapshot"] = snapshot
                 if snapshot.signature and snapshot.signature != self.embedding.signature():
                     raise ValueError("embedding index mismatch; rebuild required")
@@ -115,7 +133,7 @@ class RAGService:
         response.metrics = Metrics(elapsed_ms=(time.monotonic() - started) * 1000,
                                    llm_calls=budget.llm_calls, tool_calls=budget.tool_calls, retries=budget.retries,
                                    embedding_mode=self.embedding.mode, index_generation=state.get("snapshot").generation if state.get("snapshot") else 0)
-        summary = {"trace_id": response.trace_id, "nodes": state["trace"], "tools": budget.events,
+        summary = {"trace_id": response.trace_id, "nodes": state["trace"], "tools": deepcopy(budget.events),
                    "evidence_ids": [e.evidence_id for e in state["evidence"]], "metrics": response.metrics.model_dump()}
         self._run_summaries[response.trace_id] = summary
         while len(self._run_summaries) > 128:

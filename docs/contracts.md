@@ -1,4 +1,6 @@
-# 后端接入契约 v0.1
+# Agent 接入契约（Python 与后端 HTTP V1）
+
+当前团队业务后端使用 `POST /api/v1/agent/query`，调用独立 Agent 的 `/v1/query`。与 `feature/backend-integration` 的实际接入、文档同步、认证和版本身份见 [后端与 Agent HTTP V1 接入](backend_agent_v1.md)。以下保留核心 Python 接口；文末的 `/api/v1/qa` 是最初方案，不代表当前业务后端已实现的入口。
 
 包名 `ict-rag-agent`，导入名 `rag_agent`，Python >=3.11,<3.13。部署基线为单机、单进程、一个长期存活的 RAGService 实例；SQLite 不应通过网络文件系统共享。前端只访问后端公开 API。JSON Schema 为本次代码直接导出的 `docs/schemas/*.json`。
 
@@ -75,7 +77,7 @@ mode 指生成方式 live/mock/extractive，metrics.embedding_mode 单独指向�
 
 前端解析 claims.evidence_ids，对 sources 建立映射。展示来源、文档版本、定位、发布时间/收集时间、部分回答状态、来源冲突与 needs_review。详情按 evidence_id 请求后端，不把下载目录、数据库路径、密钥或原始模型请求暴露给客户端。
 
-## 后端公开路由建议
+## 最初的后端公开路由建议（当前 HTTP 接入以 V1 文档为准）
 
 | 路由 | 后端职责 |
 |---|---|
@@ -88,6 +90,8 @@ mode 指生成方式 live/mock/extractive，metrics.embedding_mode 单独指向�
 
 ## 索引与配置变更
 
-Embedding model_id/revision/dimension/prefix_policy 是索引指纹。变更任何一项必须重建新的数据库，不能把 mock 库当 E5 库。模型 revision 必须是固定40字符 commit。原文、chunks、vectors、assertions 和证据在同一事务写入；更新 generation，读侧矩阵缓存按 generation 失效，一次 query 使用同一个 SQLite 读快照。完整重建在新 DB 导入后由后端切换服务配置，禁止运行时覆盖旧库。
+Embedding model_id/revision/dimension/prefix_policy 是索引指纹。变更任何一项必须重建新的数据库，不能把 mock 库当 E5 库。模型 revision 必须是固定40字符 commit。原文、chunks、vectors、assertions 和证据在同一事务写入；更新 generation，读侧矩阵缓存按 generation 与当前chunk集合失效，一次 query 使用同一个 SQLite 读快照。可信适配层可给 `query` 传入 `document_ids/document_versions` 范围，文档集合与预期版本均精确过滤；空集合不等于不限制。完整重建在新 DB 导入后由后端切换服务配置，禁止运行时覆盖旧库。
+
+`deactivate(document_id)` 令当前文档不参与检索，保留全部历史证据；重新导入可恢复。后端删除通过 BackendIndex 的映射与失效事务执行，不能直接用后端UUID调用此核心接口。
 
 配置错误（如 live 缺 key）在创建服务时抛 ValueError；后端应将此作为部署错误处理。查询内部异常不透传 provider 错误正文或密钥，只输出有限错误类型。schema 版本不兼容拒绝打开，不自动破坏式迁移。
