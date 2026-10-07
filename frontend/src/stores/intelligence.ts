@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, shallowRef } from 'vue'
 import { apiGet, errorMessage } from '@/api/http'
-import { allPages, documentItem } from '@/api/backend'
-import type { Document, Source, Stats, Task, Vulnerability, Relations } from '@/api/backend'
+import { allPages, documentItem, enrichedItem } from '@/api/backend'
+import type { Document, Enrichment, Source, Stats, Task, Vulnerability, Relations } from '@/api/backend'
 import type { GraphLink, GraphNode, IntelligenceItem, Severity, TaskRecord } from '@/types'
 export const severityNames: Record<Severity, string> = { critical: '严重', high: '高危', medium: '中危', low: '低危', unknown: '未知' }
 export const severityOrder: Severity[] = ['critical', 'high', 'medium', 'low', 'unknown']
@@ -25,7 +25,8 @@ export const useIntelligenceStore = defineStore('intelligence', () => {
       tasks.value = taskRows.map(task => ({ id: task.id, stage: '采集',
         name: sourceRows.find(x => x.id === task.source_id)?.name || task.kind,
         status: task.status === 'succeeded' ? '已完成' : task.status === 'failed' ? '失败' : '待处理',
-        time: task.finished_at || task.created_at, detail: JSON.stringify(task.result), error: task.error_code || undefined }))
+        time: task.finished_at || task.created_at, createdAt: task.created_at, finishedAt: task.finished_at || undefined,
+        detail: JSON.stringify(task.result), error: task.error_code || undefined }))
       initialized.value = true; graphNodes.value = []; graphLinks.value = []
     } catch (cause) { error.value = errorMessage(cause) }
     finally { loading.value = false }
@@ -36,17 +37,21 @@ export const useIntelligenceStore = defineStore('intelligence', () => {
     const nodes = new Map<string, GraphNode>(), links: GraphLink[] = []
     for (const vuln of vulnerabilities.slice(0, 30)) {
       const graph = await apiGet<Relations>(`/relations/${vuln.id}`)
+      // Source documents can themselves have document_type="vulnerability".
+      // Their role is identified by document evidence IDs, not that content type.
+      const documentIds = new Set(graph.edges.map(edge => edge.evidence.document_id))
       for (const node of graph.nodes) nodes.set(node.id, { id: node.id, name: node.label,
-        category: node.type === 'vulnerability' ? '漏洞' : '情报',
-        description: node.type === 'vulnerability' ? '后端记录的漏洞与来源关联' : '后端当前版本来源文档',
-        intelligenceIds: graph.edges.filter(x => x.from === node.id || x.to === node.id).map(x => x.evidence.document_id) })
+        category: documentIds.has(node.id) ? '情报' : '漏洞',
+        description: documentIds.has(node.id) ? '后端保存的来源文档，与漏洞通过明确证据关联' : '后端记录的去重漏洞实体与来源关联',
+        intelligenceIds: [...new Set(graph.edges.filter(x => x.from === node.id || x.to === node.id).map(x => x.evidence.document_id))] })
       links.push(...graph.edges.map(x => ({ source: x.from, target: x.to, relation: '来源记录' })))
     }
-    if (scope === isDemo.value) { graphNodes.value = [...nodes.values()]; graphLinks.value = links }
+    if (scope === isDemo.value) { graphNodes.value = [...nodes.values()]; graphLinks.value = [...new Map(links.map(link => [`${link.source}:${link.target}:${link.relation}`, link])).values()] }
   }
-  async function loadDetail(id: string, hash?: string) {
+  async function loadDetail(id: string, hash?: string): Promise<IntelligenceItem> {
     const scope = isDemo.value
     let doc = await apiGet<Document>(`/documents/${id}`)
+    const currentHash = doc.content_hash
     if (doc.is_demo !== scope || scope !== isDemo.value) throw new Error('该来源属于另一资料范围，请切换后查看。')
     if (hash && hash !== doc.content_hash) {
       const revision = doc.revisions?.find(row => row.content_hash === hash)?.payload
@@ -64,7 +69,13 @@ export const useIntelligenceStore = defineStore('intelligence', () => {
         raw_payload: { aliases: strings(revision.aliases), products: strings(revision.products),
           vulnerability_id: typeof revision.vulnerability_id === 'string' ? revision.vulnerability_id : undefined } }
     }
-    return documentItem(doc, sources.value)
+    const item = documentItem(doc, sources.value)
+    if (hash && hash !== currentHash) return { ...item, structuredStatus: 'historical' }
+    try {
+      const enrichment = await apiGet<Enrichment>(`/documents/${id}/enrichment`)
+      if (enrichment.content_hash !== item.contentHash) return { ...item, structuredStatus: 'historical' }
+      return enrichedItem(item, enrichment)
+    } catch { return { ...item, structuredStatus: 'unavailable' } }
   }
   async function setScope(demo: boolean) { isDemo.value = demo; items.value = []; tasks.value = []; stats.value = null; graphNodes.value = []; graphLinks.value = []; await loadDemo() }
   const latest = computed(() => [...items.value].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)))

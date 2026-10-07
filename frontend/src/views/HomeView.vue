@@ -18,6 +18,7 @@ const {
   priority,
   riskSummary,
   total,
+  uniqueCves,
 } = useOverviewData(() => store.items)
 const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问答']
 </script>
@@ -58,6 +59,7 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
   >
     <div class="overview-layout">
       <OverviewMetrics :metrics="metrics" />
+      <p class="overview-summary">当前时间范围：{{ total }} 条来源记录 · {{ uniqueCves }} 个已记录的去重 CVE。未提供 CVE 的资料不计入该数量。</p>
       <section class="flow-strip" aria-label="系统处理流程">
         <h2>处理流程</h2>
         <div v-for="(step, index) in steps" :key="step" class="flow-step">
@@ -78,3 +80,7 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
     </div>
   </PageState>
 </template>
+
+<style scoped>
+.overview-summary { grid-column: 1 / -1; color: #667085; font-size: 11px; line-height: 1.7; margin: -10px 0 0; }
+</style>

@@ -23,6 +23,10 @@ export interface IntelligenceItem {
   isDemo?: boolean
   documentType?: string
   completeness?: string
+  cvssVectors?: string[]
+  sourceFields?: Record<string, string>
+  structuredStatus?: 'loaded' | 'unavailable' | 'historical'
+  versionFacts?: { product: string; ecosystem: string; fixed: string[]; lastAffected: string[]; introduced: string[] }[]
 }
 export interface GraphNode {
   id: string
@@ -46,6 +50,8 @@ export interface TaskRecord {
   time?: string
   detail: string
   error?: string
+  createdAt?: string
+  finishedAt?: string
 }
 export interface Citation {
   contentHash?: string

@@ -1,13 +1,39 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { errorMessage } from '@/api/http'
 import type { EChartsOption } from 'echarts'
 import ChartCanvas from '@/components/ChartCanvas.vue'
 import PageState from '@/components/PageState.vue'
+import GraphToolbar from '@/components/GraphToolbar.vue'
 import { useIntelligenceStore } from '@/stores/intelligence'
 
 const store = useIntelligenceStore()
 const selectedId = shallowRef('')
+const search = shallowRef(''), category = shallowRef('all')
+const focus = shallowRef(true)
+const graphCanvas = useTemplateRef<InstanceType<typeof ChartCanvas>>('graphCanvas')
+const availableCategories = computed(() => [...new Set(store.graphNodes.map(node => node.category))])
+const categoryNodes = computed(() => store.graphNodes.filter(node => category.value === 'all' || node.category === category.value))
+const filteredNodes = computed(() => store.graphNodes.filter(node =>
+  (category.value === 'all' || node.category === category.value)
+  && node.name.toLowerCase().includes(search.value.trim().toLowerCase())))
+const visibleIds = computed(() => new Set(filteredNodes.value.map(node => node.id)))
+const neighborhood = computed(() => new Set([selectedId.value, ...store.graphLinks
+  .filter(link => link.source === selectedId.value || link.target === selectedId.value)
+  .flatMap(link => [link.source, link.target])]))
+const displayedNodes = computed(() => {
+  if (search.value.trim()) {
+    const matches = visibleIds.value
+    const ids = new Set([...matches, ...store.graphLinks.filter(link => matches.has(link.source) || matches.has(link.target)).flatMap(link => [link.source, link.target])])
+    return categoryNodes.value.filter(node => ids.has(node.id))
+  }
+  return focus.value ? categoryNodes.value.filter(node => neighborhood.value.has(node.id)) : categoryNodes.value
+})
+const displayedIds = computed(() => new Set(displayedNodes.value.map(node => node.id)))
+watch(filteredNodes, nodes => { if (search.value.trim() && nodes.length === 1) selectedId.value = nodes[0]!.id })
+async function resetView() { search.value = ''; category.value = 'all'; focus.value = true; await nextTick(); graphCanvas.value?.resetView() }
+watch(categoryNodes, nodes => { if (!nodes.some(node => node.id === selectedId.value)) selectedId.value = nodes[0]?.id || '' })
+watch(() => store.isDemo, () => { search.value = ''; category.value = 'all' })
 const graphLoading = shallowRef(false), graphError = shallowRef('')
 async function loadGraph() { graphLoading.value = true; graphError.value = ''; try { await store.loadGraph(); selectedId.value = store.graphNodes[0]?.id || '' } catch (error) { graphError.value = errorMessage(error) } finally { graphLoading.value = false } }
 onMounted(() => { void loadGraph() })
@@ -25,7 +51,7 @@ const graphOption = computed<EChartsOption>(() => ({
   tooltip: { show: false },
   legend: [
     {
-      data: categories,
+      data: availableCategories.value,
       top: 0,
       icon: 'circle',
       itemWidth: 10,
@@ -46,7 +72,8 @@ const graphOption = computed<EChartsOption>(() => ({
       roam: true,
       zoom: 0.82,
       draggable: true,
-      force: { repulsion: 900, edgeLength: 170, gravity: 0.14, initLayout: 'circular' },
+      force: { repulsion: displayedNodes.value.length > 15 ? 120 : 500,
+        edgeLength: displayedNodes.value.length > 15 ? 60 : 150, gravity: 0.3, initLayout: 'circular' },
       label: {
         show: true,
         position: 'bottom',
@@ -78,7 +105,7 @@ const graphOption = computed<EChartsOption>(() => ({
         lineStyle: { color: '#5f6f8b', width: 3, opacity: 1 },
       },
       categories: categories.map((name, index) => ({ name, itemStyle: { color: colors[index] } })),
-      data: store.graphNodes.map((node) => ({
+      data: displayedNodes.value.map((node) => ({
         id: node.id,
         name: node.name,
         category: categories.indexOf(node.category),
@@ -87,12 +114,16 @@ const graphOption = computed<EChartsOption>(() => ({
           color: colors[categories.indexOf(node.category)],
           borderColor: selectedId.value === node.id ? '#4262ed' : '#fff',
           borderWidth: selectedId.value === node.id ? 4 : 2,
+          opacity: search.value.trim() ? (visibleIds.value.has(node.id) ? 1 : 0.75) : (neighborhood.value.has(node.id) ? 1 : 0.75),
         },
+        label: { opacity: 1, width: 180, overflow: 'truncate' },
       })),
-      links: store.graphLinks.map((link) => ({
+      links: store.graphLinks.filter(link => displayedIds.value.has(link.source) && displayedIds.value.has(link.target)).map((link) => ({
         source: link.source,
         target: link.target,
         relation: link.relation,
+        lineStyle: { opacity: neighborhood.value.has(link.source) && neighborhood.value.has(link.target) ? 1 : 0.3,
+          color: link.source === selectedId.value || link.target === selectedId.value ? '#536db2' : '#8290a8' },
       })),
     },
   ],
@@ -119,20 +150,22 @@ const graphOption = computed<EChartsOption>(() => ({
         <div class="panel-title">
           <div>
             <h2>实体关系网络</h2>
-            <p>后端记录的漏洞与文档关联；最多展示30个漏洞</p>
+            <p>漏洞与来源文档关联；载入最多30个漏洞。{{ focus ? '当前聚焦实体及直接关联' : '当前显示完整已载入图谱' }}</p>
           </div>
           <span class="panel-index">拖拽 · 缩放 · 点击</span>
         </div>
+        <GraphToolbar v-model:search="search" v-model:category="category" v-model:focus="focus" :categories="availableCategories" :count="filteredNodes.length" :total="store.graphNodes.length" @reset="resetView" />
         <ChartCanvas
+          ref="graphCanvas"
           :option="graphOption"
-          height="540px"
+          :height="focus ? 'clamp(280px, 38vh, 400px)' : 'clamp(400px, 60vh, 540px)'"
           renderer="svg"
           label="来源实体关系图；下方提供可用键盘选择的实体列表"
           @node-click="selectedId = $event"
         />
         <div class="graph-entity-list" aria-label="选择图谱实体">
           <button
-            v-for="node in store.graphNodes"
+            v-for="node in filteredNodes"
             :key="node.id"
             type="button"
             :class="['entity-button', { selected: selectedId === node.id }]"
@@ -141,6 +174,7 @@ const graphOption = computed<EChartsOption>(() => ({
           >
             {{ node.name }}
           </button>
+          <p v-if="!filteredNodes.length" class="muted" role="status">没有匹配的实体，请更换关键词或恢复视图。</p>
         </div>
       </section>
       <aside class="panel graph-detail">

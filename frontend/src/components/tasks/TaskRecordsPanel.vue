@@ -11,6 +11,7 @@ import {
 } from '@element-plus/icons-vue'
 import PageState from '@/components/PageState.vue'
 import type { TaskRecord, TaskStage, TaskStatus } from '@/types'
+import { taskDuration, taskSummary, taskTime } from '@/utils/taskPresentation'
 
 const props = defineProps<{ tasks: TaskRecord[]; stages: TaskStage[] }>()
 const stage = shallowRef<TaskStage | '全部'>('全部')
@@ -52,17 +53,19 @@ const statusClass: Record<TaskStatus, string> = {
               <strong>{{ task.name }}</strong>
               <span :class="['task-status', statusClass[task.status]]">{{ task.status }}</span>
             </div>
-            <p>{{ task.detail }}</p>
+              <p>{{ taskSummary(task.detail) }}</p>
+              <details class="task-raw"><summary>查看原始任务结果</summary><pre>{{ task.detail }}</pre></details>
             <div class="task-meta">
               <span>{{ task.id }}</span>
               <span class="task-stage-tag">{{ task.stage }}阶段</span>
               <span class="task-time">
                 <Clock aria-hidden="true" />
                 <time v-if="task.time" :datetime="task.time.replace(' ', 'T')">{{
-                  task.time
+                  taskTime(task.time)
                 }}</time>
                 <span v-else>暂无数据</span>
               </span>
+              <span v-if="taskDuration(task)">创建至完成 {{ taskDuration(task) }}</span>
             </div>
             <div v-if="task.error" class="task-error">
               <WarningFilled aria-hidden="true" />
@@ -74,3 +77,10 @@ const statusClass: Record<TaskStatus, string> = {
     </PageState>
   </section>
 </template>
+
+<style scoped>
+.task-raw { margin: 8px 0 12px; color: #667085; font-size: 11px; }
+.task-raw summary { cursor: pointer; }
+.task-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.task-raw summary:focus-visible { outline: 2px solid #4262ed; outline-offset: 3px; }
+</style>

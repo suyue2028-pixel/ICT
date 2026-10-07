@@ -4,6 +4,7 @@ import { ChatDotRound, Clock, Right } from '@element-plus/icons-vue'
 import { useIntelligenceStore } from '@/stores/intelligence'
 import WorkspaceNavigation from './WorkspaceNavigation.vue'
 import WorkspaceSearch from './WorkspaceSearch.vue'
+import RuntimeStatus from './RuntimeStatus.vue'
 import SidebarSwipeFeedback from './SidebarSwipeFeedback.vue'
 import { useSidebarSwipeNavigation } from '@/composables/useSidebarSwipeNavigation'
 
@@ -51,12 +52,7 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
     </aside>
     <div class="workspace">
       <main id="main-content" class="page-content" tabindex="-1">
-        <div class="demo-notice" role="note">
-          <span class="notice-icon" aria-hidden="true">i</span>
-          <span
-            ><strong>本地环境</strong> · 当前连接后端与 Agent。未配置大模型时使用资料摘录；虚构样本与真实资料分开。</span
-          >
-        </div>
+        <RuntimeStatus />
         <slot />
       </main>
       <footer class="workspace-footer">安全情报工作台 <span>本地集成环境</span></footer>

@@ -2,6 +2,7 @@
 import { nextTick, useTemplateRef, watch } from 'vue'
 import assistantAvatar from '@/assets/assistant-avatar.svg'
 import type { ChatMessage } from '@/types'
+import AnswerContent from './AnswerContent.vue'
 
 const props = defineProps<{ messages: ChatMessage[]; sending: boolean }>()
 const feed = useTemplateRef<HTMLElement>('feed')
@@ -61,7 +62,7 @@ watch(
           ><time>{{ message.time }}</time>
         </div>
         <div v-if="message.generationMode" class="simulated-label small">{{ message.generationMode }}</div>
-        <div class="message-bubble">{{ message.content }}</div>
+        <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" /><template v-else>{{ message.content }}</template></div>
         <details v-if="message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :key="index"><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
         <p v-if="message.warnings?.length" class="muted">{{ warningText(message.warnings) }}</p>
         <div v-if="message.citations?.length" class="citation-box">
@@ -81,6 +82,6 @@ watch(
         </div>
       </div>
     </article>
-    <div v-if="sending" class="thinking" role="status">正在检索资料并生成回答…</div>
+    <div v-if="sending" class="thinking" role="status">正在检索资料并整理回答…</div>
   </div>
 </template>

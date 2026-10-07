@@ -4,6 +4,7 @@ import type { IntelligenceItem } from '@/types'
 import { errorMessage } from '@/api/http'
 import { useRoute } from 'vue-router'
 import PageState from '@/components/PageState.vue'
+import SourceVersionFacts from '@/components/intelligence/SourceVersionFacts.vue'
 import { severityNames, useIntelligenceStore } from '@/stores/intelligence'
 
 const route = useRoute()
@@ -56,7 +57,9 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
             <div class="panel-title">
               <div>
                 <h2>结构化信息</h2>
-                <p>缺失字段如实显示“暂无数据”</p>
+                <p v-if="item.structuredStatus === 'unavailable'">结构化字段获取失败；原文仍可查看，缺失字段暂未核对。</p>
+                <p v-else-if="item.structuredStatus === 'historical'">当前为引用版本，未使用其他版本的结构化字段。</p>
+                <p v-else>结构化字段来自当前版本来源记录；未提供的字段如实标记。</p>
               </div>
             </div>
             <div class="field-grid">
@@ -64,15 +67,16 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
                 <span>CVE 编号</span><strong>{{ item.cve || '暂无数据' }}</strong>
               </div>
               <div>
-                <span>CVSS 评分</span><strong>{{ item.cvss ?? '暂无数据' }}</strong>
+                <span>CVSS 评分</span><strong>{{ item.cvss ?? '暂无数据' }}</strong><small v-if="item.cvss === undefined && item.cvssVectors?.length">来源提供向量，未提供数值评分</small>
               </div>
               <div>
-                <span>CWE 弱点</span><strong>{{ item.cwe || '暂无数据' }}</strong>
+                <span>CWE 弱点</span><strong>{{ item.cwe || '暂无数据' }}</strong><small v-if="!item.cwe && item.sourceFields?.cwe === 'unknown'">来源未提供</small>
               </div>
               <div>
                 <span>风险等级</span><strong>{{ severityNames[item.severity] }}</strong>
               </div>
             </div>
+            <SourceVersionFacts :item="item" />
           </section>
           <section class="panel">
             <div class="panel-title">
@@ -145,3 +149,7 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
     </template>
   </PageState>
 </template>
+
+<style scoped>
+.field-grid small { display: block; color: #667085; font-size: 11px; margin-top: 6px; line-height: 1.7; }
+</style>

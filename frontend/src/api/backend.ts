@@ -16,6 +16,34 @@ export interface Vulnerability { id: string; identifier: string; title: string; 
 export interface Relations { nodes: { id: string; type: string; label: string }[];
   edges: { from: string; to: string; type: string; evidence: { document_id: string; content_hash: string; source_url: string } }[] }
 export interface Stats { documents: number; vulnerabilities: number; category_count: number }
+export interface Enrichment { content_hash: string; source: Record<string, { state: string; value: unknown }> }
+export function enrichedItem(item: IntelligenceItem, enrichment: Enrichment): IntelligenceItem {
+  const record = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const strings = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string') : []
+  const known = (field: string) => enrichment.source[field]?.state === 'known'
+    ? record(enrichment.source[field]?.value) : {}
+  const cwe = strings(known('cwe').ids)
+  const vectors = known('cvss').vectors
+  const cvss = Array.isArray(vectors) ? vectors.map(record) : []
+  const score = cvss.find(row => typeof row.score === 'number' && row.score >= 0 && row.score <= 10)?.score
+  const affected = known('affected').items
+  const facts = (Array.isArray(affected) ? affected : []).map(record).map(row => {
+    const pkg = record(row.package)
+    const ranges = (Array.isArray(row.ranges) ? row.ranges : []).map(record)
+    const events = ranges.flatMap(range => (Array.isArray(range.events) ? range.events : []).map(record))
+    const versions = (key: string) => [...new Set(events.flatMap(event => typeof event[key] === 'string' ? [event[key] as string] : []))]
+    return { product: typeof pkg.name === 'string' ? pkg.name : '未标明产品',
+      ecosystem: typeof pkg.ecosystem === 'string' ? pkg.ecosystem : '',
+      fixed: versions('fixed'), lastAffected: versions('last_affected'), introduced: versions('introduced') }
+  })
+  return { ...item, structuredStatus: 'loaded', cwe: cwe.join('、') || item.cwe,
+    cvss: typeof score === 'number' ? score : item.cvss,
+    cvssVectors: cvss.flatMap(row => typeof row.vector === 'string' ? [row.vector] : []),
+    sourceFields: Object.fromEntries(Object.entries(enrichment.source).map(([key, field]) => [key, field.state])),
+    versionFacts: facts }
+}
 export async function allPages<T>(path: string, isDemo: boolean) {
   const items: T[] = []
   for (let page = 1; page <= 100; page++) {

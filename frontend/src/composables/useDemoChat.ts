@@ -15,11 +15,19 @@ export function useDemoChat(getItems: () => IntelligenceItem[]) {
     '你好！我会从后端同步的资料中检索证据，并在回答中保留来源。可以输入漏洞编号，或询问 AI 安全风险。', time: '' }])
   const sending = shallowRef(false), sessionId = shallowRef<string | null>(null)
   let sequence = 0, context = 0
+  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations'>
+  let metadata: Metadata[] = []
+  const metadataKey = (id: string) => `ict:answer-meta:${id}`
+  function remember(id: string, row: Metadata) {
+    metadata.push(row)
+    try { sessionStorage.setItem(metadataKey(id), JSON.stringify(metadata)) } catch { /* Storage can be disabled. */ }
+  }
   const sessionKey = () => `ict:session:${store.isDemo ? 'demo' : 'real'}`
   function clearView() {
     context += 1
     sessionId.value = null
     messages.value = [{ id: 'welcome', role: 'assistant', content: '请在当前资料范围输入问题。', time: '' }]
+    metadata = []
   }
   async function restore() {
     const version = context, key = sessionKey()
@@ -33,14 +41,20 @@ export function useDemoChat(getItems: () => IntelligenceItem[]) {
         citations: Answer['evidence']; created_at?: string }[] }>(`/agent/sessions/${stored}`)
       if (version !== context) return
       if (result.is_demo !== store.isDemo) throw new Error('session_scope_mismatch')
+      try { metadata = JSON.parse(sessionStorage.getItem(metadataKey(stored)) || '[]') as Metadata[]
+        if (!Array.isArray(metadata)) metadata = [] } catch { metadata = [] }
+      let assistantIndex = 0
       if (result.messages.length) messages.value = result.messages.map((row, index) => {
         const date = row.created_at ? new Date(row.created_at) : null
+        const saved = row.role === 'assistant' ? metadata[assistantIndex++] : undefined
         return { id: row.id || `history-${index}`, role: row.role,
           content: row.content, time: date && Number.isFinite(date.getTime()) ? clock.format(date) : '',
-          generationMode: row.role === 'assistant' ? '历史消息 · 生成模式未记录' : undefined,
+          generationMode: row.role === 'assistant' ? saved?.generationMode || '历史消息 · 生成模式未记录' : undefined,
+          warnings: saved?.warnings,
           evidence: row.citations, citations: row.citations.filter((item, index, rows) => rows.findIndex(x => x.document_id === item.document_id && x.content_hash === item.content_hash) === index).map(item => ({ intelligenceId: item.document_id,
-            contentHash: item.content_hash, label: getItems().find(x => x.id === item.document_id)?.title || '原始来源文档' })) }
+            contentHash: item.content_hash, label: saved?.citations?.find(x => x.intelligenceId === item.document_id && x.contentHash === item.content_hash)?.label || getItems().find(x => x.id === item.document_id)?.title || '原始来源文档' })) }
       })
+      while (metadata.length < assistantIndex) metadata.push({})
     } catch {
       if (version === context) { sessionId.value = null; sessionStorage.removeItem(key) }
     }
@@ -77,6 +91,10 @@ export function useDemoChat(getItems: () => IntelligenceItem[]) {
       sessionStorage.setItem(key, answer.session_id)
       if (version !== context) return
       sessionId.value = answer.session_id
+      remember(answer.session_id, { generationMode: modeLabel(answer, response.headers),
+        warnings: answer.partial_errors.filter(x => !x.startsWith('generation_mode:')),
+        citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
+          contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) })
       messages.value = [...messages.value, { id: `a-${++sequence}`, role: 'assistant', content: answer.answer,
         time: clock.format(new Date()), evidence: answer.evidence, requestId: answer.request_id,
         generationMode: modeLabel(answer, response.headers),

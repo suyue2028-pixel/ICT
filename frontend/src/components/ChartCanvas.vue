@@ -29,6 +29,11 @@ const emit = defineEmits<{ nodeClick: [id: string] }>()
 const element = useTemplateRef<HTMLElement>('chartEl')
 let chart: EChartsType | undefined
 let observer: ResizeObserver | undefined
+function resetView() {
+  chart?.clear()
+  chart?.setOption({ ...props.option, animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches })
+}
+defineExpose({ resetView })
 
 onMounted(() => {
   if (!element.value) return

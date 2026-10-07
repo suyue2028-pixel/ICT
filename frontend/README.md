@@ -1,127 +1,83 @@
-# 前端真实接口联调（2026-10-04）
+# AI 安全知识情报系统 · 前端
 
-已接业务后端 documents/sources/tasks/stats/intelligence/relations 与 /agent/query，不导入原 mock 数据来填充页面。真实/虚构范围独立，会话持久保存于后端；引用按 document_id + content_hash 打开对应原文版本。
+Vue 3 + Vite + TypeScript 前端，使用 Vue Router、Pinia、Element Plus、Axios、ECharts。当前版本调用小组后端与 Agent 的真实接口；保留浅色仪表盘风格。
 
-本机根项目的 `scripts/run_fullstack.py start --detach` 同时启动三模块，页面 http://127.0.0.1:5173。前端独立启动需要 Node 24.12+、npm ci，后端默认 http://127.0.0.1:8010，可设置 ICT_BACKEND_ORIGIN。
+## 启动
 
-用户令牌只在内存中；本地开发可通过 ICT_LOCAL_SESSION_FILE 指定后端签发的普通短期用户session JSON文件（access_token/expires_at）。该文件不能提交。Vite /__local/session 仅校验本机Host和同源Origin，no-store；生产需要后端登录或手动短期用户令牌。不要向前端注入管理员、服务或模型密钥。
-
-问答显示真实响应头/模式说明，模型失败后摘录与无模型摘录分别说明。历史消息尚无持久生成模式，明确显示未知。缺失评分为unknown，未知结构字段不造值，图谱只显示后端记录的来源关联（最多30个漏洞）。
-
-本轮 vue-tsc --build 和 vite build 通过，页面验证问答/追问/刷新恢复/scope/详情/列表/图谱/任务。真实模型生成未验证。整体接入及数据口径见 agent-dev 的 docs/fullstack_local.md 和 docs/fullstack_validation.md。以下为此前前端阶段资料：
-
-# 智能体驱动的 AI 安全知识情报系统 · 前端
-
-Vue 3 + Vite + TypeScript 比赛演示前端，使用 Vue Router、Pinia、Element Plus、Axios 和 ECharts。当前所有业务页面均显示 **演示数据** 标记。
-
-界面参照安全情报仪表盘模板，采用浅灰蓝背景、白色面板与蓝色重点色。顶部包含 AI 渐变文字品牌、情报搜索及演示状态；桌面使用带图标和文字的侧栏导航，手机使用顶部菜单。首页包含四张指标卡、按风险等级展示的发布时间趋势、带数量与占比的风险环图、重点风险情报表格、最近情报、来源统计及处理流程。情报搜索与分页、详情证据、图谱选择、多轮模拟问答和任务阶段筛选沿用原有功能。
-
-首页时间范围提供 7 天、30 天、90 天和 1 年，默认 30 天；以**演示样本最新发布日期**为截止日期，包含截止日，同步筛选指标、图表与首页列表。当前只有 8 条样本，因此不同范围可能显示相同结果。顶部日期是样本日期，不是后端同步时间；未添加模板中的虚构增长率、CISA 数据、账户和通知功能。
-
-## 启动与检查
-
-先确保当前终端能运行 Node.js 和 npm，版本要求见 `package.json` 的 `engines`（Node.js `^22.18.0` 或 `>=24.12.0`）。队友获取代码后，在前端项目目录执行：
+Node.js 版本要求见 package.json：^22.18.0 或 >=24.12.0。进入本仓库 frontend 目录：
 
 ```powershell
-npm.cmd ci             # 首次安装依赖时执行
-npm.cmd run dev
+npm.cmd ci
 npm.cmd run type-check
 npm.cmd run build
+npm.cmd run dev
 ```
 
-构建后可运行 `npm.cmd run preview -- --host 127.0.0.1 --port 4173`，在本机打开 `http://127.0.0.1:4173/` 查看构建后的演示页面。情报中心的搜索、风险筛选和页码保存在地址栏参数中，复制该地址可直接打开相同筛选结果。
+打开 http://127.0.0.1:5173/。也可使用 start-dev.cmd 启动已安装依赖的前端。5173 使用固定端口，已有开发服务占用时需先关闭重复服务。
 
-终端会打印开发地址，通常是 `http://localhost:5173/`。Windows 下也可以在 Node.js/npm 已可用、依赖已安装的终端运行 `.\start-dev.cmd`；脚本会切换到项目目录并检查运行条件，不包含个人电脑的工具路径。生产文件输出到 `dist/`；本仓库没有配置后端 Docker 服务。
+本目录只启动前端。后端、数据库和 Agent 需按各模块说明独立启动，未在本目录增加或修改队友服务。当前小组模块分别在 codex/frontend-demo、feature/backend-integration、agent-dev 分支；克隆默认分支不等于取得完整系统。
 
-## 提交到小组仓库
+## 接口与本地配置
 
-当前版本应标注为“前端演示版”：页面可交互，但尚未接入真实后端或 RAG。
+VITE_API_BASE_URL 沿用统一 API 模块，推荐 /api/v1；可复制 .env.example 为 .env.local。开发服务器把 /api 代理到后端，默认 http://127.0.0.1:8010。后端地址变化时在启动终端设置：
 
-1. 先克隆小组现有仓库，并从其默认分支创建自己的开发分支。
-2. 按小组已有结构，把前端代码放到约定目录（例如 `frontend/`）；已有前端文件时先确认差异，再合并。
-3. 提交 `src/`、`public/`、项目配置、`package.json`、`package-lock.json`、`README.md`、`.env.example` 和 `start-dev.cmd`。
-4. `node_modules/`、`dist/`、本地环境文件、个人编辑器配置和测试截图不属于交付源码；复制前端到小组仓库时，保留本项目的 `.gitignore`。
-5. 在前端目录运行类型检查和构建后，推送开发分支并创建 Pull Request，由小组审核合并。
+```powershell
+$env:ICT_BACKEND_ORIGIN = 'http://127.0.0.1:8010'
+npm.cmd run dev
+```
 
-仓库地址、目标目录、分支和写入权限需与组长确认。小组已有提交历史时，应在克隆后的仓库中提交代码，保持原有历史。
+问答需要后端签发的普通短期用户令牌。开发时通过 ICT_LOCAL_SESSION_FILE 指定本机 session JSON 文件（字段 access_token、expires_at、is_demo）；该文件必须由你们的后端认证流程签发，不能提交仓库。生产环境需接入约定的用户登录流程或填写普通短期用户令牌。
 
-## 演示路径
+```powershell
+$env:ICT_LOCAL_SESSION_FILE = 'C:\path\to\user-session.json'
+```
+
+顶部本地运行检查可额外配置：
+
+```powershell
+$env:ICT_LOCAL_AGENT_ENV_FILE = 'C:\path\to\private-agent.env'
+$env:ICT_LOCAL_AGENT_ORIGIN = 'http://127.0.0.1:9011'
+```
+
+private-agent.env 使用已有服务凭证 RAG_SERVICE_TOKEN。Agent 在其他本机端口（例如 9001）运行时调整 ICT_LOCAL_AGENT_ORIGIN；省略时默认 9011。上述 ICT_ 配置由启动终端传给开发服务器，仅服务端使用，不是 VITE_ 浏览器变量。不要把管理员、服务或模型密钥写入 VITE_ 环境变量。
+
+Vite 的 /__local/session 和 /__local/runtime 只用于本地开发，校验本机 Host、同源 Origin，并返回 no-store。运行状态桥接访问既有后端 /health/ready 和 Agent /v1/health，服务凭证仅在 Node 进程中读取，运行检查返回内容不包含凭证。未配置检查时显示“未检查”，不会宣称 Agent 已连接。
+
+## 页面与优化内容
 
 | 路径 | 内容 |
 | --- | --- |
-| `/` | 总览：流程、指标、风险分布、趋势、来源、最近情报 |
-| `/intelligence` | 搜索、风险筛选、分页 |
-| `/intelligence/DEMO-001` | 详情、CVE/CVSS/CWE、受影响产品、建议、来源与证据 |
-| `/graph` | 可点击、拖动、缩放的演示实体关系图 |
-| `/qa` | 多轮对话界面、本地模拟回答及情报引用 |
-| `/tasks` | 采集、富化、审核、问答的演示状态与错误样例 |
+| / | 指标、发布时间趋势、风险分布、来源统计、最近情报及流程 |
+| /intelligence | 搜索、风险筛选、分页；筛选条件保存在 URL |
+| /intelligence/{document_id} | 原文、来源、CWE、CVSS 向量、修复版本及结构化字段状态 |
+| /graph | 真实来源关系、实体搜索、类别筛选、聚焦与恢复视图 |
+| /qa | 多轮问答、回答模式、原文证据与版本引用 |
+| /tasks | 后端采集任务、状态、中文结果摘要、耗时及错误 |
 
-建议现场演示路线：**总览 → 情报中心 → DEMO-001 详情 → 知识图谱 → 问答 → 运行状态**。
+- 服务状态分别展示后端、Agent、当前资料范围的索引事件；支持手动检查及每 30 秒自动更新，页面隐藏时暂停定时请求。
+- 总览区分来源记录数和已记录的去重 CVE，未知风险使用灰色。同一漏洞可以有多份来源记录，缺少 CVE 的资料不计入 CVE 数量。
+- 详情从既有 /documents/{id}/enrichment 读取同一 content_hash 的字段。数值评分缺失时不自行计算，历史引用不混用当前版本结构化信息。
+- 问答将原文摘录、版本信息整理成卡片；被截断的 JSON 只展示其中明确出现的字段，保留原始片段及证据核对入口。
+- 新回答的模式、警告和来源标题保存在当前浏览器 sessionStorage，刷新后可恢复。旧会话缺少模式记录时显示未知，不补造历史模式。后端仍保存会话正文和引用。
+- 图谱按关系证据中的 document_id 区分来源文档与去重漏洞实体，最多加载 30 个漏洞及其来源。默认聚焦选中实体和直接关联；取消聚焦可查看全部已载入节点。图谱代表后端明确来源关联，不代表已完成图谱推理。
+- 任务摘要保留可展开的原始结果；“创建至完成”耗时包含排队等待，不能视作纯执行耗时。当前任务页只统计后端返回的采集任务，富化、审核任务接口尚需验收，不提供假执行按钮。
 
-桌面端将指针停在左侧导航栏的空白区域，可用触摸板横向滑动切换页面：向左下一页、向右上一页。顺序与菜单一致，一次滑动及其惯性事件只切换一页；第一、最后一页不会循环。详情页按“情报中心”所在位置切换。菜单链接、问答入口、正文区域、上下滚动和缩放不参与此手势；滑动停止后才能开始下一次切换。
+## 演示与限制
 
-滑动时会在指针附近显示方向箭头、目标页面和进度；达到切换阈值后显示切换结果，停止滑动后自动消失。惯性回弹不会翻转本次箭头；到达首尾页时显示边界提示。提示不占据页面布局、不拦截点击。
+后端的真实资料与显式虚构样本分别查询，不使用旧 src/mock 数据替代网络失败。已有 mock 文件保留作为历史资源，没有用它们填充真实接口页面。
 
-## 模拟数据与限制
+建议路线：真实资料总览 → 搜索一条实际漏洞 → 详情核对来源 → 图谱选择实体 → 问答及追问 → 点击引用查看对应版本 → 运行状态。
 
-- `src/mock/intelligence.ts` 保存全部虚构情报、图谱和任务记录；`src/mock/answers.ts` 是本地关键词匹配回答。记录编号以 `DEMO-` 开头，不代表真实漏洞、采集结果或审核结论。
-- 当前前端没有调用采集、富化、审核、RAG、知识图谱或智能体后端。图谱由静态关系生成；任务状态和时间是样例；任务页没有执行按钮。
-- 问答不会调用模型或 RAG，回答会标记“模拟回答”。对话只保存在当前页面内，刷新后清空。引用链接指向本地演示情报，并非外部原文。
-- 详情字段缺失时展示“暂无数据”。加载、空结果及数据加载错误视图已提供；真实网络错误处理需接口联调后验证。
-- `src/api/http.ts` 提供统一 Axios 客户端与泛型请求封装，继续使用 `VITE_API_BASE_URL`（见 `.env.example`）。**接口路径尚未确定，演示页面不会发起 API 请求。** 请不要把模型密钥写入 `VITE_` 环境变量。
+2026-10-07 本地已验证：45 条 OSV 真实情报、3 条虚构样本隔离；本地 E5 索引及检索；两轮问答和 4 段引用逐段匹配保存原文；问答卡片、刷新恢复模式、详情字段、图谱搜索/类别/空状态、任务摘要及窄屏布局。测试数据属于独立本地数据库，不随前端源码上传，其他成员的数据数量可能不同。
 
-## 联调前需要确认的接口契约
+当前验证的回答方式是 extractive（资料摘录），不是远程生成式模型回答；远程 LLM 调用数为 0。远程生成、所有采集来源、独立富化/审核任务、生产部署及并发性能仍待联调，不能写成已完成。
 
-下表的路径均为**讨论用候选路径，不表示队友已经实现**。确认后再在 `src/api/` 中增加具体请求函数，并将 Pinia store 的数据源切换到真实接口。需一并确认鉴权、CORS、时间格式、空值、错误响应、分页总数和可公开演示的数据。
+## 构建与部署
 
-| 负责人 | 候选接口 | 请求参数或请求体 | 需确认的响应字段 |
-| --- | --- | --- | --- |
-| 成员一 | `GET /api/intelligence` | `q`, `severity`, `page`, `page_size`；明确页码从 0 还是 1 开始 | `items[]`, `total`；每条 `id`, `title`, `summary`, `severity`, `published_at`, `source`, `cve`, `cvss`, `cwe`, `products[]`, `recommendation`, `evidence[]`, `tags[]` |
-| 成员一 | `GET /api/intelligence/{id}` | 路径参数 `id` | 与列表条目相同的详情字段，特别是证据 `title`, `url`, `excerpt`；404 格式 |
-| 成员一 | `GET /api/intelligence/stats` | 可选时间范围 `from`, `to` | `total`, `severity_counts`, `daily_counts`, `source_counts`；统计口径与时区 |
-| 成员一 | `GET /api/tasks` | `stage`, `status`, `page`, `page_size` | `items[]`, `total`；每条 `id`, `stage`, `name`, `status`, `started_at`, `finished_at`, `detail`, `error` |
-| 成员二 | `GET /api/graph` | 可选 `intelligence_id`, `depth` | `nodes[]` 的 `id`, `name`, `category`, `description`, `intelligence_ids[]`；`links[]` 的 `source`, `target`, `relation` |
-| 成员二 | `POST /api/chat` | `conversation_id` 可选，`message`，是否需要历史 `messages[]` | `conversation_id`, `answer`, `citations[]`（至少 `intelligence_id`, `label`, `url` 或证据定位）；是否流式及协议 |
-| 成员二 | `GET /api/conversations/{id}`（如支持持久化） | 路径参数 `id` | 消息 `role`, `content`, `created_at`, `citations[]`；若无持久化请明确说明 |
+type-check 和 build 已通过；ECharts 相关 chunk 约 620 KB，有体积警告，尚未完成拆包优化。构建输出 dist，可通过 npm.cmd run preview -- --host 127.0.0.1 --port 4173 检查静态产物。
 
-讨论用响应示例，字段名和路径都需要队友确认：
+2026-10-07 安装后的 npm audit 报告现有锁文件有 6 项告警（5 high、1 critical）。本次保持依赖及锁文件不变，没有执行 audit fix；构建通过不代表依赖安全验收通过，需单独评估升级。
 
-```json
-{
-  "items": [{
-    "id": "example-id",
-    "title": "示例标题",
-    "summary": "示例摘要",
-    "severity": "high",
-    "published_at": "2026-09-26T09:30:00+08:00",
-    "source": "示例来源",
-    "cve": null,
-    "cvss": null,
-    "cwe": "CWE-778",
-    "products": ["示例产品"],
-    "recommendation": "示例建议",
-    "evidence": [{"title": "示例证据", "url": null, "excerpt": "示例摘录"}],
-    "tags": ["审计"]
-  }],
-  "total": 1
-}
-```
+生产环境需配置 SPA 路由回退以及 /api/v1 到真实后端的转发，不能依赖 Vite 开发代理、本地会话路由或运行状态桥接。生产登录、健康状态接口及完整部署方案需与队友确认，本目录不虚构后端服务。
 
-讨论用图谱和问答响应示例：
-
-```json
-{
-  "nodes": [{"id": "n1", "name": "示例产品", "category": "产品", "description": "说明", "intelligence_ids": ["example-id"]}],
-  "links": [{"source": "n1", "target": "n2", "relation": "影响"}]
-}
-```
-
-```json
-{
-  "conversation_id": "example-conversation",
-  "answer": "示例回答",
-  "citations": [{"intelligence_id": "example-id", "label": "示例标题", "url": null}]
-}
-```
-
-成员一需提供真实列表、详情、统计和任务接口的 OpenAPI 或示例响应；成员二需提供图谱、问答及引用的数据定义，并说明智能体执行过程是否有可展示接口。两位队友还需确认演示环境地址、跨域设置与可公开使用的测试数据。
+node_modules、dist、本地 .env、会话文件、服务凭证、截图和个人编辑器配置不属于提交内容。

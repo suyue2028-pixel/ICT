@@ -59,7 +59,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
     }),
   )
   const metrics = computed<OverviewMetric[]>(() => [
-    { label: '情报总数', value: items.value.length, caption: '当前时间范围来源记录', tone: 'blue' },
+    { label: '情报总数', value: items.value.length, caption: '来源记录数，同一漏洞可有多条', tone: 'blue' },
     {
       label: '严重风险',
       value: items.value.filter((item) => item.severity === 'critical').length,
@@ -81,7 +81,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
   ])
 
   const severityOption = computed<EChartsOption>(() => ({
-    color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98'],
+    color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98', '#94a3b8'],
     tooltip: {
       trigger: 'item',
       backgroundColor: '#fff',
@@ -106,7 +106,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
   const trendOption = computed<EChartsOption>(() => {
     const dates = [...new Set(items.value.map((item) => item.publishedAt))].sort()
     return {
-      color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98'],
+      color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98', '#94a3b8'],
       legend: {
         top: 0,
         right: 0,
@@ -207,5 +207,6 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
     priority,
     riskSummary,
     total: computed(() => items.value.length),
+    uniqueCves: computed(() => new Set(items.value.flatMap(item => item.cve ? [item.cve.toUpperCase()] : [])).size),
   }
 }
