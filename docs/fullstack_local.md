@@ -30,6 +30,14 @@ cd /Users/gshy/Desktop/ICT-RAG
 
 日志：`reports/local/fullstack/logs/`；状态：`processes.json`。数据库在 `.cache/fullstack/postgres-data`，Redis AOF 在 `.cache/fullstack/redis-data`，Agent 索引在 `data/backend-rag.db`。不要通过删除这些目录来重启服务。
 
+### 前端更新与运行副本（2026-10-07）
+
+GitHub 分支更新后，本机已有的运行副本不会自动替换；`start` 会保留已有源码。更新时先检查并备份本地修改，再同步对应前端分支源码并重启 Vite。只刷新浏览器或执行 `git fetch`，都不会替换这个被 Git 忽略的运行副本。
+
+本机前端现已同步到 `codex/frontend-demo` 的 `5741bdb43c60983456b2e68fb62f4149b99183b6`，新增服务状态栏、证据展示、版本提取信息和图谱工具栏。页面整体布局延续原版；可通过顶部“后端 · 正常 / Agent · 正常”和知识事件数量识别新版。
+
+启动器为新版 Vite 状态桥提供实际后端与 Agent 地址，并生成 `.secrets/fullstack-agent-status.env`（0600）。该文件仅含已有 Agent 服务令牌，由 Vite 服务端读取，不传到浏览器。新版页面已在浏览器确认显示：47 个真实索引事件，待处理 0，失败 0；本次没有重新运行完整回归测试。
+
 ## 新电脑准备
 
 前提：Git、Python 3.11（Agent）、Python 3.12（后端）、Node 24.12+（本次使用 24.19）、npm、C 编译器和 make。先取回三个分支；仍然分别维护，不合并到 main。

@@ -119,6 +119,18 @@ def token(env):
     print("Local browser session issued (24h); credentials saved privately.", flush=True)
 
 
+def frontend_environment(env, node):
+    # The frontend's development health bridge reads only this existing service
+    # credential on the server. Database/admin/model keys stay out of the file.
+    agent_status_file = PRIVATE.with_name("fullstack-agent-status.env")
+    write_private(agent_status_file, "RAG_SERVICE_TOKEN=" + env["AGENT_SERVICE_TOKEN"] + "\n")
+    return {**env, "ICT_LOCAL_SESSION_FILE": str(LOCAL / "session.json"),
+            "ICT_BACKEND_ORIGIN": "http://127.0.0.1:8010",
+            "ICT_LOCAL_AGENT_ORIGIN": "http://127.0.0.1:9001",
+            "ICT_LOCAL_AGENT_ENV_FILE": str(agent_status_file),
+            "PATH": str(Path(node).parent) + os.pathsep + env.get("PATH", "")}
+
+
 def load_state():
     return json.loads(STATE.read_text()) if STATE.exists() else {"processes": []}
 
@@ -286,8 +298,7 @@ def _start(args, state):
     spawn("sync", [python_agent, str(ROOT / "scripts/sync_backend.py"), "--all-scopes", "--poll-interval", "5"], ROOT,
           {**rag_env, "RAG_LLM_MODE": "extractive"})
     token(env)
-    frontend_env = {**env, "ICT_LOCAL_SESSION_FILE": str(LOCAL / "session.json"),
-                    "ICT_BACKEND_ORIGIN": "http://127.0.0.1:8010", "PATH": str(Path(node).parent) + os.pathsep + env.get("PATH", "")}
+    frontend_env = frontend_environment(env, node)
     spawn("frontend", [node, str(frontend / "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1",
                        "--port", "5173", "--strictPort"], frontend, frontend_env)
     # Frontend responds with HTML; use a separate readiness check.
