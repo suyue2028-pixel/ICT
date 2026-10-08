@@ -48,6 +48,6 @@ def test_crossref_skips_generic_papers_and_pauses_without_losing_cursor():
                 "title": ["Medical clinical cohort"], "published": {"date-parts": [[2026, 1, 1]]}}],
                 "next-cursor": "test-next-page"}}).encode()
     collector = ExtendedCollector("crossref", {"max_items": 1, "max_pages_per_cycle": 1})
-    batch = collector._crossref({"since": "2026-01-01"}, Metadata(), None)
-    assert not batch.records and not batch.more
+    batch = collector._crossref_window({"since": "2026-01-01"}, Metadata(), None)
+    assert not batch.records and batch.more and batch.continuation_delay_seconds == 180
     assert batch.next_cursor["cursor"] == "test-next-page" and batch.next_cursor["since"] == "2026-01-01"

@@ -40,8 +40,12 @@ def add_source(payload: SourceCreate, db: Database):
     definition = SOURCE_DEFINITIONS[payload.adapter]
     if payload.adapter == "offline" and payload.enabled:
         raise HTTPException(422, "offline_not_schedulable")
+    from backend.services.freshness import DEFAULT_INTERVALS
+    seconds = (payload.interval_seconds if "interval_seconds" in payload.model_fields_set
+               else DEFAULT_INTERVALS.get(payload.adapter, 3600))
+    validate_interval(payload.adapter, seconds)
     source = DataSource(name=payload.name, category=definition["category"],
-                        adapter=payload.adapter, interval_seconds=payload.interval_seconds,
+                        adapter=payload.adapter, interval_seconds=seconds,
                         enabled=payload.enabled,
                         config=validate_config(payload.adapter, payload.config))
     db.add(source)
@@ -60,6 +64,8 @@ def update_source(source_id: UUID, payload: SourcePatch, db: Database):
         raise HTTPException(409, "source_has_active_task")
     if source.adapter == "offline" and payload.enabled:
         raise HTTPException(422, "offline_not_schedulable")
+    if payload.interval_seconds is not None:
+        validate_interval(source.adapter, payload.interval_seconds)
     for key, value in payload.model_dump(exclude_none=True).items():
         if key == "config":
             value = validate_config(source.adapter, value)
@@ -68,8 +74,20 @@ def update_source(source_id: UUID, payload: SourcePatch, db: Database):
     if payload.enabled:
         from backend.services.jobs import utc_now
         source.next_run_at = utc_now()
+    elif payload.interval_seconds is not None and source.enabled:
+        from datetime import timedelta
+        from backend.services.jobs import utc_now
+        proposed = utc_now() + timedelta(seconds=source.interval_seconds)
+        source.next_run_at = min(source.next_run_at, proposed) if source.next_run_at else utc_now()
     db.commit()
     return source
+
+
+def validate_interval(adapter, seconds):
+    if adapter != "offline" and seconds > 172800:
+        raise HTTPException(422, "source_interval_exceeds_48_hours")
+    if adapter == "arxiv" and seconds < 86400:
+        raise HTTPException(422, "arxiv_daily_cache_interval_required")
 
 
 @router.post("/{source_id}/collect", response_model=TaskRead, status_code=202, dependencies=[Admin])

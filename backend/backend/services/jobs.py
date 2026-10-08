@@ -9,6 +9,7 @@ from backend.collectors.registry import SOURCE_DEFINITIONS
 from backend.core.config import get_settings
 from backend.models import AgentInvocation, DataSource, Document, KnowledgeEvent, Outbox, TaskRun
 from backend.services.semantic import EmbeddingError, embedding_endpoint
+from backend.services.freshness import DEFAULT_INTERVALS, effective_interval, record_failure
 
 
 def utc_now():
@@ -20,7 +21,8 @@ def seed_sources(db: Session):
         existing = db.scalar(select(DataSource).where(DataSource.adapter == adapter))
         if existing is None:
             db.add(DataSource(name=definition["name"], category=definition["category"],
-                              adapter=adapter, config={}))
+                              adapter=adapter, config={},
+                              interval_seconds=DEFAULT_INTERVALS.get(adapter, 3600)))
         elif existing.name.endswith("（待实现）"):
             # Rename only untouched scaffold placeholders; preserve user-renamed sources.
             existing.name = definition["name"]
@@ -70,6 +72,7 @@ def maintain_jobs(db: Session, celery_app) -> dict:
         task.lease_token, task.lease_until = None, None
         if task.attempts >= 3:
             task.status, task.error_code, task.finished_at = "failed", "worker_lease_expired", now
+            record_failure(db.get(DataSource, task.source_id), task.error_code, now, terminal=True)
         else:
             task.status = "queued"
             outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id).with_for_update())
@@ -81,7 +84,7 @@ def maintain_jobs(db: Session, celery_app) -> dict:
     for source in sources:
         if SOURCE_DEFINITIONS[source.adapter]["implemented"]:
             create_task(db, source)
-            source.next_run_at = now + timedelta(seconds=source.interval_seconds)
+            source.next_run_at = now + timedelta(seconds=effective_interval(source))
     db.flush()
     pending = db.scalars(select(Outbox).join(TaskRun, TaskRun.id == Outbox.task_id).where(
         TaskRun.status == "queued",

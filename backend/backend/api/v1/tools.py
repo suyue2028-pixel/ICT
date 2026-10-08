@@ -7,6 +7,7 @@ from backend.api.dependencies import Database, PageNumber, PageSize, require_rec
 from backend.core.security import require_tool
 from backend.models import DataSource, Document, DocumentRevision, Evidence, TaskRun, Vulnerability, VulnerabilityAlias, VulnerabilityDocument
 from backend.services.jobs import utc_now
+from backend.services.freshness import source_stale
 from backend.schemas.contracts import Page
 from backend.schemas.tools import ToolEnvelope, ToolCveSummary, ToolCveDetail, ToolDocumentPreview, ToolDocumentVersion
 
@@ -24,6 +25,8 @@ def document_json(db, doc):
         "source_type": source.category, "adapter": source.adapter, "document_type": doc.document_type,
         "published_time": doc.published_at, "source_updated_at": doc.source_updated_at,
         "first_collected_at": doc.first_collected_at, "ai_relevant": doc.ai_relevant,
+        "last_checked_at": doc.last_checked_at, "content_changed_at": doc.content_changed_at,
+        "indexed_at": doc.indexed_at,
         "metadata": doc.metadata_json, "content_completeness": doc.content_completeness,
         "source_reported_severity": doc.raw_payload.get("severity"),
         "is_demo": doc.is_demo}
@@ -101,8 +104,8 @@ def search_documents(db, request, keyword, is_demo, category, adapter, page, pag
         TaskRun.source_id.in_({d.source_id for d in rows}), TaskRun.status == "succeeded")
         .group_by(TaskRun.source_id)).all())
     return envelope(request, {"items": [{**document_json(db, d), "excerpt": d.content[:2000],
-        "cache": {"last_checked_at": checked.get(d.source_id), "version_updated_at": d.updated_at,
-                  "stale": checked.get(d.source_id) is None or checked[d.source_id] < utc_now() - timedelta(hours=6)}} for d in rows],
+        "cache": {"last_checked_at": checked.get(d.source_id), "version_updated_at": d.content_changed_at or d.first_collected_at,
+                  "stale": source_stale(db.get(DataSource, d.source_id), utc_now(), checked.get(d.source_id))}} for d in rows],
         "total": total, "page": page, "page_size": page_size}, "completed" if rows else "empty")
 
 
@@ -142,6 +145,10 @@ def read_document(document_id: UUID, request: Request, db: Database, is_demo: bo
                             "metadata": "metadata_json", "content_completeness": "content_completeness",
                             "source_reported_severity": "severity"}.items():
         version[key] = revision.payload.get(payload_key)
+    if digest != doc.content_hash:
+        # Current-version observations cannot be relabelled as historical proof.
+        for name in ("last_checked_at", "content_changed_at", "indexed_at"):
+            version[name] = None
     return envelope(request, {**version, "content_hash": digest,
         "is_current": digest == doc.content_hash, "revision": revision.payload,
         "content": revision.payload.get("content"), "version_created_at": revision.created_at})

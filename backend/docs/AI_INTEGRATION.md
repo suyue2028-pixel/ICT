@@ -1,5 +1,7 @@
 # 后端与 Agent/RAG 联调契约 V1
 
+2026-10-08 增量兼容更新：本机已连接真实外部 Agent，运行源项目统一为 D:\cit\后端开发。文档与 Tool 增加 last_checked_at/content_changed_at/indexed_at，旧版本时间未知为 null；文档/情报列表新增 recent_hours=48、time_basis=published/updated/discovered/changed、time_from/time_to；原参数继续支持。公开 /stats 增加 recent_48_hours，管理 /ops/freshness 返回来源调度/退避/时间覆盖；权限不变。索引 ACK 只有当前版本通过核验才写 indexed_at，新版本清空。详细口径见 [时效性契约](FRESHNESS.md)。下方未联调描述属于原始阶段记录。
+
 统一 API 前缀 `/api/v1`，schema_version 为字符串 `"1"`，时间为带时区 ISO 8601，ID 为 UUID，版本为 64 位 SHA-256。实时 OpenAPI：<http://127.0.0.1:8010/docs>；导出文件 `docs/openapi.json`、`docs/contracts/`。
 
 本契约是后端已实现的接口及**拟交给队友实现的服务协议**。Agent 服务尚未运行，未声称双方已完成真实联调。后端保存数据、证据、会话、事件及调用审计；队友负责 RAG 切片/向量/重排、工具选择、回答、跨文档推理。保留的内置能力不与外部消费者同时抢事件。
@@ -96,3 +98,6 @@ sources 每条：document_id、content_hash、title、url、source_type、source
 先管理员签发用户 token；队友配置自己的 Tool/写入凭据，提供上述 health/query/verify；后端设置 AGENT_SERVICE_URL 并重建配置；启用 external index provider 后 claim→读取版本→真实索引→verify→ack；用户 query→保存 session→追问→查询历史和轨迹。脚本 `scripts/agent-client-example.py` 演示用户端两轮，绝不携带管理或模型密钥。
 
 本轮 HTTP 测试替身覆盖契约、超时、错误引用、租约和幂等，只用于测试，不进入生产接口。真实队友联调、真实语义检索、模型质量验收仍待服务与凭据。
+# 2026-10-08 追溯问答增量说明
+
+当前本机外部 Agent/DeepSeek 已部署相关性、结论支持检查和连续追问修复。后端查询响应及调用详情新增可空 `generation_mode`、`llm_http_calls`，旧记录保持未知，服务间 V1 请求兼容。完整契约、使用方式及验收边界见 [QA_REPAIR.md](QA_REPAIR.md)。下文历史记录保留原阶段范围。

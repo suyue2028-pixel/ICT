@@ -11,6 +11,7 @@ from backend.core.config import get_settings
 from backend.services.semantic import EmbeddingError, embed_texts, split_text, store_chunks
 from backend.services.jobs import maintain_jobs, utc_now
 from backend.services.pipeline import ingest_batch
+from backend.services.freshness import effective_interval, record_failure
 from backend.tasks.celery_app import celery_app
 
 
@@ -28,6 +29,7 @@ def collect(task_id: str):
         task.started_at, task.lease_until = utc_now(), utc_now() + timedelta(seconds=360)
         task.attempts += 1
         source = db.get(DataSource, task.source_id)
+        source.last_attempt_at = task.started_at
         adapter, cursor, config = source.adapter, dict(source.cursor), dict(source.config)
     stage = "collect"
     stage_started = perf_counter()
@@ -40,6 +42,7 @@ def collect(task_id: str):
             db.add(TaskStep(task_id=task.id, name="collect", attempt=task.attempts,
                             status="succeeded", detail={"received": len(batch.records),
                                                         "duration_ms": round((perf_counter() - stage_started) * 1000, 3)}))
+            db.get(DataSource, task.source_id).last_checked_at = utc_now()
         stage = "pipeline"
         stage_started = perf_counter()
         with get_session_factory()() as db, db.begin():
@@ -50,8 +53,13 @@ def collect(task_id: str):
             # 框架阶段串行提交归一化实体，避免跨来源同一漏洞并发创建。
             db.execute(text("SELECT pg_advisory_xact_lock(7429031)"))
             task.result = ingest_batch(db, source, batch, task)
-            source.next_run_at = utc_now() + timedelta(seconds=60 if batch.more else source.interval_seconds)
+            source.next_run_at = utc_now() + timedelta(seconds=(
+                max(60, min(180, batch.continuation_delay_seconds)) if batch.more else effective_interval(source)))
             task.status, task.finished_at = "succeeded", utc_now()
+            source.last_success_at = task.finished_at
+            source.consecutive_failures, source.last_error_code = 0, None
+            if task.result["created"] or task.result["updated"]:
+                source.last_new_content_at = task.finished_at
             task.lease_token, task.lease_until = None, None
             result = task.result
         return result
@@ -67,6 +75,8 @@ def collect(task_id: str):
         with get_session_factory()() as db, db.begin():
             task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
             if task.lease_token == token and task.status == "running":
+                record_failure(db.get(DataSource, task.source_id), error_code, utc_now(),
+                               terminal=task.attempts >= 3)
                 task.error_code = error_code
                 task.lease_token, task.lease_until = None, None
                 db.add(TaskStep(task_id=task.id, name=stage, attempt=task.attempts,
@@ -137,6 +147,7 @@ def index_event(event_id: str):
                 return {"ignored": True, "reason": "superseded"}
             count = store_chunks(db, document, chunks, vectors, settings)
             event.status = "indexed"
+            document.indexed_at = utc_now()
             event.detail = {"index_id": f"postgres-array:{event.id}", "chunks": count,
                             "model": settings.embedding_model, "dimensions": settings.embedding_dimensions,
                             "method": "exact_cosine"}

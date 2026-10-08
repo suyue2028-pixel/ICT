@@ -20,6 +20,12 @@ class DataSource(IdentityMixin, TimestampMixin, Base):
     interval_seconds: Mapped[int] = mapped_column(Integer, default=3600)
     cursor: Mapped[dict] = mapped_column(JSON, default=dict)
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_new_content_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class Document(IdentityMixin, TimestampMixin, Base):
@@ -42,6 +48,9 @@ class Document(IdentityMixin, TimestampMixin, Base):
     content_completeness: Mapped[str] = mapped_column(String(30), default="unknown", server_default="unknown")
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    content_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def source_reported_severity(self) -> str | None:

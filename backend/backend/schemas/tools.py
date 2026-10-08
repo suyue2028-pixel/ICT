@@ -28,6 +28,9 @@ class ToolDocument(BaseModel):
     published_time: datetime | None
     source_updated_at: datetime | None
     first_collected_at: datetime
+    last_checked_at: datetime | None = None
+    content_changed_at: datetime | None = None
+    indexed_at: datetime | None = None
     ai_relevant: bool
     metadata: dict | None
     content_completeness: Literal["full_text", "summary", "metadata_only", "partial", "unknown"] | None

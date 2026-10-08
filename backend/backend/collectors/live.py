@@ -238,7 +238,8 @@ class LiveCollector:
             transport.sleeper(0.5)
         cursor_after = {"package_index": index, "page_token": token} if token else {
             "package_index": (index + 1) % len(packages)}
-        return CollectionBatch(records=records, next_cursor=cursor_after, more=bool(token))
+        return CollectionBatch(records=records, next_cursor=cursor_after,
+                               more=bool(token) or index + 1 < len(packages))
 
     def _collect_rss(self, cursor: dict, transport: Transport) -> CollectionBatch:
         headers = {}

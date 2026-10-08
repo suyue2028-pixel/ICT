@@ -101,6 +101,7 @@ def acknowledge_event(event_id: UUID, body: KnowledgeAck, db: Database):
                 raise HTTPException(409, "index_lease_expired_during_verification")
         else:
             _require_local_index(db, event, document, settings)
+        document.indexed_at = utc_now()
     event.status = body.status
     event.detail = body.detail
     event.lease_token = event.lease_until = None

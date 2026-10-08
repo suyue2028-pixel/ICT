@@ -1,5 +1,9 @@
 # AI 安全知识情报系统 · 后端开发
 
+2026-10-08 更新：最近 48 小时筛选、来源调度状态、失败退避、恢复补采与索引时间已在原开发机器部署，见 [时效性说明](docs/FRESHNESS.md)。追溯问答新增生成模式与模型调用次数保存；Agent 检索、多轮及证据修复在配套 Agent PR 中，见 [问答修复说明](docs/QA_REPAIR.md)。原机器真实 DeepSeek 已联调，下方早期“未配置”描述保留原阶段记录。
+
+本次上传保留团队 Compose 项目名、数据隔离、忽略规则及项目虚拟环境配置。`deploy-timeliness.py`、`verify-timeliness-runtime.py` 和 Windows 三模块启动器为原机器的验证工具，含原机器路径；团队新克隆请按下方通用方式运行，不直接使用原机器部署脚本。
+
 这是团队仓库的完整后端工程，工程内部的 `backend/` 为 Python 包，不要单独搬运 `main.py`。原开发与验收目录是 `D:\cit\后端开发`，使用 Windows Python 3.12 和 Docker Desktop；下方保留原机器的验证说明。本轮补齐 B1—B8 后端能力、Agent 数据工具和网关，并实际采集七类来源；队友的 Agent/RAG 服务尚未部署，独立 Embedding 尚未配置，二者均不会被模拟答案替代。
 
 ## 团队克隆后的运行方式

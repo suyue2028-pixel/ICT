@@ -1,5 +1,6 @@
 from datetime import datetime
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import String, cast, or_, select
@@ -7,6 +8,7 @@ from sqlalchemy import String, cast, or_, select
 from backend.api.dependencies import Database, PageNumber, PageSize, paginate, require_record
 from backend.models import Document, Evidence, Vulnerability, VulnerabilityAlias, VulnerabilityDocument
 from backend.schemas.contracts import DocumentRead, Page, VulnerabilityRead
+from backend.services.freshness import apply_time_filter
 
 router = APIRouter(prefix="/intelligence", tags=["情报查询"])
 
@@ -17,9 +19,14 @@ def list_intelligence(db: Database, page: PageNumber = 1, page_size: PageSize = 
                       severity: str | None = None, ai_relevant: bool | None = True,
                       product: str | None = Query(default=None, max_length=200),
                       source_id: UUID | None = None, published_from: datetime | None = None,
-                      published_to: datetime | None = None):
+                      published_to: datetime | None = None,
+                      time_basis: Literal["published", "updated", "discovered", "changed"] = "published",
+                      recent_hours: int | None = Query(default=None, ge=1, le=720),
+                      time_from: datetime | None = None, time_to: datetime | None = None):
     if any(value and value.tzinfo is None for value in (published_from, published_to)):
         raise HTTPException(422, "timezone_required")
+    if published_from and published_to and published_from > published_to:
+        raise HTTPException(422, "invalid_time_range")
     current = select(VulnerabilityDocument.vulnerability_id).join(
         Document, Document.id == VulnerabilityDocument.document_id).where(
         Document.deleted_at.is_(None), Document.is_demo == is_demo)
@@ -31,7 +38,8 @@ def list_intelligence(db: Database, page: PageNumber = 1, page_size: PageSize = 
                                Vulnerability.identifier.icontains(keyword, autoescape=True)))
     if severity:
         query = query.where(Vulnerability.severity == severity)
-    if any(value is not None for value in (product, source_id, published_from, published_to)):
+    if any(value is not None for value in (product, source_id, published_from, published_to,
+                                          recent_hours, time_from, time_to)):
         matches = select(VulnerabilityDocument.vulnerability_id).join(
             Document, Document.id == VulnerabilityDocument.document_id).where(Document.deleted_at.is_(None))
         matches = matches.where(Document.is_demo == is_demo)
@@ -44,6 +52,7 @@ def list_intelligence(db: Database, page: PageNumber = 1, page_size: PageSize = 
             matches = matches.where(Document.published_at >= published_from)
         if published_to:
             matches = matches.where(Document.published_at <= published_to)
+        matches = apply_time_filter(matches, time_basis, recent_hours, time_from, time_to)
         query = query.where(Vulnerability.id.in_(matches))
     return paginate(db, query.order_by(Vulnerability.created_at.desc()), VulnerabilityRead, page, page_size)
 

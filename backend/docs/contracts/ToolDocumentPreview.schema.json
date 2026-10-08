@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "CacheMetadata": {
+      "properties": {
+        "last_checked_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Checked At"
+        },
+        "version_updated_at": {
+          "format": "date-time",
+          "title": "Version Updated At",
+          "type": "string"
+        },
+        "stale": {
+          "title": "Stale",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "last_checked_at",
+        "version_updated_at",
+        "stale"
+      ],
+      "title": "CacheMetadata",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "raw_id": {
+      "title": "Raw Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "source_url": {
+      "format": "uri",
+      "maxLength": 2083,
+      "minLength": 1,
+      "title": "Source Url",
+      "type": "string"
+    },
+    "source_name": {
+      "title": "Source Name",
+      "type": "string"
+    },
+    "source_type": {
+      "enum": [
+        "vulnerability",
+        "vendor",
+        "community",
+        "blog",
+        "academic",
+        "standard",
+        "policy",
+        "offline"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "adapter": {
+      "title": "Adapter",
+      "type": "string"
+    },
+    "document_type": {
+      "enum": [
+        "vulnerability",
+        "advisory",
+        "discussion",
+        "article",
+        "paper",
+        "standard",
+        "policy",
+        "regulation"
+      ],
+      "title": "Document Type",
+      "type": "string"
+    },
+    "published_time": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Published Time"
+    },
+    "source_updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Updated At"
+    },
+    "first_collected_at": {
+      "format": "date-time",
+      "title": "First Collected At",
+      "type": "string"
+    },
+    "last_checked_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Checked At"
+    },
+    "content_changed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Changed At"
+    },
+    "indexed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Indexed At"
+    },
+    "ai_relevant": {
+      "title": "Ai Relevant",
+      "type": "boolean"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Metadata"
+    },
+    "content_completeness": {
+      "anyOf": [
+        {
+          "enum": [
+            "full_text",
+            "summary",
+            "metadata_only",
+            "partial",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Content Completeness"
+    },
+    "source_reported_severity": {
+      "anyOf": [
+        {
+          "enum": [
+            "unknown",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Reported Severity"
+    },
+    "is_demo": {
+      "title": "Is Demo",
+      "type": "boolean"
+    },
+    "excerpt": {
+      "title": "Excerpt",
+      "type": "string"
+    },
+    "cache": {
+      "$ref": "#/$defs/CacheMetadata"
+    }
+  },
+  "required": [
+    "document_id",
+    "content_hash",
+    "raw_id",
+    "title",
+    "source_url",
+    "source_name",
+    "source_type",
+    "adapter",
+    "document_type",
+    "published_time",
+    "source_updated_at",
+    "first_collected_at",
+    "ai_relevant",
+    "metadata",
+    "content_completeness",
+    "source_reported_severity",
+    "is_demo",
+    "excerpt",
+    "cache"
+  ],
+  "title": "ToolDocumentPreview",
+  "type": "object"
+}

@@ -1,4 +1,6 @@
 from uuid import UUID
+from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
@@ -8,6 +10,7 @@ from backend.models import Document, DocumentRevision, Evidence, KnowledgeEvent
 from backend.core.security import require_admin
 from backend.services.jobs import utc_now
 from backend.schemas.contracts import DocumentRead, Page
+from backend.services.freshness import apply_time_filter, TIME_COLUMNS
 
 router = APIRouter(prefix="/documents", tags=["原始文档"])
 
@@ -16,7 +19,10 @@ router = APIRouter(prefix="/documents", tags=["原始文档"])
 def list_documents(db: Database, page: PageNumber = 1, page_size: PageSize = 20,
                    is_demo: bool = False, source_id: UUID | None = None,
                    document_type: str | None = None, ai_relevant: bool | None = None,
-                   keyword: str | None = Query(default=None, max_length=200)):
+                   keyword: str | None = Query(default=None, max_length=200),
+                   time_basis: Literal["published", "updated", "discovered", "changed"] = "published",
+                   recent_hours: int | None = Query(default=None, ge=1, le=720),
+                   time_from: datetime | None = None, time_to: datetime | None = None):
     query = select(Document).where(Document.is_demo == is_demo, Document.deleted_at.is_(None))
     if source_id:
         query = query.where(Document.source_id == source_id)
@@ -28,7 +34,9 @@ def list_documents(db: Database, page: PageNumber = 1, page_size: PageSize = 20,
         query = query.where(or_(Document.title.icontains(keyword, autoescape=True),
                                Document.content.icontains(keyword, autoescape=True),
                                Document.external_id.icontains(keyword, autoescape=True)))
-    return paginate(db, query.order_by(Document.created_at.desc()), DocumentRead, page, page_size)
+    query = apply_time_filter(query, time_basis, recent_hours, time_from, time_to)
+    order = TIME_COLUMNS[time_basis] if any(v is not None for v in (recent_hours, time_from, time_to)) else Document.created_at
+    return paginate(db, query.order_by(order.desc().nulls_last(), Document.id), DocumentRead, page, page_size)
 
 
 @router.get("/{document_id}")

@@ -78,6 +78,8 @@ class AgentQueryResponse(AgentAnswer):
     session_id: UUID
     invocation_id: UUID
     request_id: str
+    generation_mode: Literal["live", "extractive", "mock"] | None = None
+    llm_http_calls: int | None = Field(default=None, ge=0, le=3)
 
 
 class TokenCreate(StrictModel):

@@ -40,6 +40,12 @@ def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
             if previous.request_hash != digest:
                 raise HTTPException(409, "idempotency_key_conflict")
             if previous.response_payload:
+                if response is not None:
+                    saved = previous.response_payload
+                    if saved.get("generation_mode") in {"live", "extractive", "mock"}:
+                        response.headers["X-RAG-Answer-Mode"] = saved["generation_mode"]
+                    if type(saved.get("llm_http_calls")) is int and 0 <= saved["llm_http_calls"] <= 3:
+                        response.headers["X-RAG-LLM-Calls"] = str(saved["llm_http_calls"])
                 return AgentQueryResponse.model_validate(previous.response_payload)
             raise HTTPException(409, "agent_request_running" if previous.status == "running" else "agent_request_failed_use_new_key")
     now = utc_now()
@@ -87,8 +93,11 @@ def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
         if response is not None:
             response.headers.update(answer._rag_headers)
         agent_gateway.validate_answer(db, answer, body.is_demo)
+        call_count = answer._rag_headers.get("X-RAG-LLM-Calls")
         response = AgentQueryResponse(**answer.model_dump(), session_id=conversation_id,
-            invocation_id=invocation_id, request_id=request.state.request_id)
+            invocation_id=invocation_id, request_id=request.state.request_id,
+            generation_mode=answer._rag_headers.get("X-RAG-Answer-Mode"),
+            llm_http_calls=int(call_count) if call_count in {"0", "1", "2", "3"} else None)
         # Short final transaction: metadata may have changed while Agent was working.
         conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id).with_for_update())
         invocation = db.scalar(select(AgentInvocation).where(AgentInvocation.id == invocation_id).with_for_update())
@@ -143,6 +152,8 @@ def invocation_detail(invocation_id: UUID, db: Database, owner: User):
     return {"id": row.id, "session_id": row.conversation_id, "status": row.status,
             "request_id": row.request_id, "duration_ms": row.duration_ms,
             "error_code": row.error_code, "tool_trace": row.tool_trace,
+            "generation_mode": (row.response_payload or {}).get("generation_mode"),
+            "llm_http_calls": (row.response_payload or {}).get("llm_http_calls"),
             "trace_origin": "agent_reported_and_schema_validated", "finished_at": row.finished_at}
 
 

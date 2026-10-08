@@ -5,6 +5,7 @@ Standards are voluntary NIST framework sections; policy includes government guid
 not a claim that every document is legally binding or that all new laws are covered.
 """
 import json
+import hashlib
 import re
 from datetime import timedelta
 from urllib.parse import urlparse
@@ -44,6 +45,7 @@ class ExtendedConfig(BaseModel):
     initial_days: int = Field(default=30, ge=1, le=120)
     max_items: int = Field(default=10, ge=1, le=30)
     max_pages_per_cycle: int = Field(default=5, ge=1, le=20)
+    overlap_hours: int = Field(default=24, ge=1, le=48)
 
     @field_validator("keywords")
     @classmethod
@@ -155,6 +157,9 @@ class ExtendedCollector:
         index = int(cursor.get("keyword_index", 0)) % len(self.config.keywords)
         start = cursor.get("window_start") or (now - timedelta(days=self.config.initial_days)).isoformat()
         end = cursor.get("window_end") or now.isoformat()
+        # Offline recovery may span more than the API's 120-day window.
+        if timestamp(end) - timestamp(start) > timedelta(days=120):
+            end = (timestamp(start) + timedelta(days=120)).isoformat()
         offset = int(cursor.get("start_index", 0))
         headers = {"apiKey": s.nvd_api_key.get_secret_value()} if s.nvd_api_key else {}
         # Shared Redis limiter in Transport also protects concurrent NVD source instances.
@@ -171,8 +176,9 @@ class ExtendedCollector:
                  "start_index": offset + len(records)} if more else {
                  "window_start": start, "window_end": end, "keyword_index": index + 1, "start_index": 0}
         if not more and index + 1 >= len(self.config.keywords):
-            after = {"window_start": (timestamp(end) - timedelta(minutes=5)).isoformat(), "keyword_index": 0}
-        return CollectionBatch(records, after, more=more or index + 1 < len(self.config.keywords))
+            after = {"window_start": (timestamp(end) - timedelta(hours=self.config.overlap_hours)).isoformat(), "keyword_index": 0}
+        catch_up = timestamp(end) < now - timedelta(minutes=5)
+        return CollectionBatch(records, after, more=more or index + 1 < len(self.config.keywords) or catch_up)
 
     def _arxiv(self, cursor, t, s):
         # Page latest updates to a persisted watermark. One request per task and a
@@ -224,12 +230,60 @@ class ExtendedCollector:
         return CollectionBatch([record], {"etag": response_headers.get("etag"), "last_checked_at": utc_now().isoformat()})
 
     def _crossref(self, cursor, t, s):
+        now = utc_now()
+        if cursor.get("strategy") == "recent_and_backfill_v1":
+            recent, backfill = dict(cursor["recent"]), cursor.get("backfill")
+            backfill_until = timestamp(cursor.get("backfill_until"))
+        else:
+            since = timestamp(cursor.get("since"))
+            if since is None and cursor.get("since"):
+                since = datetime.fromisoformat(cursor["since"]).replace(tzinfo=timezone.utc)
+            since = since or now - timedelta(days=self.config.initial_days)
+            boundary = now - timedelta(hours=48)
+            backfill = dict(cursor) if since < boundary else None
+            if backfill is not None:
+                backfill.setdefault("since", since.isoformat())
+            backfill_until = boundary if backfill else None
+            recent = {"since": max(since, boundary).isoformat()}
+        # A historical cursor cannot keep today's arrivals behind weeks of backfill.
+        current = self._crossref_window(recent, t, s)
+        records = {r.external_id: r for r in current.records}
+        history = self._crossref_window(backfill, t, s, stop_at=backfill_until) if backfill else None
+        if history:
+            for record in history.records:
+                records.setdefault(record.external_id, record)
+        remaining = history.next_cursor if history and history.more else None
+        return CollectionBatch(list(records.values()), {
+            "strategy": "recent_and_backfill_v1", "recent": current.next_cursor,
+            "backfill": remaining, "backfill_until": backfill_until.isoformat() if remaining else None,
+        }, more=current.more or bool(remaining),
+            continuation_delay_seconds=max(current.continuation_delay_seconds,
+                history.continuation_delay_seconds if history else 60))
+
+    def _crossref_window(self, cursor, t, s, stop_at=None):
         from backend.services.pipeline import AI_PATTERN, SECURITY_PATTERN
-        start_date = cursor.get("since") or (utc_now() - timedelta(days=self.config.initial_days)).date().isoformat()
+        now = stop_at or utc_now()
+        start_date = cursor.get("since") or (now - timedelta(days=self.config.initial_days)).isoformat()
+        start_time = timestamp(start_date) or datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+        end_date = cursor.get("window_end") or min(now, start_time + timedelta(days=7)).isoformat()
         api_cursor = cursor.get("cursor", "*")
+        if cursor.get("strategy") != "fixed_index_window_v2":
+            # Re-read the old watermark once when adding an upper bound. Reusing
+            # a cursor from a different query could skip records; duplicates are safe.
+            api_cursor = "*"
+        # Crossref explicitly rejects timezone suffixes/fractions in date filters.
+        def filter_time(value):
+            parsed = timestamp(value) or datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         _, _, payload = t.request("GET", CROSSREF_URL, params={"query": "prompt injection LLM security",
-            "filter": "from-index-date:" + start_date, "rows": self.config.max_items, "cursor": api_cursor})
+            "filter": "from-index-date:" + filter_time(start_date) + ",until-index-date:" + filter_time(end_date),
+            "rows": self.config.max_items, "cursor": api_cursor})
         result = json.loads(payload)["message"]
+        if not isinstance(result.get("items"), list):
+            raise ValueError("crossref_items_missing")
+        page_hash = hashlib.sha256(json.dumps([x.get("DOI") for x in result["items"]]).encode()).hexdigest()
+        if result["items"] and cursor.get("page_hash") == page_hash and api_cursor != "*":
+            raise ValueError("crossref_repeated_page")
         records = []
         for item in result.get("items", []):
             title = plain(" ".join(item.get("title", [])))[:500]
@@ -251,13 +305,19 @@ class ExtendedCollector:
                     "license": item.get("license", []), "full_text_fetched": False},
                 content_completeness="summary" if abstract else "metadata_only", is_demo=False))
         next_cursor = result.get("next-cursor")
-        more = bool(result.get("items") and next_cursor and next_cursor != api_cursor
+        more = bool(result.get("items") and next_cursor
                     and len(result["items"]) >= self.config.max_items)
+        if len(result["items"]) >= self.config.max_items and not next_cursor:
+            raise ValueError("crossref_next_cursor_missing")
         pages = int(cursor.get("pages_in_cycle", 0)) + 1
-        after = {"since": start_date, "cursor": next_cursor,
+        after = {"since": start_date, "window_end": end_date, "cursor": next_cursor, "page_hash": page_hash,
+                 "strategy": "fixed_index_window_v2",
                  "pages_in_cycle": pages if pages < self.config.max_pages_per_cycle else 0} if more else {
-            "since": (utc_now() - timedelta(days=1)).date().isoformat()}
-        return CollectionBatch(records, after, more=more and pages < self.config.max_pages_per_cycle)
+            "since": (timestamp(end_date) - timedelta(hours=self.config.overlap_hours)).isoformat(),
+            "strategy": "fixed_index_window_v2"}
+        catch_up = timestamp(end_date) < now - timedelta(minutes=5)
+        return CollectionBatch(records, after, more=more or catch_up,
+            continuation_delay_seconds=180 if more and pages >= self.config.max_pages_per_cycle else 60)
 
     def _huggingface(self, cursor, t, s):
         # Target an actual security topic instead of classifying generic AI posts

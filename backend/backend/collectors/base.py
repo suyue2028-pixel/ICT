@@ -9,6 +9,7 @@ class CollectionBatch:
     records: list[RawRecord]
     next_cursor: dict
     more: bool = False
+    continuation_delay_seconds: int = 60
 
 
 class Collector(Protocol):

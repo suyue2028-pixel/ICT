@@ -12,6 +12,8 @@ router = APIRouter(tags=["统计与关系"])
 
 @router.get("/stats")
 def stats(db: Database, is_demo: bool = False):
+    from backend.services.freshness import recent_counts
+    from backend.services.jobs import utc_now
     active_vulnerabilities = select(VulnerabilityDocument.vulnerability_id).join(
         Document, Document.id == VulnerabilityDocument.document_id).where(
         Document.is_demo == is_demo, Document.deleted_at.is_(None))
@@ -38,6 +40,7 @@ def stats(db: Database, is_demo: bool = False):
     missing_date = db.scalar(select(func.count()).select_from(Document).where(
         Document.is_demo == is_demo, Document.deleted_at.is_(None), Document.published_at.is_(None)))
     return {"is_demo": is_demo, "documents": document_count,
+            "recent_48_hours": recent_counts(db, utc_now()) if not is_demo else None,
             "vulnerabilities": vulnerability_count, "source_categories": dict(source_counts),
             "category_count": len(source_counts), "risk_distribution": dict(severity_counts),
             "collection_trend": [{"date": str(date), "count": count} for date, count in trend],

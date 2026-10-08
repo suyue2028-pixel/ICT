@@ -1,14 +1,22 @@
 """Sanitized local monitoring, measured latencies and explicit data coverage."""
 from datetime import timedelta
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from backend.api.dependencies import Database
 from backend.core.config import get_settings
 from backend.core.security import require_admin
 from backend.models import AgentInvocation, DataSource, Document, Evidence, KnowledgeEvent, Outbox, TaskRun
 from backend.services.jobs import utc_now
+from backend.services.freshness import freshness_snapshot, source_observation
 
 router = APIRouter(prefix="/ops", tags=["运行监控"], dependencies=[Depends(require_admin)])
+
+
+@router.get("/freshness")
+def freshness(db: Database, hours: int = Query(default=48, ge=1, le=720),
+              ai_relevant: bool | None = True):
+    """真实来源时效、最近48小时数据、退避与索引积压；需要管理鉴权。"""
+    return freshness_snapshot(db, utc_now(), hours, ai_relevant)
 
 
 def distribution(values):
@@ -37,6 +45,7 @@ def metrics(db: Database):
                 TaskRun.source_id == source.id, TaskRun.status == "succeeded")),
             "last_task_status": latest.status if latest else None,
             "last_error_code": latest.error_code if latest else None})
+        coverage[-1].update(source_observation(db, source, now))
     fresh, historical, missing, negative, imprecise = [], [], 0, 0, 0
     for doc in docs:
         if doc.published_at is None:
@@ -66,7 +75,7 @@ def metrics(db: Database):
     if events.get("failed"):
         alerts.append({"code": "index_failed", "count": events["failed"]})
     for row in coverage:
-        if row["enabled"] and (row["last_success_at"] is None or row["last_success_at"] < now - timedelta(hours=6)):
+        if row["enabled"] and row["stale"]:
             alerts.append({"code": "source_stale", "adapter": row["adapter"]})
     settings = get_settings()
     return {"measured_at": now, "real_source_coverage": coverage,
@@ -85,4 +94,5 @@ def metrics(db: Database):
         "providers": {"index": settings.index_provider, "embedding_configured": settings.embedding_configured,
                       "agent_configured": bool(settings.agent_service_url)},
         "accuracy": None, "recall": None,
+        "freshness": freshness_snapshot(db, now),
         "measurement_limit": "No independently reviewed labelled evaluation or long-running SLA yet"}

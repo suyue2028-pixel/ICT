@@ -12,6 +12,7 @@ from backend.models import (
     DataSource, Document, DocumentRevision, Evidence, KnowledgeEvent,
     TaskRun, TaskStep, Vulnerability, VulnerabilityAlias, VulnerabilityDocument,
 )
+from datetime import datetime, timezone
 
 RISK_ORDER = {name: i for i, name in enumerate(("unknown", "low", "medium", "high", "critical"))}
 AI_PRODUCTS = {"torch", "pytorch", "transformers", "langchain", "tensorflow", "keras",
@@ -34,6 +35,14 @@ ID_PATTERN = re.compile(
 def payload_hash(payload: dict) -> str:
     serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()
+
+
+def material_payload(payload):
+    """Compare meaningful fields; volatile HTML/API envelopes aren't new intelligence."""
+    result = {key: value for key, value in payload.items() if key != "raw"}
+    result["metadata_json"] = {key: value for key, value in payload.get("metadata_json", {}).items()
+                               if key not in {"last_modified_header"}}
+    return result
 
 
 def relevance(record) -> dict:
@@ -153,7 +162,8 @@ def _attach_vulnerabilities(db: Session, document: Document, record):
 def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: TaskRun) -> dict:
     """Caller commits this single transaction, including the source cursor and task result."""
     counts = {"received": len(batch.records), "created": 0, "updated": 0,
-              "unchanged": 0, "ai_relevant": 0, "is_demo": source.adapter == "offline"}
+              "unchanged": 0, "stale_ignored": 0, "ai_relevant": 0, "is_demo": source.adapter == "offline"}
+    observed_at = datetime.now(timezone.utc)
     elapsed = {name: 0.0 for name in ("normalize", "deduplicate_and_store",
                                      "source_enrichment", "knowledge_event")}
     observed_ids = []
@@ -172,7 +182,14 @@ def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: 
             # Do not silently resurrect administrator-invalidated records on the next poll.
             counts["unchanged"] += 1
             continue
-        if document is not None and document.content_hash == digest:
+        if document is not None:
+            document.last_checked_at = observed_at
+            if (record.source_updated_at and document.source_updated_at
+                    and record.source_updated_at < document.source_updated_at):
+                counts["stale_ignored"] += 1
+                continue
+        if document is not None and (document.content_hash == digest or
+                material_payload(document.raw_payload) == material_payload(payload)):
             if document.relevance != assessment:
                 document.relevance, document.ai_relevant = assessment, assessment["relevant"]
             observed_ids.append(document.id)
@@ -183,10 +200,13 @@ def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: 
         operation = "update" if document else "add"
         if document is None:
             document = Document(source_id=source.id, external_id=record.external_id)
+            document.last_checked_at = observed_at
             db.add(document)
             counts["created"] += 1
         else:
             counts["updated"] += 1
+            document.content_changed_at = observed_at
+        document.indexed_at = None
         for name in ("title", "document_type", "content", "published_at", "is_demo",
                      "metadata_json", "content_completeness", "source_updated_at"):
             setattr(document, name, getattr(record, name))

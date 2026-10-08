@@ -88,13 +88,19 @@ def test_agent_gateway_two_turns_idempotency_and_scope(db, client, monkeypatch):
 
     def fake_call(settings, payload):
         requests.append(payload)
-        return answer(src, doc)
+        result = answer(src, doc)
+        result._rag_headers = {"X-RAG-Answer-Mode": "mock", "X-RAG-LLM-Calls": "2"}
+        return result
     monkeypatch.setattr(agent_gateway, "call_agent", fake_call)
     body = {"query": "What is this fictional issue?", "is_demo": True}
     first = client.post("/api/v1/agent/query", json=body, headers={**headers, "Idempotency-Key": "first"})
     assert first.status_code == 200, first.text
+    assert first.json()["generation_mode"] == "mock" and first.json()["llm_http_calls"] == 2
     repeat = client.post("/api/v1/agent/query", json=body, headers={**headers, "Idempotency-Key": "first"})
     assert repeat.json()["invocation_id"] == first.json()["invocation_id"] and len(requests) == 1
+    assert repeat.headers["X-RAG-Answer-Mode"] == "mock" and repeat.headers["X-RAG-LLM-Calls"] == "2"
+    invocation = client.get("/api/v1/agent/invocations/" + first.json()["invocation_id"], headers=headers).json()
+    assert invocation["generation_mode"] == "mock" and invocation["llm_http_calls"] == 2
     session = first.json()["session_id"]
     second = client.post("/api/v1/agent/query", json={"query": "How should it be handled?",
         "session_id": session, "is_demo": True}, headers=headers)

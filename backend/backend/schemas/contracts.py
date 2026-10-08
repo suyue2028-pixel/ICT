@@ -45,6 +45,12 @@ class SourceRead(ORMModel):
     interval_seconds: int
     cursor: dict
     next_run_at: datetime | None
+    last_attempt_at: datetime | None = None
+    last_checked_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_new_content_at: datetime | None = None
+    last_error_code: str | None = None
+    consecutive_failures: int = 0
 
 
 class TaskRead(ORMModel):
@@ -78,6 +84,9 @@ class DocumentRead(ORMModel):
     source_updated_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    last_checked_at: datetime | None = None
+    content_changed_at: datetime | None = Field(default=None, description="实际从旧版本变更的入库时间；首版和旧历史未知为 null")
+    indexed_at: datetime | None = Field(default=None, description="当前版本通过索引核验的时间；旧历史未知为 null")
     source_reported_severity: Literal["unknown", "low", "medium", "high", "critical"] | None = None
     excerpt: str = ""
     source_products: list[str] = Field(default_factory=list)
