@@ -12,6 +12,40 @@ from .state import BudgetExceeded
 TRANSLATIONS = {"提示注入": "prompt injection", "提示词注入": "prompt injection", "数据投毒": "data poisoning", "供应链": "supply chain", "敏感信息": "sensitive information"}
 
 
+def is_followup(question):
+    return bool(re.search(r"它|这个漏洞|该漏洞|这个版本|该版本|上述漏洞|这个和上一个", question)
+                or re.fullmatch(r"(?:那|那么|请问)?\s*(?:怎么修复|如何修复|怎么缓解|影响哪些版本|受影响版本有哪些|还有什么风险)[？?。\s]*", question))
+
+
+def resolve_history(question, history, context, documents):
+    """Only user-authored targets resolve references; a new topic stops the scan."""
+    if not is_followup(question) or identifiers(question):
+        return question, [], None, ""
+    users = [m.content for m in history if m.role == "user"]
+    if "上一个" in question:
+        targets = []
+        for text in reversed(users):
+            ids = identifiers(text)
+            if len(ids) == 1 and ids[0] not in targets:
+                targets.append(ids[0])
+            if len(targets) == 2:
+                return "比较 " + " 和 ".join(reversed(targets)) + "：" + question, targets, None, ""
+        return question, [], None, "无法唯一确定本次比较的两个对象，请提供两个编号或名称。"
+    prior = next((text for text in reversed(users) if not is_followup(text) or identifiers(text)), "")
+    ids = list(dict.fromkeys(identifiers(prior) if prior else context.get("identifiers", [])))
+    if len(ids) == 1:
+        return ids[0] + " " + question, ids, None, ""
+    if len(ids) > 1:
+        return question, [], None, "无法唯一确定“它/这个版本”指向的对象，请提供漏洞编号或产品名。"
+    products = list({p for d in documents.values() for p in d.product_entities
+                     if len(p) > 2 and p.casefold() in prior.casefold()}) if prior else context.get("products", [])
+    if len(products) == 1:
+        return products[0] + " " + question, [], products[0], ""
+    if prior and not products and not re.search(r"漏洞|版本|修复", question):
+        return prior + "；追问：" + question, [], None, ""
+    return question, [], None, "无法唯一确定“它/这个版本”指向的对象，请提供漏洞编号或产品名。"
+
+
 def conflicts(assertions):
     grouped = defaultdict(list)
     for a in assertions:
@@ -69,28 +103,13 @@ class Nodes:
         # Identifier filters constrain targets; they must not introduce substitutes.
         ids = list(dict.fromkeys(identifiers(question) or filters.identifier))
         clarification = ""
-        if re.search(r"它|这个漏洞|该漏洞|这个版本|该版本|上述漏洞", question) and not ids:
-            # Assistant history never supplies facts or independent entity resolution.
-            user_history = [m.content for m in request.history if m.role == "user"]
-            prior_ids = request.context.get("identifiers", [])
-            if not prior_ids and user_history:
-                prior_ids = identifiers(user_history[-1])
-            prior_ids = list(dict.fromkeys(i.upper() for i in prior_ids))
-            if len(prior_ids) == 1:
-                ids = prior_ids
-                question = prior_ids[0] + " " + question
-            else:
-                products = request.context.get("products", [])
-                if not products and user_history:
-                    products = list({p for d in state["snapshot"].documents.values() for p in d.product_entities if p.casefold() in user_history[-1].casefold()})
-                if len(products) == 1:
-                    question = products[0] + " " + question
-                    if filters.product and filters.product.casefold() != products[0].casefold():
-                        clarification = "历史指代与显式产品过滤冲突，请指定本次查询对象。"
-                    else:
-                        filters.product = products[0]
+        if not ids and is_followup(question):
+            question, ids, product, clarification = resolve_history(question, request.history, request.context, state["snapshot"].documents)
+            if product:
+                if filters.product and filters.product.casefold() != product.casefold():
+                    clarification = "历史指代与显式产品过滤冲突，请指定本次查询对象。"
                 else:
-                    clarification = "无法唯一确定“它/这个版本”指向的对象，请提供漏洞编号或产品名。"
+                    filters.product = product
         if len(ids) > 8:
             clarification = "一次请求最多查询8个编号，请拆分请求。"
         if re.search(r"最近|近\s*\d+\s*天", question):
@@ -168,10 +187,33 @@ class Nodes:
 
     async def assess_evidence(self, state):
         self.event(state, "assess_evidence")
-        state["conflicts"] = conflicts(state["assertions"])
         question = state["resolved_question"]
+        # Reserve one call for generation. No model-produced ID can expand scope.
+        if state["evidence"] and not state["identifiers"] and self.llm and self.llm.mode == "live":
+            before = len(state["evidence"])
+            selected = []
+            try:
+                if state["budget"].llm_calls >= state["budget"].max_llm - 1:
+                    raise ValueError("no assessment budget")
+                result = await self.llm.complete("assess", {"question": question,
+                    "evidence": [e.model_dump(mode="json") for e in state["evidence"]]}, state["budget"], self.settings.llm_timeout)
+                ids = result.get("evidence_ids")
+                allowed = {e.evidence_id for e in state["evidence"]}
+                if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids) or not set(ids).issubset(allowed):
+                    raise ValueError("invalid relevance selection")
+                selected = [e for e in state["evidence"] if e.evidence_id in ids]
+            except BudgetExceeded:
+                raise
+            except (ValueError, RuntimeError, KeyError):
+                state["warnings"].append("relevance_check_failed")
+            state["evidence"] = selected
+            docs = {e.document_id for e in selected}
+            state["assertions"] = [a for a in state["assertions"] if a.document_id in docs]
+            state["warnings"].append(f"relevance_filter:candidates={before};selected={len(selected)}")
+            state["trace"].append({"node": "relevance_filter", "candidate_count": before, "selected_count": len(selected)})
+        state["conflicts"] = conflicts(state["assertions"])
         if state["evidence"]:
-            for pattern, field in [(r"修复|补丁|fixed|patch", "fixed_version"), (r"评分|cvss", "cvss"), (r"影响范围|受影响|affected", "affected_version")]:
+            for pattern, field in [(r"修复|补丁|fixed|patch", "fixed_version"), (r"评分|cvss", "cvss"), (r"影响范围|受影响|影响哪些版本|affected", "affected_version")]:
                 if re.search(pattern, question, re.I):
                     for doc_id in dict.fromkeys(e.document_id for e in state["evidence"]):
                         if not any(a.document_id == doc_id and a.field == field for a in state["assertions"]):
@@ -184,7 +226,9 @@ class Nodes:
         return state
 
     def after_assess(self, state):
-        if not state["clarification"] and not state["evidence"] and not state["identifiers"] and state["retry_count"] < self.settings.max_retries:
+        if (not state["clarification"] and not state["evidence"] and not state["identifiers"]
+                and state["retry_count"] < self.settings.max_retries
+                and not any(w.startswith("relevance_filter:") or w == "relevance_check_failed" for w in state["warnings"])):
             return "rewrite"
         return "synthesize"
 
@@ -258,16 +302,47 @@ class Nodes:
             except ValueError:
                 self.fallback(state, "output_rejected:无效引用或结构化硬事实已拦截")
                 draft = state["draft"]
-        if not draft:
-            answer = state["clarification"] or "本地知识库没有满足目标编号和显式过滤的证据。请补充资料后重试。"
+        if draft and draft.claims and state["output_mode"] == "live":
+            if state["budget"].llm_calls < state["budget"].max_llm:
+                try:
+                    result = await self.llm.complete("verify", {
+                        "question": state["resolved_question"],
+                        "claims": [c.model_dump(mode="json") for c in draft.claims],
+                        "evidence": [e.model_dump(mode="json") for e in selected],
+                    }, state["budget"], self.settings.llm_timeout)
+                    indexes = result.get("supported_claim_indexes")
+                    if not isinstance(indexes, list) or any(type(i) is not int or not 0 <= i < len(draft.claims) for i in indexes):
+                        raise ValueError("invalid support result")
+                    retained = [c for i, c in enumerate(draft.claims) if i in indexes]
+                    if len(retained) < len(draft.claims):
+                        state["warnings"].append("unsupported_claims_removed")
+                    draft = draft.model_copy(update={"claims": retained})
+                except BudgetExceeded:
+                    raise
+                except (ValueError, RuntimeError, KeyError):
+                    state["warnings"].append("claim_support_check_failed")
+                    draft = None
+            else:
+                state["warnings"].append("claim_support_check_unavailable:call_budget")
+        if not draft or not draft.claims:
+            answer = state["clarification"] or "当前知识库没有足以直接回答这个问题的可核验证据。请补充相关资料，或指定漏洞编号、产品及查询范围。"
             if state["missing_fields"]:
                 answer += " 缺失：" + "、".join(state["missing_fields"])
             status = "insufficient_evidence"
             claims, sources = [], []
         else:
             claims = draft.claims
+            if state["output_mode"] == "live":
+                cited_ids = {i for claim in claims for i in claim.evidence_ids}
+                cited_docs = {e.document_id for e in selected if e.evidence_id in cited_ids}
+                state["assertions"] = [a for a in state["assertions"] if a.document_id in cited_docs]
             lines = [f"{c.text} [{','.join(c.evidence_ids)}]" for c in claims]
-            for a in state["assertions"][:12]:
+            requested = set()
+            for pattern, field in [(r"修复|补丁|fixed|patch", "fixed_version"), (r"评分|cvss", "cvss"), (r"影响.*版本|受影响|affected", "affected_version")]:
+                if re.search(pattern, state["resolved_question"], re.I):
+                    requested.add(field)
+            rendered = [a for a in state["assertions"] if state["output_mode"] == "extractive" or a.field in requested]
+            for a in rendered[:6]:
                 if a.field == "cvss":
                     value = a.value
                     recorded = f"CVSS {value.get('version')} 评分 {value.get('score')}（来源主体：{value.get('source', '未注明')}）"
@@ -285,10 +360,11 @@ class Nodes:
             if state["output_mode"] == "extractive":
                 lines.insert(0, "以下为来源摘录与已记录字段，尚未进行远程模型语义生成。")
             answer = "\n".join(lines)
-            status = "partial" if state["missing_fields"] or state["conflicts"] or any("rejected" in w or "failed" in w for w in state["warnings"]) else "ok"
+            status = "partial" if state["missing_fields"] or state["conflicts"] or any("rejected" in w or "failed" in w or "unsupported" in w or "unavailable" in w for w in state["warnings"]) else "ok"
+            # Structured facts remain machine-readable and require their evidence.
             cited = {i for c in claims for i in c.evidence_ids} | {i for a in state["assertions"] for i in a.evidence_ids}
             sources = [e for e in selected if e.evidence_id in cited]
         state["response"] = QueryResponse(status=status, answer=answer, claims=claims, sources=sources,
-                                          facts=state["assertions"], missing_fields=state["missing_fields"], conflicts=state["conflicts"],
+                                          facts=state["assertions"] if sources else [], missing_fields=state["missing_fields"], conflicts=state["conflicts"],
                                           warnings=state["warnings"], trace_id=state["trace_id"], mode=state["output_mode"])
         return state

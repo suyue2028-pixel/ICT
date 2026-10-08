@@ -175,7 +175,9 @@ def _bounded_answer(answer: str, byte_limit: int):
         size += line_size
     text = "\n".join(retained)
     if not text:
-        text = encoded[:available].decode("utf-8", errors="ignore").rstrip()
+        # Do not expose a half sentence or a citation with a missing bracket.
+        message = "回答超过长度限制，请缩小查询范围。"
+        text = message if len(message.encode("utf-8")) <= available else "..."[:available]
     text = text or "?"
     if len((text + marker).encode("utf-8")) <= byte_limit:
         text += marker
@@ -270,7 +272,9 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
         if evidence:
             status = "partial"
     if max_answer_tokens is not None:
-        answer, truncated = _bounded_answer(answer, max_answer_tokens)
+        # max_answer_tokens bounds provider generation; it is not a UTF-8 byte
+        # count. This separate generous transport guard is only an approximation.
+        answer, truncated = _bounded_answer(answer, max_answer_tokens * 4)
         if truncated:
             errors.insert(0, "answer_budget_truncated")
             if evidence:
@@ -287,7 +291,17 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
 
 def create_app(service, index, service_token: str | None) -> FastAPI:
     """Inject service/index for local validation; all V1 routes require a token."""
-    app = FastAPI(title="ICT Agent backend V1 adapter", version="1")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # Loading cached CPU weights can exceed a query's deadline. Readiness
+        # means the embedding provider is usable, including after an Agent restart.
+        if service.embedding.mode == "live":
+            await service.embedding.query("readiness check")
+        yield
+
+    app = FastAPI(title="ICT Agent backend V1 adapter", version="1", lifespan=lifespan)
     app.state.service, app.state.index = service, index
     expected = (service_token or "").encode("utf-8")
 
@@ -340,7 +354,7 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
         except Exception:
             raise HTTPException(503, "backend_index_unavailable") from None
         request = QueryRequest(question=body.query, history=[
-            Message(role=item.role, content=item.content) for item in body.history[-6:]
+            Message(role=item.role, content=item.content) for item in body.history[-8:]
         ])
         try:
             result = await service.query(

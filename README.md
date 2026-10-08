@@ -1,5 +1,9 @@
 # ICT RAG Agent
 
+2026-10-08 Windows 追溯问答已修复并部署：相关性筛选、结论支持检查、多轮追问及冷启动预热；Agent 86 项、后端 70 项回归通过，七组真实 DeepSeek/无证据请求和 15 项运行检查已完成。详细结果、限制和本地修改交接见 [问答修复记录](docs/qa_repair_windows.md)。下方早期 extractive/未实调说明保留原阶段记录。
+
+Windows 本机三模块入口：**http://127.0.0.1:5173**。现有 Docker 数据库、后端与 Agent/DeepSeek 已实际联调；启动、停止、验证及回退见 [Windows 运行说明](docs/fullstack_windows.md)。本机适配代码尚未推送，以下 macOS 记录保留其原验收范围。
+
 已实现可运行的 AI 安全情报 RAG 模块，代码保存在本仓库 `packages/rag_agent`。团队前端和后端通过服务契约接入。Agent 使用独立分支 `agent-dev`。
 
 ## 团队分支
