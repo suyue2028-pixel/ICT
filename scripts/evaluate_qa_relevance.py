@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
 import types
@@ -13,6 +14,9 @@ from rag_agent.ingestion.normalize import identifiers
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / "reports/local/windows-fullstack"
+BASELINE_COMMIT = "9daad1c2a93ac5dfcd4f699860602f9a36320611"
+os.environ.setdefault("HF_HOME", str(ROOT / ".cache/huggingface"))
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 async def main():
     spec = json.loads((ROOT / "packages/rag_agent/tests/fixtures/qa_relevance_eval.json").read_text(encoding="utf-8"))
@@ -20,7 +24,7 @@ async def main():
     # Original committed retriever was unchanged before this repair. Read it
     # without changing the checkout or anyone's working files.
     original = subprocess.run(["git", "-c", "safe.directory=" + ROOT.as_posix(), "show",
-        "HEAD:packages/rag_agent/src/rag_agent/retrieval/hybrid.py"], cwd=ROOT, capture_output=True, check=True).stdout.decode("utf-8")
+        BASELINE_COMMIT + ":packages/rag_agent/src/rag_agent/retrieval/hybrid.py"], cwd=ROOT, capture_output=True, check=True).stdout.decode("utf-8")
     module = types.ModuleType("rag_agent.retrieval.baseline")
     module.__package__ = "rag_agent.retrieval"
     exec(compile(original, "baseline-retriever", "exec"), module.__dict__)
@@ -48,16 +52,23 @@ async def main():
         scores[split] = {}
         for label in retrievers:
             positives = [r for r in cases if r["gold"]]
-            precision = [len(set(r[label]) & set(r["gold"])) / len(r[label]) if r[label] else 0 for r in positives]
+            precision = [len(set(r[label]) & set(r["gold"])) / 3 for r in positives]
             recall = [len(set(r[label]) & set(r["gold"])) / len(r["gold"]) for r in positives]
             scores[split][label] = {"positive_queries": len(positives),
                 "mean_precision_at_3": sum(precision)/len(precision), "mean_recall_at_3": sum(recall)/len(recall),
                 "top_1_hit_rate": sum(bool(r[label]) and r[label][0] in r["gold"] for r in positives)/len(positives),
                 "negative_queries_correctly_empty": sum(not r[label] for r in cases if not r["gold"])}
-    report = {"synthetic": True, "embedding": "real cached multilingual-e5-small", "llm_calls": 0,
+    import hashlib
+    report = {"synthetic": True, "baseline_commit": BASELINE_COMMIT,
+        "baseline_code_sha256": hashlib.sha256(original.encode()).hexdigest(),
+        "dataset_sha256": hashlib.sha256((ROOT / "packages/rag_agent/tests/fixtures/qa_relevance_eval.json").read_bytes()).hexdigest(),
+        "precision_definition": "relevant retrieved documents / fixed K=3; supersedes historical returned-count precision",
+        "embedding": "real cached multilingual-e5-small", "llm_calls": 0,
         "limits": "Six fictional documents, six development and six holdout queries; not production-wide performance.",
         "scores": scores, "cases": rows}
-    (LOCAL / "qa-relevance-evaluation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["annotation_state"] = "ai_authored_draft_not_human_reviewed"
+    path = LOCAL / ("qa-relevance-evaluation-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"synthetic":True,"embedding":report["embedding"],"scores":scores}, ensure_ascii=False), flush=True)
 
 if __name__ == "__main__":

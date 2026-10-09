@@ -273,6 +273,29 @@ def start(mode, rebuild=True):
     print("READY frontend=http://127.0.0.1:5173 backend=http://127.0.0.1:8010 agent=http://127.0.0.1:9001 generation=" + mode)
 
 
+def ensure_rollback_schema(env, image):
+    """Refuse an old snapshot that cannot understand the current migration head."""
+    current = subprocess.run([str(DOCKER), "exec", "cit-backend-development-postgres-1", "psql",
+        "-U", env["POSTGRES_USER"], "-d", env["POSTGRES_DB"], "-Atc", "SELECT version_num FROM alembic_version"],
+        capture_output=True, check=True).stdout.decode().strip()
+    code = """import ast,json,pathlib
+revisions=set(); parents=set()
+for path in pathlib.Path('/app/migrations/versions').glob('*.py'):
+ for node in ast.parse(path.read_text()).body:
+  if isinstance(node,ast.Assign):
+   for target in node.targets:
+    if isinstance(target,ast.Name) and target.id in ('revision','down_revision'):
+     value=ast.literal_eval(node.value)
+     if isinstance(value,str):
+      (revisions if target.id=='revision' else parents).add(value)
+print(json.dumps(sorted(revisions-parents)))
+"""
+    result = subprocess.run([str(DOCKER), "run", "--rm", "--pull=never", "--network=none", "--entrypoint", "python", image, "-c", code],
+        capture_output=True, check=True)
+    if json.loads(result.stdout) != [current]:
+        raise RuntimeError("Rollback refused: snapshot migration differs from current database; no service stopped or data changed")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["start", "stop", "status", "token", "restart-agent", "restore-backend"])
@@ -293,6 +316,7 @@ def main():
             print(json.dumps({"generation_mode": state.get("generation_mode"), "processes": {
                 key: "running" if alive(value) else "stopped" for key, value in state.get("processes", {}).items()}}, indent=2))
         else:
+            ensure_rollback_schema(configuration(), "cit-backend-development:pre-windows-integration")
             stop_local()
             subprocess.run([str(DOCKER), "tag", "cit-backend-development:pre-windows-integration", "cit-backend-development:local"], check=True)
             subprocess.run([str(DOCKER), "compose", "-f", str(SOURCE / "compose.yaml"), "up", "-d", "--force-recreate", "api", "worker", "beat"], cwd=SOURCE, check=True)

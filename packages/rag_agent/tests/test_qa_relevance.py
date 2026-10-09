@@ -26,6 +26,9 @@ def corpus():
     ("智能体工具审计有什么风险？", "audit"),
     ("数据投毒有什么风险？", "poison"),
     ("authorization permissions", "access"),
+    ("access control bypass risks", "access"),
+    ("agent tool audit trail gaps", "audit"),
+    ("training dataset backdoors", "poison"),
 ])
 async def test_cross_language_topic_retrieval(tmp_path, question, expected):
     s = RAGService(Settings(db_path=tmp_path / "corpus.db", embedding_provider="mock"))

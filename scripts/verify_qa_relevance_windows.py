@@ -13,6 +13,8 @@ QUESTIONS = [
     ("follow2", "怎么修复？", "follow"),
     ("switch", "数据投毒有哪些风险？", "follow2"),
     ("absent", "CVE-2099-99999999 的修复版本是什么？", None),
+    ("access_en", "What access control risks affect AI agents?", None),
+    ("audit_en", "What risks arise from missing agent tool audit trails?", None),
 ]
 
 def main():

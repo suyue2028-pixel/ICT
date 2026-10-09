@@ -10,10 +10,10 @@ STOPWORDS = set("的 了 是 有 有哪些 什么 怎么 如何 请 根据 来�
 # Domain vocabulary, not question-specific answers. Preserve original query for generation.
 CONCEPTS = {
     "访问控制": ("access control", "authorization", "authentication", "权限", "鉴权", "认证"),
-    "工具审计": ("tool audit", "audit log", "audit trail", "tool call", "审计日志", "工具调用"),
+    "工具审计": ("tool audit", "audit log", "audit trail", "auditability", "auditing", "审计日志"),
     "智能体": ("agent", "agents", "智能体"),
     "提示注入": ("prompt injection", "提示词注入"),
-    "数据投毒": ("data poisoning", "训练数据投毒"),
+    "数据投毒": ("data poisoning", "dataset poisoning", "model backdoor", "backdoors", "训练数据投毒"),
     "供应链": ("supply chain",),
     "越权": ("privilege escalation", "unauthorized", "authorization bypass"),
     "数据泄露": ("data leakage", "information disclosure", "信息泄露"),
@@ -21,6 +21,13 @@ CONCEPTS = {
 
 def expand_query(query):
     return query + " " + " ".join(terms[0] for concept, terms in CONCEPTS.items() if concept in query)
+
+
+def query_concepts(query):
+    """Apply the same topical constraints to English and Chinese queries."""
+    text = query.casefold()
+    return [terms + (concept,) for concept, terms in CONCEPTS.items()
+            if any(contains_term(text, term) for term in terms + (concept,))]
 
 
 def contains_term(text, term):
@@ -73,7 +80,7 @@ class HybridRetriever:
         overlaps = [bool(set(query_tokens).intersection(t)) for t in corpus]
         # A compound topic needs evidence for every stated concept. A generic
         # agent mention alone cannot establish tool auditing or access control.
-        concepts = [terms + (concept,) for concept, terms in CONCEPTS.items() if concept in original_query]
+        concepts = query_concepts(original_query)
         topical = []
         for index in indices:
             chunk = snapshot.chunks[index]

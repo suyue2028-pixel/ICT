@@ -1,6 +1,7 @@
 {
   "synthetic": true,
-  "note": "Fictional manually labelled small corpus. Scores are not production-wide accuracy or recall.",
+  "annotation_state": "ai_authored_draft_not_human_reviewed",
+  "note": "Fictional AI-authored draft labels, not independently human-reviewed. Scores are not production-wide accuracy or recall.",
   "documents": [
     {"id":"access","title":"Fictional access control incident","text":"An agent access control failure permitted unauthorized tool execution. Missing authorization checks allowed users to bypass permission enforcement and access protected resources."},
     {"id":"audit","title":"Fictional agent tool audit incident","text":"Agent tool audit logs omitted tool call arguments and user identity. Gaps in the audit trail prevented reconstruction of unauthorized actions. Logging tool invocation context helps incident investigation."},
