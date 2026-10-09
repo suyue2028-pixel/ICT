@@ -11,6 +11,7 @@ dependencies = [
   "langgraph==1.2.12", "pydantic==2.13.5", "numpy==2.4.6",
   "rank-bm25==0.2.2", "jieba==0.42.1", "httpx==0.28.1",
   "sentence-transformers==6.1.0",
+  "tzdata==2026.4; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

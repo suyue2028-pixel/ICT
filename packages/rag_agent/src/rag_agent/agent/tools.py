@@ -38,6 +38,9 @@ class Tools:
             records = result[0] if isinstance(result, tuple) else result
             event["status"] = "completed" if records else "empty"
             event["document_ids"] = list(dict.fromkeys(r.document_id for r in records))
+            if name == "hybrid_search":
+                counts = state.pop("retrieval_counts", {})
+                event["input_summary"] = "; ".join(f"{key}={value}" for key, value in counts.items())
             return result
         except BaseException as exc:
             event["status"] = "failed"
@@ -58,7 +61,10 @@ class Tools:
             parsed = HybridArgs.model_validate(args)
             if state["identifiers"]:
                 raise ValueError("identifier request must use exact lookup")
-            return await self.retriever.search(snapshot, parsed.query, filters, parsed.limit)
+            counts = {}
+            result = await self.retriever.search(snapshot, parsed.query, filters, parsed.limit, diagnostics=counts)
+            state["retrieval_counts"] = counts
+            return result
         if name == "related_evidence":
             parsed = RelatedArgs.model_validate(args)
             selected = {e.evidence_id: e for e in state["evidence"]}

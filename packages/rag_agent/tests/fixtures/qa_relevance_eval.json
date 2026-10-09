@@ -1,0 +1,27 @@
+{
+  "synthetic": true,
+  "annotation_state": "ai_authored_draft_not_human_reviewed",
+  "note": "Fictional AI-authored draft labels, not independently human-reviewed. Scores are not production-wide accuracy or recall.",
+  "documents": [
+    {"id":"access","title":"Fictional access control incident","text":"An agent access control failure permitted unauthorized tool execution. Missing authorization checks allowed users to bypass permission enforcement and access protected resources."},
+    {"id":"audit","title":"Fictional agent tool audit incident","text":"Agent tool audit logs omitted tool call arguments and user identity. Gaps in the audit trail prevented reconstruction of unauthorized actions. Logging tool invocation context helps incident investigation."},
+    {"id":"poison","title":"Fictional training data poisoning","text":"Training data poisoning inserts malicious examples into a dataset to introduce model backdoors and corrupt model behavior."},
+    {"id":"injection","title":"Fictional prompt injection incident","text":"Prompt injection uses untrusted retrieved text to instruct an agent to ignore the user request and make attacker-directed tool calls."},
+    {"id":"vulnerability","title":"Fictional CVE-2099-3456 and GHSA-cfgh-jmpq-rvwx","text":"Fictional CVE-2099-3456, alias GHSA-cfgh-jmpq-rvwx, affects FictionalProduct before 1.2.3. Fixed in 1.2.3. This is fabricated regression data."},
+    {"id":"policy","title":"虚构通用安全管理办法","text":"安全管理办法要求服务备案、个人信息保护与违法内容处置。相关情报说明有哪些安全风险，以及如何遵守要求。此内容为虚构，不说明技术漏洞。"}
+  ],
+  "cases": [
+    {"split":"development","question":"访问控制相关情报有哪些？","gold":["access"]},
+    {"split":"development","question":"智能体工具审计有什么风险？","gold":["audit"]},
+    {"split":"development","question":"数据投毒有哪些风险？","gold":["poison"]},
+    {"split":"development","question":"提示注入有什么风险？","gold":["injection"]},
+    {"split":"development","question":"CVE-2099-3456 的风险","gold":["vulnerability"]},
+    {"split":"development","question":"有什么安全风险，请根据相关情报说明","gold":[]},
+    {"split":"holdout","question":"access control bypass risks","gold":["access"]},
+    {"split":"holdout","question":"agent tool audit trail gaps","gold":["audit"]},
+    {"split":"holdout","question":"training dataset backdoors","gold":["poison"]},
+    {"split":"holdout","question":"untrusted text prompt injection","gold":["injection"]},
+    {"split":"holdout","question":"GHSA-cfgh-jmpq-rvwx 修复版本","gold":["vulnerability"]},
+    {"split":"holdout","question":"CVE-2099-99999999","gold":[]}
+  ]
+}

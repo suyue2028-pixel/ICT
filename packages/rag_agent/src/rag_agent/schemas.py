@@ -161,7 +161,7 @@ class Message(Model):
 
 class QueryRequest(Model):
     question: str = Field(min_length=1, max_length=4000)
-    history: list[Message] = Field(default_factory=list, max_length=6)
+    history: list[Message] = Field(default_factory=list, max_length=8)
     context: dict[str, list[str]] = Field(default_factory=dict)
     filters: Filters = Field(default_factory=Filters)
     timezone: str = "Asia/Shanghai"
@@ -222,6 +222,6 @@ class Plan(Model):
 
 
 class Draft(Model):
-    claims: list[Claim] = Field(min_length=1, max_length=8)
+    claims: list[Claim] = Field(default_factory=list, max_length=8)
     # Models may propose facts, but validation requires an exact stored assertion.
     facts: list[Assertion] = Field(default_factory=list)

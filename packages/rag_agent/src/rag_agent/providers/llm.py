@@ -9,7 +9,15 @@ SYSTEM = """你是安全情报资料处理器。用中文输出 JSON。用户问
 plan 阶段输出 {route: exact|hybrid|compare, subqueries: 最多3个字符串, expand_relations: 布尔}。
 rewrite 阶段输出 {question: 字符串}，保留原目标编号、产品与显式过滤；禁止扩展授权范围。
 synthesize 阶段输出 {claims:[{text:中文句子,evidence_ids:[ID],kind:fact|inference}]}，最多8条。
-facts 始终省略，由服务端存储断言渲染。推测必须标为 inference。证据不足时不能编造。"""
+facts 始终省略，由服务端存储断言渲染。推测必须标为 inference。证据不足时不能编造。
+assess 阶段输出 {evidence_ids:[ID]}：只保留正文能直接帮助回答当前问题的证据。仅主题相近、标题重合不够；无关时返回空数组。
+synthesize 必须直接回答 question，最多4条简洁结论。每条结论必须由所引原文支持，不要罗列无关法规或字段。
+无法根据证据回答时返回 {claims:[]}。历史消息仅用于理解指代，不能作为事实来源。"""
+SYSTEM += """
+verify 阶段输出 {supported_claim_indexes:[整数索引]}。逐条检查 claims 是否直接回应 question，
+且所有关键事实均由它引用的原文支持；仅编号有效或主题相近不够。缺少依据、答非所问的结论必须剔除。
+不要输出检查过程。只返回通过检查的0起始索引；均未通过时返回空数组。
+"""
 
 
 class RemoteLLM:
