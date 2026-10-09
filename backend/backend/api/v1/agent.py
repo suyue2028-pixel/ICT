@@ -10,6 +10,7 @@ from backend.core.config import get_settings
 from backend.core.security import User, require_admin
 from backend.models import AgentInvocation, Conversation, ConversationMessage
 from backend.schemas.agent import AgentQuery, AgentQueryResponse, ToolTrace
+from backend.schemas.traceability import AgentInvocationEvidence
 from backend.services import agent_gateway
 from backend.services.jobs import utc_now
 
@@ -160,3 +161,13 @@ def invocation_detail(invocation_id: UUID, db: Database, owner: User):
 @router.get("/health", dependencies=[Depends(require_admin)])
 def agent_health():
     return agent_gateway.check_health(get_settings())
+
+
+@router.get("/invocations/{invocation_id}/evidence", response_model=AgentInvocationEvidence)
+def invocation_evidence(invocation_id: UUID, db: Database, owner: User):
+    """Resolve this user's saved answer to immutable source versions and link proof."""
+    row = require_record(db, AgentInvocation, invocation_id)
+    if row.owner_id != owner:
+        raise HTTPException(403, "invocation_access_denied")
+    from backend.services.traceability import answer_evidence
+    return answer_evidence(db, row)

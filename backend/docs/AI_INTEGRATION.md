@@ -1,5 +1,9 @@
 # 后端与 Agent/RAG 联调契约 V1
 
+2026-10-09 兼容补充：`GET /agent/invocations/{id}/evidence`（用户所有者鉴权）、`GET /documents/{id}/versions/{hash}`、`GET /documents/{id}/associations`；关系边增加原字段依据和版本URL。Agent V1请求/响应不变，新增精确locator验证。偏移使用Unicode code point，结构化JSON引用须采用版本接口返回的revision_json；失效历史仍可审计但不当当前证据。完整规则见 [闭环契约与恢复](TRACEABILITY_CI_RECOVERY.md)。
+
+2026-10-09 覆盖/时效V2兼容更新：SourceCreate.adapter新增nist_drafts/govuk_search，管理员GET `/api/v1/ops/coverage?hours=48`新增覆盖范围、目录收录、延迟与任务指标；TaskRun.result可带coverage。原文/版本/知识更新与Agent协议不变，新增文档仍走既有事件异步索引；目录收录不等于全网召回。见 [覆盖与时效契约](COVERAGE_FRESHNESS_V2.md)。
+
 2026-10-09 新增管理员专用 `/api/v1/ops/enrichment-quality`：覆盖/问题清单、冻结审核批次、审核写入与评分。仅X-API-Key，前端和Agent令牌均不可调用；已有文档/富化/Agent协议兼容。预测变化或版本更新后旧审核不进入当前评分。详见 [富化质量契约与口径](ENRICHMENT_QUALITY.md)。
 
 2026-10-09：本机三端真实联调与本轮87项后端回归已完成；当前新增契约详见本文末尾“2026-10-09 增量契约与验证”和[运行手册](OPERATIONS_20261009.md)。独立人工质量评审与48小时观察仍未完成。

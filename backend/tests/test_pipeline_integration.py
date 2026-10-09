@@ -170,7 +170,8 @@ def test_broker_failure_retains_outbox_for_resend(db):
     sent = []
 
     class Available:
-        def send_task(self, name, args, retry):
+        def send_task(self, name, args, retry, ignore_result):
+            assert ignore_result is True
             sent.append((name, args, retry))
 
     assert maintain_jobs(db, Available())["sent"] == 1

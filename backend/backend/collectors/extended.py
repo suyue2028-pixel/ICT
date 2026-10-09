@@ -40,7 +40,9 @@ ARXIV = "{http://arxiv.org/schemas/atom}"
 
 class ExtendedConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    keywords: list[str] = Field(default_factory=lambda: ["ollama", "vllm", "langchain"], min_length=1, max_length=5)
+    keywords: list[str] = Field(default_factory=lambda: ["ollama", "vllm", "langchain", "pytorch",
+        "transformers", "gradio", "tensorflow", "keras", "onnx", "llama-index", "tensorrt", "triton inference server"],
+        min_length=1, max_length=20)
     page_size: int = Field(default=20, ge=1, le=50)
     initial_days: int = Field(default=30, ge=1, le=120)
     max_items: int = Field(default=10, ge=1, le=30)
@@ -153,10 +155,38 @@ class ExtendedCollector:
             transport.close()
 
     def _nvd(self, cursor, t, s):
+        """Check recent arrivals alongside history, so backfill cannot starve freshness."""
+        now = utc_now()
+        signature = hashlib.sha256(json.dumps(self.config.keywords).encode()).hexdigest()
+        boundary = now - timedelta(hours=48)
+        if cursor.get("strategy") == "recent_and_backfill_v2" and cursor.get("query_hash") == signature:
+            recent, backfill = dict(cursor["recent"]), cursor.get("backfill")
+            history_end = timestamp(cursor.get("backfill_until"))
+        else:
+            legacy = cursor.get("backfill") or cursor
+            start = min(timestamp(legacy.get("window_start")) or boundary,
+                        now - timedelta(days=self.config.initial_days))
+            backfill = {"window_start": start.isoformat(), "keyword_index": 0} if start < boundary else None
+            history_end = boundary if backfill else None
+            recent = {"window_start": boundary.isoformat(), "keyword_index": 0}
+        current = self._nvd_window(recent, t, s)
+        history = self._nvd_window(backfill, t, s, stop_at=history_end) if backfill else None
+        records = {record.external_id: record for record in current.records}
+        for record in history.records if history else []:
+            records.setdefault(record.external_id, record)
+        remaining = history.next_cursor if history and history.more else None
+        return CollectionBatch(list(records.values()), {"strategy": "recent_and_backfill_v2", "query_hash": signature,
+            "recent": current.next_cursor, "backfill": remaining,
+            "backfill_until": history_end.isoformat() if remaining else None}, more=current.more or bool(remaining),
+            coverage={"mode": "keyword_modified_windows", "configured_keywords": self.config.keywords,
+                "recent_window": current.coverage, "backfill_pending": bool(remaining),
+                "exhaustive_internet_coverage": False})
+
+    def _nvd_window(self, cursor, t, s, stop_at=None):
         now = utc_now()
         index = int(cursor.get("keyword_index", 0)) % len(self.config.keywords)
         start = cursor.get("window_start") or (now - timedelta(days=self.config.initial_days)).isoformat()
-        end = cursor.get("window_end") or now.isoformat()
+        end = cursor.get("window_end") or (stop_at or now).isoformat()
         # Offline recovery may span more than the API's 120-day window.
         if timestamp(end) - timestamp(start) > timedelta(days=120):
             end = (timestamp(start) + timedelta(days=120)).isoformat()
@@ -177,8 +207,12 @@ class ExtendedCollector:
                  "window_start": start, "window_end": end, "keyword_index": index + 1, "start_index": 0}
         if not more and index + 1 >= len(self.config.keywords):
             after = {"window_start": (timestamp(end) - timedelta(hours=self.config.overlap_hours)).isoformat(), "keyword_index": 0}
-        catch_up = timestamp(end) < now - timedelta(minutes=5)
-        return CollectionBatch(records, after, more=more or index + 1 < len(self.config.keywords) or catch_up)
+        # A multi-keyword cycle naturally takes minutes; that alone must not cause
+        # an endless immediate re-poll loop. Historical windows still drain fully.
+        catch_up = timestamp(end) < (stop_at or now - timedelta(hours=1))
+        return CollectionBatch(records, after, more=more or index + 1 < len(self.config.keywords) or catch_up,
+            coverage={"keyword": self.config.keywords[index], "window_start": start, "window_end": end,
+                "total_results": total, "start_index": offset, "returned": len(records), "more_in_window": more})
 
     def _arxiv(self, cursor, t, s):
         # Page latest updates to a persisted watermark. One request per task and a
@@ -349,7 +383,9 @@ class ExtendedCollector:
             "last_checked_at": utc_now().isoformat(), "bounded_pages": 3}, more=more)
 
     def _nvidia(self, cursor, t, s):
-        headers = {"If-None-Match": cursor["etag"]} if cursor.get("etag") else {}
+        # A legacy ETag only covered the first ten rows; it cannot skip the new full scan.
+        headers = ({"If-None-Match": cursor["etag"]}
+                   if cursor.get("etag") and cursor.get("strategy") == "catalogue_paged_v2" else {})
         status, response_headers, payload = t.request("GET", NVIDIA_CATALOGUE, headers=headers)
         if status == 304:
             return CollectionBatch([], cursor)
@@ -384,9 +420,20 @@ class ExtendedCollector:
                     "updated_date": date_only(row.get("last updated")), "date_precision": 3,
                     "coverage": "official_catalogue_row", "full_bulletin_fetched": False},
                 raw=row, is_demo=False))
-            if len(records) >= self.config.max_items:
-                break
-        return CollectionBatch(records, {"etag": response_headers.get("etag"), "last_checked_at": utc_now().isoformat()})
+        records = list({record.external_id: record for record in records}.values())
+        records.sort(key=lambda r: (r.metadata_json.get("updated_date") or "",
+            r.metadata_json.get("publication_date") or "", r.external_id), reverse=True)
+        signature = hashlib.sha256(json.dumps([r.model_dump(mode="json") for r in records], sort_keys=True).encode()).hexdigest()
+        offset = int(cursor.get("offset", 0)) if cursor.get("snapshot_hash") == signature else 0
+        page = records[offset:offset + self.config.max_items]
+        more = offset + len(page) < len(records)
+        after = {"snapshot_hash": signature, "offset": offset + len(page), "strategy": "catalogue_paged_v2"} if more else {
+            "etag": response_headers.get("etag"), "last_checked_at": utc_now().isoformat(),
+            "snapshot_hash": signature, "strategy": "catalogue_paged_v2"}
+        return CollectionBatch(page, after, more=more, coverage={"mode": "official_catalogue",
+            "catalogue_rows": len(rows), "eligible_count": len(records), "eligible_ids": [r.external_id for r in records],
+            "snapshot_hash": signature, "offset": offset, "returned": len(page), "cycle_complete": not more,
+            "exhaustive_internet_coverage": False})
 
     def _trailofbits(self, cursor, t, s):
         return self._feed(cursor, t, BLOG_URL, "trailofbits")

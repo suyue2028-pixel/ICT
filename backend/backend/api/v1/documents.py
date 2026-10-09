@@ -1,8 +1,10 @@
 from uuid import UUID
 from datetime import datetime
 from typing import Literal
+from typing import Annotated
+import json
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Path
 from sqlalchemy import or_, select
 
 from backend.api.dependencies import Database, PageNumber, PageSize, paginate, require_record
@@ -10,6 +12,7 @@ from backend.models import Document, DocumentRevision, Evidence, KnowledgeEvent
 from backend.core.security import require_admin
 from backend.services.jobs import utc_now
 from backend.schemas.contracts import DocumentRead, Page
+from backend.schemas.traceability import DocumentAssociations, DocumentVersionProof
 from backend.services.freshness import apply_time_filter, TIME_COLUMNS
 from backend.services.enrichment import structured_enrichment
 
@@ -69,6 +72,33 @@ def invalidate_document(document_id: UUID, db: Database):
         db.flush()
     db.commit()
     return {"document_id": document.id, "event_id": event.id, "status": event.status, "deleted_at": document.deleted_at}
+
+
+@router.get("/{document_id}/versions/{content_hash}", response_model=DocumentVersionProof)
+def document_version(document_id: UUID, content_hash: Annotated[str, Path(pattern=r"^[a-f0-9]{64}$")], db: Database):
+    from backend.services.traceability import original_version, version_associations
+    document = require_record(db, Document, document_id)
+    revision = original_version(db, document, content_hash)
+    return {"document_id": document.id, "content_hash": revision.content_hash,
+        "is_demo": document.is_demo, "is_current": document.deleted_at is None and document.content_hash == content_hash,
+        "deleted_at": document.deleted_at, "version_created_at": revision.created_at,
+        "source_url": revision.payload.get("source_url"), "title": revision.payload.get("title"),
+        "content": revision.payload.get("content"), "revision": revision.payload,
+        "revision_json": json.dumps(revision.payload, ensure_ascii=False),
+        "associations": version_associations(db, document, revision),
+        "offset_unit": "unicode_code_points"}
+
+
+@router.get("/{document_id}/associations", response_model=DocumentAssociations)
+def document_associations(document_id: UUID, db: Database,
+        content_hash: str | None = Query(default=None, pattern=r"^[a-f0-9]{64}$")):
+    from backend.services.traceability import original_version, version_associations
+    document = require_record(db, Document, document_id)
+    revision = original_version(db, document, content_hash or document.content_hash)
+    return {"document_id": document.id, "content_hash": revision.content_hash, "is_demo": document.is_demo,
+        "is_current": document.deleted_at is None and document.content_hash == revision.content_hash,
+        "items": version_associations(db, document, revision),
+        "scope": "Explicit identifiers and conservative exact fallbacks; co-mentioned article identifiers are separate entities."}
 
 
 @router.get("/{document_id}/enrichment")

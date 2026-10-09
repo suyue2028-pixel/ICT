@@ -231,6 +231,6 @@ def test_nvd_incremental_cursor_does_not_jump_past_unprocessed_pages():
         def request(self, *args, **kwargs):
             requests.append(kwargs["params"])
             return 200, {}, b'{"vulnerabilities":[{"cve":{"id":"CVE-2099-12345"}}], "resultsPerPage":1, "totalResults":2}'
-    batch = collector._nvd({}, Transport(), SimpleNamespace(nvd_api_key=None))
+    batch = collector._nvd_window({}, Transport(), SimpleNamespace(nvd_api_key=None))
     assert batch.more and batch.next_cursor["window_end"] == requests[0]["lastModEndDate"]
     assert batch.next_cursor["start_index"] == 1

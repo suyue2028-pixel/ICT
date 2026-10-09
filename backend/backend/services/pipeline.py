@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 RISK_ORDER = {name: i for i, name in enumerate(("unknown", "low", "medium", "high", "critical"))}
 AI_PRODUCTS = {"torch", "pytorch", "transformers", "langchain", "tensorflow", "keras",
                "onnx", "vllm", "ollama", "gradio", "llama", "scikit-learn", "openai",
-               "tensorrt", "tensorrt-llm", "triton inference server", "chatrtx", "nemo", "riva", "merlin", "ai enterprise"}
+               "tensorrt", "tensorrt-llm", "triton inference server", "chatrtx", "nemo", "riva", "merlin", "ai enterprise",
+               "llama-index", "llama-index-core", "sentence-transformers"}
 SECURITY_PATTERN = re.compile(r"\b(?:security|safety|vulnerabilit\w*|CVE-\d{4}-\d{4,}|CWE-\d+|exploit\w*|attack\w*|"
     r"unsafe|deserializ\w*|malicious|injection|poison\w*|privacy|risk\w*|guardrails?|sandbox\w*)\b|"
     r"安全|漏洞|投毒|注入|攻击|风险|泄露|法规", re.I)
@@ -109,6 +110,9 @@ def _aliases(record, document: Document) -> list[str]:
 
 
 def _attach_vulnerabilities(db: Session, document: Document, record):
+    previous_ids = list(db.scalars(select(VulnerabilityDocument.vulnerability_id).where(
+        VulnerabilityDocument.document_id == document.id)))
+    db.execute(delete(VulnerabilityDocument).where(VulnerabilityDocument.document_id == document.id))
     aliases = _aliases(record, document)
     # A text article may mention several unrelated CVEs; only explicit
     # vulnerability records can declare those aliases equivalent.
@@ -157,6 +161,15 @@ def _attach_vulnerabilities(db: Session, document: Document, record):
         if RISK_ORDER[record.severity] > RISK_ORDER[vulnerability.severity]:
             vulnerability.severity = record.severity
         _link_once(db, vulnerability.id, document.id)
+    db.flush()
+    if previous_ids:
+        has_ai = select(Document.id).join(VulnerabilityDocument,
+            VulnerabilityDocument.document_id == Document.id).where(
+            VulnerabilityDocument.vulnerability_id == Vulnerability.id,
+            Document.ai_relevant.is_(True), Document.deleted_at.is_(None)).correlate(Vulnerability).exists()
+        db.execute(update(Vulnerability).where(Vulnerability.id.in_(previous_ids)).values(ai_relevant=has_ai))
+    from backend.services.traceability import save_associations
+    save_associations(db, document, document.raw_payload)
 
 
 def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: TaskRun) -> dict:

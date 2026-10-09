@@ -95,7 +95,9 @@ def maintain_jobs(db: Session, celery_app) -> dict:
     for event in pending:
         event.attempts += 1
         try:
-            celery_app.send_task("backend.collect", args=[str(event.task_id)], retry=False)
+            # TaskRun is the result store; subscribing to Redis results here can
+            # block the outbox transaction through the backend's reconnect loop.
+            celery_app.send_task("backend.collect", args=[str(event.task_id)], retry=False, ignore_result=True)
         except Exception:
             # 不记录可能包含连接凭据的异常原文；失败消息保留在 outbox，等待下次发送。
             event.available_at = now + timedelta(seconds=min(event.attempts * 5, 60))
@@ -151,7 +153,7 @@ def maintain_index_events(db: Session, celery_app) -> dict:
             event.detail = {"reason": "document_version_changed"}
             continue
         try:
-            celery_app.send_task("backend.index_event", args=[str(event.id)], retry=False)
+            celery_app.send_task("backend.index_event", args=[str(event.id)], retry=False, ignore_result=True)
         except Exception:
             event.available_at = now + timedelta(seconds=10)
         else:

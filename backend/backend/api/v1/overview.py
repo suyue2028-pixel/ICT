@@ -59,9 +59,14 @@ def relations(vulnerability_id: UUID, db: Database):
         VulnerabilityDocument.document_id == Document.id).where(
         VulnerabilityDocument.vulnerability_id == vulnerability_id, Document.deleted_at.is_(None),
         Document.is_demo == vulnerability.is_demo)).all()
+    from backend.services.traceability import original_version, version_associations
+    proof = {doc.id: [item for item in version_associations(db, doc, original_version(db, doc, doc.content_hash))
+                     if item["vulnerability_id"] == vulnerability.id and item["active_link"]] for doc in documents}
+    documents = [doc for doc in documents if proof[doc.id]]
     return {"nodes": [{"id": vulnerability.id, "type": "vulnerability", "label": vulnerability.identifier},
                       *[{"id": doc.id, "type": doc.document_type, "label": doc.title} for doc in documents]],
             "edges": [{"from": vulnerability.id, "to": doc.id, "type": "documented_by",
                        "evidence": {"document_id": doc.id, "content_hash": doc.content_hash,
-                                    "source_url": doc.source_url}} for doc in documents],
+                                    "source_url": doc.source_url, "associations": proof[doc.id],
+                                    "version_url": f"/api/v1/documents/{doc.id}/versions/{doc.content_hash}"}} for doc in documents],
             "scope": "Explicit source-to-vulnerability links only; no graph inference"}

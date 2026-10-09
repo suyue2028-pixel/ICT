@@ -152,7 +152,8 @@ def test_dispatch_failure_stays_retryable_and_manual_retry_resets_attempts(db, m
     sent = []
 
     class Available:
-        def send_task(self, name, args, retry):
+        def send_task(self, name, args, retry, ignore_result):
+            assert ignore_result is True
             sent.append((name, args, retry))
 
     assert maintain_index_events(db, Available())["sent"] >= 1

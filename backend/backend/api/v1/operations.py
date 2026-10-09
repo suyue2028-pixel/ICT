@@ -57,6 +57,13 @@ def freshness(db: Database, hours: int = Query(default=48, ge=1, le=720),
     return freshness_snapshot(db, utc_now(), hours, ai_relevant)
 
 
+@router.get("/coverage")
+def coverage(db: Database, hours: int = Query(default=48, ge=1, le=720)):
+    """真实来源范围、目录收录进度、任务状态和实测6小时内入库比例；非全网召回率。"""
+    from backend.services.coverage import coverage_snapshot
+    return coverage_snapshot(db, utc_now(), hours)
+
+
 def distribution(values):
     if not values:
         return {"count": 0, "p50": None, "p95": None, "max": None}

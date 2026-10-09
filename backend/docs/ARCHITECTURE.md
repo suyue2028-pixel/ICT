@@ -6,7 +6,7 @@ flowchart LR
     TX --> Beat[唯一 beat]
     Beat --> Redis[Redis AOF]
     Redis --> Worker[Celery Linux worker]
-    Worker --> Sources[十二适配器 / 七类真实来源]
+    Worker --> Sources[十四适配器 / 七类真实来源]
     Sources --> Pipeline[规则筛选 / 标准化 / 显式标识关联]
     Pipeline --> PG[PostgreSQL 原文 / 版本 / 证据 / 游标]
     Pipeline --> Events[add / update / delete 事件]
@@ -19,6 +19,10 @@ flowchart LR
     Tools --> Agent[队友 Agent/RAG]
     Gateway --> Agent
     Gateway --> History[归属会话 / 调用轨迹]
+    History --> Trace[用户归属证据追溯]
+    Trace --> Original[不可变原文版本 / 精确字符区间]
+    Pipeline --> Association[版本化关联依据]
+    Association --> Trace
     Vectors --> Legacy[保留 DeepSeek /qa/ask]
 ```
 
@@ -26,7 +30,7 @@ flowchart LR
 
 DataSource 配置/游标；Document/DocumentRevision 原始载荷、正文完整性、时间、元数据与版本；VulnerabilityAlias/VulnerabilityDocument 显式多对多关联；Evidence 原值、引用、字段状态和方法；TaskRun/TaskStep/Outbox 任务与投递；KnowledgeEvent 操作、租约、重试；EmbeddingChunk 文档/hash/偏移/模型/维度；Conversation/ConversationMessage 归属与有限历史；AccessToken 仅 hash；AgentInvocation 请求去重/预算/耗时/轨迹。VerificationProbe 只验证 beat，不是业务。
 
-当前迁移头 0005_document_invalidation，本轮新增 0004/0005，不修改已执行迁移。此前 0003 保留内置语义表。0004 前做了 pg_dump custom 备份并用 pg_restore --list 核验（output/pre0004.dump）；0003 前备份 output/semantic-pre-migration.dump。备份位于本机忽略目录，未变更 PostgreSQL 镜像/主版本/卷，未进行数据清空或破坏性降级。
+当前迁移头 0009_association_evidence；0006时效字段、0007观察、0008富化质量、0009关联依据均为增量迁移，未改已执行迁移。0009前备份output/pre-timeliness-20261009T123841Z.dump；完整恢复演练在新的verify_restore_*库进行。保留原PostgreSQL16、卷与旧版本历史，不清空数据、不自动降级。
 
 ## 事务、任务和网络
 
@@ -52,4 +56,4 @@ INDEX_PROVIDER 指定唯一消费者。internal 只有真实云端向量可入�
 
 ## 尚需联合完成
 
-云端真实语义索引/增长性能、队友真实 Agent 多轮与跨文档推理、独立标注质量/召回和持续监测 SLA；前端、知识图谱、合法资产匹配与扫描不在本轮交付。当前缺 Embedding、缺外部 Agent，真实模型答案与语义召回指标不编造。详细实测见 VERIFICATION。
+本机外部Agent、缓存E5真实索引和DeepSeek多轮已运行，本轮通过实际前端代理验证两轮回答与原文定位。独立云Embedding仍未配置，内置索引模式不冒充已启用。独立人工标注质量/召回、持续时效SLA、完整宿主机灾备和远端CI仍待完成；论文跨主题推理须Agent与证据审查。详细边界见TRACEABILITY_CI_RECOVERY、DEMO_RUNBOOK与VERIFICATION。

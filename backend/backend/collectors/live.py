@@ -10,6 +10,7 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import quote
+from urllib.parse import urlsplit
 
 import httpx
 from defusedxml import ElementTree
@@ -27,8 +28,9 @@ FEEDS = {"cisco": CISCO_URL, "sans": SANS_URL}
 
 class SourceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    packages: list[str] = Field(default_factory=lambda: ["torch", "transformers", "langchain"],
-                                min_length=1, max_length=10)
+    packages: list[str] = Field(default_factory=lambda: ["torch", "transformers", "langchain",
+        "vllm", "gradio", "tensorflow", "keras", "onnx", "llama-index-core", "sentence-transformers"],
+                                min_length=1, max_length=20)
     max_pages: int = Field(default=3, ge=1, le=5)
 
     @classmethod
@@ -149,6 +151,7 @@ class Transport:
                  sleeper=time.sleep):
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(15, connect=8), proxy=proxy, follow_redirects=False,
+            trust_env=False,
             headers={"User-Agent": "CIT-AISecurity-Research/0.2"},
         )
         self.sleeper = sleeper
@@ -162,7 +165,8 @@ class Transport:
         from redis import Redis
         settings = get_settings()
         interval = 7000 if "services.nvd.nist.gov" in url else 3100 if "arxiv.org" in url else 1000
-        key = "source-rate:" + hashlib.sha256(url.split("?", 1)[0].encode()).hexdigest()
+        # Content API child pages and search share a host-wide budget across workers.
+        key = "source-rate:" + hashlib.sha256(urlsplit(url).netloc.lower().encode()).hexdigest()
         with Redis.from_url(settings.redis_url(), socket_timeout=3, socket_connect_timeout=3) as redis:
             for _ in range(30):
                 if redis.set(key, "1", nx=True, px=interval):
@@ -239,7 +243,10 @@ class LiveCollector:
         cursor_after = {"package_index": index, "page_token": token} if token else {
             "package_index": (index + 1) % len(packages)}
         return CollectionBatch(records=records, next_cursor=cursor_after,
-                               more=bool(token) or index + 1 < len(packages))
+                               more=bool(token) or index + 1 < len(packages), coverage={
+            "mode": "package_inventory", "package": packages[index], "configured_packages": packages,
+            "package_page_complete": not bool(token), "inventory_cycle_complete": not token and index + 1 == len(packages),
+            "exhaustive_internet_coverage": False})
 
     def _collect_rss(self, cursor: dict, transport: Transport) -> CollectionBatch:
         headers = {}

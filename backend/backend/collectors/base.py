@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from backend.schemas.contracts import RawRecord
@@ -10,6 +10,7 @@ class CollectionBatch:
     next_cursor: dict
     more: bool = False
     continuation_delay_seconds: int = 60
+    coverage: dict = field(default_factory=dict)
 
 
 class Collector(Protocol):

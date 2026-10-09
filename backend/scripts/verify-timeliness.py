@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import httpx
 from backend.core.config import get_settings
+from backend.collectors.registry import SOURCE_DEFINITIONS
 
 
 def main():
@@ -47,7 +48,7 @@ def main():
             else:
                 entry["trigger_error"] = response.json().get("error", {}).get("code", "http_" + str(response.status_code))
             report["sources"].append(entry)
-        print("Twelve real source checks queued or reused; waiting for workers", flush=True)
+        print(f"{len(report['sources'])} real source checks queued or reused; waiting for workers", flush=True)
         pending = [row for row in report["sources"] if row.get("task_id")]
         deadline = time.monotonic() + 600
         last_progress = 0
@@ -72,7 +73,9 @@ def main():
             row["outcome"] = "not_finished_within_verification_window"
         snapshot = get("/api/v1/ops/freshness", True)
         report["freshness"] = snapshot
-        check("all_twelve_sources_attempted", len(report["sources"]) == 12 and all(r.get("task_id") for r in report["sources"]))
+        expected = {adapter for adapter in SOURCE_DEFINITIONS if adapter != "offline"}
+        check("all_registered_real_adapters_attempted", {row["adapter"] for row in report["sources"]} == expected
+              and all(row.get("task_id") for row in report["sources"]))
         check("all_attempts_terminal", not pending)
         for row in report["sources"]:
             check("real_source_success_" + row["adapter"], row.get("status") == "succeeded")

@@ -104,6 +104,21 @@ class VulnerabilityDocument(IdentityMixin, Base):
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
 
 
+class AssociationEvidence(IdentityMixin, Base):
+    """Immutable, version-scoped identifier provenance; aliases survive entity merges."""
+    __tablename__ = "association_evidence"
+    __table_args__ = (UniqueConstraint("document_id", "content_hash", "identifier",
+                                      name="uq_association_version_identifier"),)
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    identifier: Mapped[str] = mapped_column(String(160))
+    method: Mapped[str] = mapped_column(String(50))
+    locator: Mapped[str] = mapped_column(String(200))
+    excerpt: Mapped[str] = mapped_column(Text)
+    group_identifiers: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+
 class Evidence(IdentityMixin, TimestampMixin, Base):
     __tablename__ = "evidence"
     __table_args__ = (UniqueConstraint("document_id", "content_hash", "field", "method",

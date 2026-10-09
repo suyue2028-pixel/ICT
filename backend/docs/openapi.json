@@ -716,6 +716,119 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/versions/{content_hash}": {
+      "get": {
+        "tags": [
+          "原始文档"
+        ],
+        "summary": "Document Version",
+        "operationId": "document_version_api_v1_documents__document_id__versions__content_hash__get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "content_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Content Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentVersionProof"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/associations": {
+      "get": {
+        "tags": [
+          "原始文档"
+        ],
+        "summary": "Document Associations",
+        "operationId": "document_associations_api_v1_documents__document_id__associations_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "content_hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Hash"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAssociations"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/documents/{document_id}/enrichment": {
       "get": {
         "tags": [
@@ -2045,6 +2158,55 @@
         ]
       }
     },
+    "/api/v1/agent/invocations/{invocation_id}/evidence": {
+      "get": {
+        "tags": [
+          "Agent 联调与用户会话"
+        ],
+        "summary": "Invocation Evidence",
+        "description": "Resolve this user's saved answer to immutable source versions and link proof.",
+        "operationId": "invocation_evidence_api_v1_agent_invocations__invocation_id__evidence_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invocation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invocation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInvocationEvidence"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/tokens": {
       "post": {
         "tags": [
@@ -2887,6 +3049,55 @@
         }
       }
     },
+    "/api/v1/ops/coverage": {
+      "get": {
+        "tags": [
+          "运行监控"
+        ],
+        "summary": "Coverage",
+        "description": "真实来源范围、目录收录进度、任务状态和实测6小时内入库比例；非全网召回率。",
+        "operationId": "coverage_api_v1_ops_coverage_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 1,
+              "default": 48,
+              "title": "Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/metrics": {
       "get": {
         "tags": [
@@ -3520,6 +3731,126 @@
         ],
         "title": "AgentEvidence"
       },
+      "AgentInvocationEvidence": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version"
+          },
+          "invocation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Invocation Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "generation_mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "extractive",
+              "mock",
+              "unknown"
+            ],
+            "title": "Generation Mode"
+          },
+          "llm_http_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Http Calls"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "retrieval_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Mode"
+          },
+          "cve_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cve Ids"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerQuote"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "all_quotes_verified": {
+            "type": "boolean",
+            "title": "All Quotes Verified"
+          },
+          "all_versions_current": {
+            "type": "boolean",
+            "title": "All Versions Current"
+          },
+          "claim_support_status": {
+            "type": "string",
+            "const": "not_independently_reviewed",
+            "title": "Claim Support Status"
+          },
+          "limits": {
+            "type": "string",
+            "title": "Limits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "invocation_id",
+          "session_id",
+          "request_id",
+          "status",
+          "generation_mode",
+          "llm_http_calls",
+          "answer",
+          "retrieval_mode",
+          "cve_ids",
+          "evidence",
+          "all_quotes_verified",
+          "all_versions_current",
+          "claim_support_status",
+          "limits"
+        ],
+        "title": "AgentInvocationEvidence"
+      },
       "AgentQuery": {
         "properties": {
           "query": {
@@ -3766,6 +4097,187 @@
         ],
         "title": "AgentSource"
       },
+      "AnswerQuote": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "locator": {
+            "type": "string",
+            "title": "Locator"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuotePosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quote_verified": {
+            "type": "boolean",
+            "title": "Quote Verified"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "version_url": {
+            "type": "string",
+            "title": "Version Url"
+          },
+          "associations": {
+            "items": {
+              "$ref": "#/components/schemas/AssociationProof"
+            },
+            "type": "array",
+            "title": "Associations"
+          },
+          "index_events_observed_now": {
+            "items": {
+              "$ref": "#/components/schemas/IndexEventObserved"
+            },
+            "type": "array",
+            "title": "Index Events Observed Now"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "document_id",
+          "content_hash",
+          "title",
+          "source_url",
+          "excerpt",
+          "locator",
+          "position",
+          "quote_verified",
+          "is_current",
+          "deleted_at",
+          "version_url",
+          "associations",
+          "index_events_observed_now"
+        ],
+        "title": "AnswerQuote"
+      },
+      "AssociationProof": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "source_declared_alias",
+              "explicit_identifier",
+              "exact_product_body_fallback",
+              "exact_url_fallback"
+            ],
+            "title": "Method"
+          },
+          "locator": {
+            "type": "string",
+            "title": "Locator"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "group_identifiers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Group Identifiers"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "recorded_at_ingestion",
+              "reconstructed_from_revision"
+            ],
+            "title": "Origin"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "vulnerability_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vulnerability Id"
+          },
+          "active_link": {
+            "type": "boolean",
+            "title": "Active Link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "method",
+          "locator",
+          "excerpt",
+          "group_identifiers",
+          "origin",
+          "recorded_at",
+          "vulnerability_id",
+          "active_link"
+        ],
+        "title": "AssociationProof"
+      },
       "CacheMetadata": {
         "properties": {
           "last_checked_at": {
@@ -3862,6 +4374,49 @@
         },
         "type": "object",
         "title": "ConversationCreate"
+      },
+      "DocumentAssociations": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Content Hash"
+          },
+          "is_demo": {
+            "type": "boolean",
+            "title": "Is Demo"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssociationProof"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "content_hash",
+          "is_demo",
+          "is_current",
+          "items",
+          "scope"
+        ],
+        "title": "DocumentAssociations"
       },
       "DocumentRead": {
         "properties": {
@@ -4054,6 +4609,102 @@
         ],
         "title": "DocumentRead"
       },
+      "DocumentVersionProof": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Content Hash"
+          },
+          "is_demo": {
+            "type": "boolean",
+            "title": "Is Demo"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "version_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Version Created At"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "revision": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Revision"
+          },
+          "revision_json": {
+            "type": "string",
+            "title": "Revision Json"
+          },
+          "associations": {
+            "items": {
+              "$ref": "#/components/schemas/AssociationProof"
+            },
+            "type": "array",
+            "title": "Associations"
+          },
+          "offset_unit": {
+            "type": "string",
+            "const": "unicode_code_points",
+            "title": "Offset Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "content_hash",
+          "is_demo",
+          "is_current",
+          "deleted_at",
+          "version_created_at",
+          "source_url",
+          "title",
+          "content",
+          "revision",
+          "revision_json",
+          "associations",
+          "offset_unit"
+        ],
+        "title": "DocumentVersionProof"
+      },
       "EnrichmentCitation": {
         "properties": {
           "document_id": {
@@ -4215,6 +4866,30 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IndexEventObserved": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "operation",
+          "status"
+        ],
+        "title": "IndexEventObserved"
       },
       "JsonValue": {},
       "KnowledgeAck": {
@@ -4682,6 +5357,46 @@
         "title": "QuestionResponse",
         "description": "问答联调协议；实际回答由可选的外部 AI 服务提供。"
       },
+      "QuotePosition": {
+        "properties": {
+          "representation": {
+            "type": "string",
+            "enum": [
+              "content",
+              "revision_json"
+            ],
+            "title": "Representation"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start"
+          },
+          "end": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "End"
+          },
+          "offset_unit": {
+            "type": "string",
+            "const": "unicode_code_points",
+            "title": "Offset Unit"
+          },
+          "locator_verified": {
+            "type": "boolean",
+            "title": "Locator Verified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "representation",
+          "start",
+          "end",
+          "offset_unit",
+          "locator_verified"
+        ],
+        "title": "QuotePosition"
+      },
       "SemanticHitRead": {
         "properties": {
           "citation": {
@@ -4761,7 +5476,9 @@
               "crossref",
               "huggingface",
               "china_policy",
-              "nvidia"
+              "nvidia",
+              "nist_drafts",
+              "govuk_search"
             ],
             "title": "Adapter"
           },

@@ -32,6 +32,13 @@ def capture_samples(db, now, component_health):
         quality = monitoring(db)
         snapshot["enrichment_quality"] = {key: quality[key] for key in
             ("scope", "scanned_documents", "scan_complete", "dimensions", "automatic_checks")}
+        from backend.services.coverage import coverage_snapshot
+        coverage = coverage_snapshot(db, now)
+        snapshot["source_coverage"] = {key: coverage[key] for key in
+            ("categories", "adapter_counts", "delivery", "continuous_sla_verified")}
+        snapshot["source_coverage"]["sources"] = [{key: source[key] for key in
+            ("adapter", "status", "stale", "documents", "ai_relevant_documents", "catalogue_capture", "delivery")}
+            for source in coverage["sources"]]
         heartbeat = db.get(VerificationProbe, "beat-heartbeat")
         snapshot.update(components=component_health,
             beat_heartbeat_count=heartbeat.count if heartbeat else None,

@@ -14,10 +14,15 @@ SOURCE_DEFINITIONS = {
     "huggingface": {"name": "Hugging Face AI 社区", "category": "community", "implemented": True},
     "china_policy": {"name": "中国政府网生成式 AI 法规", "category": "policy", "implemented": True},
     "nvidia": {"name": "NVIDIA AI 产品安全公告目录", "category": "vendor", "implemented": True},
+    "nist_drafts": {"name": "NIST AI 安全规范草案动态发现", "category": "standard", "implemented": True},
+    "govuk_search": {"name": "英国政府 AI 安全政策动态发现", "category": "policy", "implemented": True},
 }
 
 
 def get_collector(adapter: str, config: dict | None = None):
+    if adapter in {"nist_drafts", "govuk_search"}:
+        from backend.collectors.discovery import DiscoveryCollector
+        return DiscoveryCollector(adapter, config or {})
     if adapter == "offline":
         return OfflineCollector()
     if adapter in {"osv", "cisco", "sans"}:

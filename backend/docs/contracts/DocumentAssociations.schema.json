@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "AssociationProof": {
+      "properties": {
+        "identifier": {
+          "title": "Identifier",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "source_declared_alias",
+            "explicit_identifier",
+            "exact_product_body_fallback",
+            "exact_url_fallback"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "locator": {
+          "title": "Locator",
+          "type": "string"
+        },
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "group_identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Group Identifiers",
+          "type": "array"
+        },
+        "origin": {
+          "enum": [
+            "recorded_at_ingestion",
+            "reconstructed_from_revision"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "recorded_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recorded At"
+        },
+        "vulnerability_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vulnerability Id"
+        },
+        "active_link": {
+          "title": "Active Link",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "identifier",
+        "method",
+        "locator",
+        "excerpt",
+        "group_identifiers",
+        "origin",
+        "recorded_at",
+        "vulnerability_id",
+        "active_link"
+      ],
+      "title": "AssociationProof",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "is_demo": {
+      "title": "Is Demo",
+      "type": "boolean"
+    },
+    "is_current": {
+      "title": "Is Current",
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/AssociationProof"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "document_id",
+    "content_hash",
+    "is_demo",
+    "is_current",
+    "items",
+    "scope"
+  ],
+  "title": "DocumentAssociations",
+  "type": "object"
+}

@@ -11,6 +11,7 @@ DEFAULT_INTERVALS = {
     "huggingface": 3600, "trailofbits": 3600, "nvidia": 3600,
     "crossref": 21600, "arxiv": 86400, "nist": 21600,
     "govuk": 21600, "china_policy": 21600,
+    "nist_drafts": 3600, "govuk_search": 3600,
 }
 TIME_COLUMNS = {"published": Document.published_at, "updated": Document.source_updated_at,
                 "discovered": Document.first_collected_at, "changed": Document.content_changed_at}

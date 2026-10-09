@@ -22,6 +22,9 @@ def validate_config(adapter: str, config: dict) -> dict:
             raise HTTPException(422, "offline_config_must_be_empty")
         return {}
     try:
+        if adapter in {"nist_drafts", "govuk_search"}:
+            from backend.collectors.discovery import DiscoveryConfig
+            return DiscoveryConfig.model_validate(config).model_dump()
         if adapter in {"nvd", "arxiv", "trailofbits", "nist", "govuk", "crossref", "huggingface", "china_policy", "nvidia"}:
             from backend.collectors.extended import ExtendedConfig
             return ExtendedConfig.model_validate(config).model_dump()

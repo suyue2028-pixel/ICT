@@ -53,9 +53,12 @@ def collect(task_id: str):
             # 框架阶段串行提交归一化实体，避免跨来源同一漏洞并发创建。
             db.execute(text("SELECT pg_advisory_xact_lock(7429031)"))
             task.result = ingest_batch(db, source, batch, task)
+            if batch.coverage:
+                task.result = {**task.result, "coverage": batch.coverage}
             source.next_run_at = utc_now() + timedelta(seconds=(
                 max(60, min(180, batch.continuation_delay_seconds)) if batch.more else effective_interval(source)))
             task.status, task.finished_at = "succeeded", utc_now()
+            task.error_code = None
             source.last_success_at = task.finished_at
             source.consecutive_failures, source.last_error_code = 0, None
             if task.result["created"] or task.result["updated"]:

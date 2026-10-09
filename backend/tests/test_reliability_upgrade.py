@@ -94,12 +94,12 @@ def test_invalid_and_overlong_bearer_rejected(client):
 
 def test_shared_http_contract_accepts_backend_payload_and_agent_answer(db, monkeypatch):
     import os
-    root = Path(__file__).resolve().parents[2]
-    candidates = [root / "packages/rag_agent/src/rag_agent/integration/contracts.py",
-                  root / "ICT-team/packages/rag_agent/src/rag_agent/integration/contracts.py"]
-    if os.environ.get("ICT_AGENT_CONTRACT_FILE"):
-        candidates.insert(0, Path(os.environ["ICT_AGENT_CONTRACT_FILE"]))
-    path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+    root = Path(__file__).resolve().parents[1]
+    configured = os.environ.get("ICT_AGENT_CONTRACT_FILE")
+    candidates = [Path(configured)] if configured else [
+        root.parent / "packages/rag_agent/src/rag_agent/integration/contracts.py",
+        root.parent / "ICT-team/packages/rag_agent/src/rag_agent/integration/contracts.py"]
+    path = next((p for p in candidates if p.is_file()), candidates[0])
     if not path.exists():
         pytest.skip("Local cross-repository integration contract file not present")
     spec = importlib.util.spec_from_file_location("local_agent_contract", path)

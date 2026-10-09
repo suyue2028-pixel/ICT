@@ -63,6 +63,10 @@ def main():
                 raise RuntimeError("Verification database unexpectedly exists; nothing overwritten")
             snapshot = connection.scalar(text("SELECT pg_export_snapshot()"))
             counts = {table: connection.scalar(text('SELECT count(*) FROM "' + table + '"')) for table in sorted(Base.metadata.tables)}
+            # Per-row canonical SQL hashes validate contents as well as counts;
+            # only digests leave the connection, never raw credentials/messages.
+            fingerprints = {table: connection.scalar(text('SELECT md5(coalesce(string_agg(digest,\'|\' ORDER BY digest),\'\')) FROM '
+                '(SELECT md5(row_to_json(r)::text) AS digest FROM "' + table + '" r) t')) for table in counts}
             version = connection.scalar(text("SELECT version_num FROM alembic_version"))
             with dump.open("xb") as handle:
                 subprocess.run([*prefix, "pg_dump", "-U", settings.postgres_user, "-d", settings.postgres_db,
@@ -76,15 +80,19 @@ def main():
     restored = create_engine(settings.database_url.set(database=name), hide_parameters=True)
     with restored.connect() as connection:
         actual = {table: connection.scalar(text('SELECT count(*) FROM "' + table + '"')) for table in counts}
+        restored_fingerprints = {table: connection.scalar(text('SELECT md5(coalesce(string_agg(digest,\'|\' ORDER BY digest),\'\')) FROM '
+            '(SELECT md5(row_to_json(r)::text) AS digest FROM "' + table + '" r) t')) for table in counts}
         restored_version = connection.scalar(text("SELECT version_num FROM alembic_version"))
         query_ok = connection.scalar(text("SELECT 1")) == 1
     restored.dispose()
     application = check_application(name)
-    passed = counts == actual and version == restored_version and query_ok and application["passed"]
+    passed = counts == actual and fingerprints == restored_fingerprints and version == restored_version and query_ok and application["passed"]
     result = {"time": datetime.now(timezone.utc).isoformat(), "passed": passed, "snapshot_consistent": True,
         "verification_database": name, "source_database_modified": False, "database_retained": True,
         "backup": str(dump), "log": str(log_path), "migration_version": version,
         "restored_migration_version": restored_version, "source_snapshot_counts": counts, "restored_counts": actual,
+        "table_fingerprints_match": fingerprints == restored_fingerprints,
+        "table_fingerprints": fingerprints,
         "restored_application": application,
         "limits": "Schema/data and API listing restored in a separate database; complete host/credential disaster recovery remains separate."}
     (output / ("recovery-" + stamp + ".json")).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

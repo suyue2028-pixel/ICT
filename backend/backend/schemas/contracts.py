@@ -22,7 +22,7 @@ class Page(BaseModel, Generic[T]):
 class SourceCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=100)
-    adapter: Literal["offline", "osv", "cisco", "sans", "nvd", "arxiv", "trailofbits", "nist", "govuk", "crossref", "huggingface", "china_policy", "nvidia"]
+    adapter: Literal["offline", "osv", "cisco", "sans", "nvd", "arxiv", "trailofbits", "nist", "govuk", "crossref", "huggingface", "china_policy", "nvidia", "nist_drafts", "govuk_search"]
     config: dict = Field(default_factory=dict)
     enabled: bool = False
     interval_seconds: int = Field(default=3600, ge=60, le=604800)

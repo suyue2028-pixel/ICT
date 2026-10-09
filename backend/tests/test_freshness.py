@@ -178,7 +178,7 @@ def test_nvd_long_offline_window_is_bounded_and_overlap_preserves_watermark(monk
             requests.append(kwargs["params"])
             return 200, {}, b'{"vulnerabilities":[],"totalResults":0}'
     collector = ExtendedCollector("nvd", {"keywords": ["ollama"]})
-    batch = collector._nvd({"window_start": (NOW - timedelta(days=200)).isoformat()}, Transport(), SimpleNamespace(nvd_api_key=None))
+    batch = collector._nvd_window({"window_start": (NOW - timedelta(days=200)).isoformat()}, Transport(), SimpleNamespace(nvd_api_key=None))
     start, end = (datetime.fromisoformat(requests[0][x]) for x in ("lastModStartDate", "lastModEndDate"))
     assert end - start == timedelta(days=120) and batch.more
     assert datetime.fromisoformat(batch.next_cursor["window_start"]) == end - timedelta(hours=24)

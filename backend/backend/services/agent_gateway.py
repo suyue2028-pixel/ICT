@@ -120,6 +120,11 @@ def validate_answer(db, answer, is_demo):
         try:
             _verify_citation(db, Citation(document_id=evidence.document_id, content_hash=evidence.content_hash,
                                          source_url=evidence.source, excerpt=evidence.content))
+            from backend.services.traceability import locate_quote
+            revision = db.scalar(select(DocumentRevision).where(
+                DocumentRevision.document_id == evidence.document_id,
+                DocumentRevision.content_hash == evidence.content_hash))
+            locate_quote(revision.payload, evidence.content, evidence.locator)
         except HTTPException:
             raise HTTPException(502, "agent_citation_invalid") from None
     for cve in answer.cve_ids:
