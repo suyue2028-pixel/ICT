@@ -4,7 +4,8 @@ import type { IntelligenceItem } from '@/types'
 import { errorMessage } from '@/api/http'
 import { useRoute } from 'vue-router'
 import PageState from '@/components/PageState.vue'
-import SourceVersionFacts from '@/components/intelligence/SourceVersionFacts.vue'
+import EnrichmentOverview from '@/components/enrichment/EnrichmentOverview.vue'
+import SourceEvidencePanel from '@/components/intelligence/SourceEvidencePanel.vue'
 import { severityNames, useIntelligenceStore } from '@/stores/intelligence'
 
 const route = useRoute()
@@ -40,7 +41,7 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
         <div>
           <span class="eyebrow">情报详情 / {{ item.id }}</span>
           <h1>{{ item.title }}</h1>
-          <p>{{ item.summary }}</p>
+          <p v-if="item.documentType !== 'paper'">{{ item.summary }}</p>
           <div class="detail-meta">
             <span :class="['severity-badge', item.severity]">{{
               severityNames[item.severity]
@@ -76,57 +77,9 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
                 <span>风险等级</span><strong>{{ severityNames[item.severity] }}</strong>
               </div>
             </div>
-            <SourceVersionFacts :item="item" />
           </section>
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>影响与建议</h2>
-                <p>仅展示来源已记录的信息</p>
-              </div>
-            </div>
-            <div class="detail-section">
-              <h3>受影响产品</h3>
-              <div v-if="item.products.length" class="tag-line">
-                <span v-for="product in item.products" :key="product" class="soft-tag">{{
-                  product
-                }}</span>
-              </div>
-              <p v-else class="muted">暂无数据</p>
-            </div>
-            <div class="detail-section">
-              <h3>修复建议</h3>
-              <p>{{ item.recommendation || '暂无数据' }}</p>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>来源与证据</h2>
-                <p>引用版本原文；摘要与全文按来源区分</p>
-              </div>
-            </div>
-            <div class="source-line">
-              <span>来源名称</span><strong>{{ item.source || '暂无数据' }}</strong>
-            </div>
-            <div v-if="item.evidence.length" class="evidence-list">
-              <div v-for="(evidence, index) in item.evidence" :key="index" class="evidence-card">
-                <span class="evidence-num">0{{ index + 1 }}</span>
-                <div>
-                  <strong>{{ evidence.title }}</strong>
-                  <p>{{ evidence.excerpt || '暂无数据' }}</p>
-                  <a
-                    v-if="evidence.url"
-                    :href="evidence.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >查看原始来源 ↗</a
-                  ><span v-else class="muted">原始链接：暂无数据</span>
-                </div>
-              </div>
-            </div>
-            <div v-else class="muted">暂无数据</div>
-          </section>
+          <EnrichmentOverview :item="item" @retry="loadDetail" />
+          <SourceEvidencePanel v-if="item.documentType !== 'paper'" :item="item" />
         </div>
         <aside class="detail-aside">
           <section class="panel">
@@ -142,7 +95,7 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
             <p>
               资料由后端保存，保留原文及版本。来源记录不等于独立人工核验。
             </p>
-            <router-link to="/graph">查看关联图谱 →</router-link>
+            <router-link :to="{ path: '/graph', query: item.sourceId ? { source_id: item.sourceId } : {} }">查看分类与来源关系</router-link>
           </section>
         </aside>
       </div>
@@ -151,5 +104,5 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
 </template>
 
 <style scoped>
-.field-grid small { display: block; color: #667085; font-size: 11px; margin-top: 6px; line-height: 1.7; }
+.field-grid small { display: block; color: #6f6f6f; font-size: 11px; margin-top: 6px; line-height: 1.7; }
 </style>

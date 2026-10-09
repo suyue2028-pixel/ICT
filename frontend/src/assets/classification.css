@@ -1,0 +1,37 @@
+.classification-modes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.classification-modes button, .enrichment-tabs button { font: inherit; font-size: 13px; color: #000; background: #fff; border: 1px solid #000; border-radius: 8px; padding: 9px 14px; cursor: pointer; }
+.classification-modes button.active, .enrichment-tabs button.active { background: #000; color: #fff; }
+.classification-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: start; gap: 20px; }
+.classification-main { display: grid; gap: 20px; min-width: 0; }
+.category-menu { padding: 18px; }
+.category-menu h2 { font-size: 16px; margin-bottom: 16px; }
+.category-choice { display: grid; gap: 6px; padding: 11px 12px; width: 100%; border: 1px solid #000; border-radius: 8px; margin-bottom: 8px; color: #000; background: #fff; text-align: left; font: inherit; cursor: pointer; }
+.category-choice.active { color: #fff; background: #000; }
+.category-choice span { font-size: 13px; }
+.category-choice small, .category-menu p, .classification-note { font-size: 11px; line-height: 1.8; }
+.source-choice-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.source-choice { border: 1px solid #000; border-radius: 9px; background: #fff; color: #000; padding: 14px; display: grid; gap: 9px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.source-choice.active { background: #000; color: #fff; }
+.source-choice strong { font-size: 14px; }
+.source-choice span, .source-choice small { font-size: 11px; }
+.classification-note { margin: 14px 0 20px; }
+.classification-search { display: grid; gap: 8px; margin: 0 0 20px; font-size: 12px; }
+.classification-search input { width: 100%; padding: 10px 12px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font: inherit; }
+.classification-search input::placeholder { color: #000; opacity: 1; }
+.enrichment-filters { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; margin-bottom: 12px; font-size: 12px; }
+.enrichment-filters > label { display: grid; gap: 8px; }
+.enrichment-filters .classification-search { flex: 1 1 240px; }
+.enrichment-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.enrichment-tabs button { font-size: 12px; padding: 8px 10px; }
+.classification-layout .panel, .enrichment-overview { min-width: 0; }
+.classification-layout .panel-title { flex-wrap: wrap; }
+@media (max-width: 1000px) {
+  .classification-layout { grid-template-columns: minmax(0, 1fr); }
+  .category-menu { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .category-menu h2, .category-menu p { grid-column: 1 / -1; }
+  .category-choice { margin: 0; }
+}
+@media (max-width: 500px) {
+  .source-choice-list { grid-template-columns: minmax(0, 1fr); }
+  .classification-layout { gap: 16px; }
+}

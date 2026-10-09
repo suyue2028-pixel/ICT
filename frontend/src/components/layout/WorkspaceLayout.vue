@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { ChatDotRound, Clock, Right } from '@element-plus/icons-vue'
 import { useIntelligenceStore } from '@/stores/intelligence'
 import WorkspaceNavigation from './WorkspaceNavigation.vue'
 import WorkspaceSearch from './WorkspaceSearch.vue'
-import RuntimeStatus from './RuntimeStatus.vue'
 import SidebarSwipeFeedback from './SidebarSwipeFeedback.vue'
 import { useSidebarSwipeNavigation } from '@/composables/useSidebarSwipeNavigation'
 
@@ -16,18 +14,17 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
 
 <template>
   <a class="skip-link" href="#main-content">跳转到主要内容</a>
-  <div class="app-shell">
+  <div class="app-shell conversation-theme">
     <header class="workspace-header">
       <router-link to="/" class="workspace-identity" aria-label="安全情报工作台首页">
-        <span class="brand-mark mobile-brand" aria-hidden="true" translate="no">AI</span>
         <span class="brand-copy"
-          ><strong>安全情报<span>工作台</span></strong
-          ><small>智能体驱动的 AI 安全知识情报系统</small></span
+          ><strong>安全情报工作台</strong
+          ><small>查找安全资料，核对来源与引用</small></span
         >
       </router-link>
       <WorkspaceSearch />
       <div class="header-sample-date">
-        <Clock aria-hidden="true" /><span
+        <span
           ><small>资料最新发布日期</small><time>{{ sampleDate }}</time></span
         >
       </div>
@@ -37,25 +34,18 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
     </header>
     <aside ref="sidebar" class="sidebar" aria-label="工作台导航">
       <router-link to="/" class="sidebar-brand" aria-label="情报工作台首页">
-        <span class="brand-mark" aria-hidden="true" translate="no">AI</span>
-        <span>情报工作台</span>
+        <span>安全情报</span>
       </router-link>
-      <p class="sidebar-label">工作空间</p>
+      <p class="sidebar-label">导航</p>
       <WorkspaceNavigation mode="rail" />
       <SidebarSwipeFeedback :feedback="feedback" />
-      <router-link class="sidebar-assistant" to="/qa">
-        <span class="assistant-icon"><ChatDotRound aria-hidden="true" /></span>
-        <strong>可追溯问答</strong>
-        <p>查看回答与情报引用<br />后端资料 · Agent 检索</p>
-        <span class="assistant-arrow"><Right aria-hidden="true" /></span>
-      </router-link>
+      <p class="sidebar-note">检索资料<br />核对原文与引用</p>
     </aside>
     <div class="workspace">
       <main id="main-content" class="page-content" tabindex="-1">
-        <RuntimeStatus />
         <slot />
       </main>
-      <footer class="workspace-footer">安全情报工作台 <span>本地集成环境</span></footer>
+      <footer class="workspace-footer">安全情报工作台 <span>安全资料与来源检索</span></footer>
     </div>
   </div>
 </template>

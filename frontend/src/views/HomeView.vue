@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { shallowRef } from 'vue'
 import PageState from '@/components/PageState.vue'
 import OverviewMetrics from '@/components/overview/OverviewMetrics.vue'
 import OverviewInsights from '@/components/overview/OverviewInsights.vue'
+import OverviewMetricDetails from '@/components/overview/OverviewMetricDetails.vue'
 import { useOverviewData } from '@/composables/useOverviewData'
+import type { OverviewMetricKey } from '@/composables/useOverviewData'
 import { useIntelligenceStore } from '@/stores/intelligence'
 
 const store = useIntelligenceStore()
 const {
+  currentItems,
   metrics,
   severityOption,
   trendOption,
@@ -20,19 +24,19 @@ const {
   total,
   uniqueCves,
 } = useOverviewData(() => store.items)
-const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问答']
+const activeMetric = shallowRef<OverviewMetricKey | null>(null)
+function selectMetric(key: OverviewMetricKey) { activeMetric.value = activeMetric.value === key ? null : key }
 </script>
 
 <template>
   <div class="page-heading overview-heading">
     <div>
-      <span class="eyebrow">工作空间 / 总览</span>
-      <h1>情报总览</h1>
-      <p>从情报采集到可追溯问答，一屏查看真实运行记录。</p>
+      <h1>首页</h1>
+      <p>查看安全情报、风险分布与原始来源。</p>
     </div>
     <div class="overview-heading-actions">
       <router-link class="primary-link overview-all-link" to="/intelligence"
-        >查看全部情报 <span aria-hidden="true">→</span></router-link
+        >查看全部情报</router-link
       >
       <div class="overview-period">
         <div class="period-switch" role="group" aria-label="统计时间范围">
@@ -58,16 +62,9 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
     @retry="store.loadDemo"
   >
     <div class="overview-layout">
-      <OverviewMetrics :metrics="metrics" />
+      <OverviewMetrics :metrics="metrics" :selected-key="activeMetric" @select="selectMetric" />
       <p class="overview-summary">当前时间范围：{{ total }} 条来源记录 · {{ uniqueCves }} 个已记录的去重 CVE。未提供 CVE 的资料不计入该数量。</p>
-      <section class="flow-strip" aria-label="系统处理流程">
-        <h2>处理流程</h2>
-        <div v-for="(step, index) in steps" :key="step" class="flow-step">
-          <span class="flow-number">0{{ index + 1 }}</span
-          ><strong>{{ step }}</strong>
-        </div>
-        <small>后端采集 · Agent 检索</small>
-      </section>
+      <OverviewMetricDetails v-if="activeMetric" :kind="activeMetric" :items="currentItems" :period="period" :latest-date="latestDate" :is-demo="store.isDemo" @close="activeMetric = null" />
       <OverviewInsights
         :severity-option="severityOption"
         :trend-option="trendOption"
@@ -82,5 +79,5 @@ const steps = ['情报采集', '规范与富化', '知识关联', '可追溯问�
 </template>
 
 <style scoped>
-.overview-summary { grid-column: 1 / -1; color: #667085; font-size: 11px; line-height: 1.7; margin: -10px 0 0; }
+.overview-summary { grid-column: 1 / -1; color: #6f6f6f; font-size: 11px; line-height: 1.7; margin: -10px 0 0; }
 </style>

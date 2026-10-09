@@ -2,8 +2,6 @@ import { fileURLToPath, URL } from 'node:url'
 import { readFileSync, statSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import vueDevTools from 'vite-plugin-vue-devtools'
-import { localRuntimeStatus } from './local-runtime-status.ts'
 function localSession(): Plugin {
   return { name: 'local-user-session', apply: 'serve', configureServer(server) {
     server.middlewares.use((request, response, next) => {
@@ -25,7 +23,7 @@ function localSession(): Plugin {
   } }
 }
 export default defineConfig({
-  plugins: [vue(), vueDevTools(), localSession(), localRuntimeStatus()],
+  plugins: [vue(), localSession()],
   server: { host: '127.0.0.1', port: 5173, strictPort: true,
     proxy: { '/api': { target: process.env.ICT_BACKEND_ORIGIN || 'http://127.0.0.1:8010', changeOrigin: true } } },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import type { SidebarSwipeFeedback } from '@/composables/useSidebarSwipeNavigation'
 
 defineProps<{ feedback: SidebarSwipeFeedback | null }>()
@@ -15,12 +14,8 @@ defineProps<{ feedback: SidebarSwipeFeedback | null }>()
       aria-live="polite"
       aria-atomic="true"
     >
-      <span :class="['swipe-direction-icon', feedback.direction]" aria-hidden="true">
-        <ArrowLeft v-if="feedback.direction === 'left'" />
-        <ArrowRight v-else />
-      </span>
       <span class="swipe-feedback-copy"
-        ><strong>{{ feedback.label }}</strong
+        ><strong>{{ feedback.direction === 'left' ? '向左滑动' : '向右滑动' }} · {{ feedback.label }}</strong
         ><small>{{ feedback.status }}</small></span
       >
       <span class="swipe-progress" aria-hidden="true"

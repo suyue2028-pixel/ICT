@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { WarningFilled } from '@element-plus/icons-vue'
 import { severityNames } from '@/stores/intelligence'
 import type { IntelligenceItem } from '@/types'
 
@@ -9,8 +8,8 @@ defineProps<{ items: IntelligenceItem[] }>()
 <template>
   <section class="panel priority-panel">
     <div class="panel-title">
-      <h2><WarningFilled class="section-icon danger" aria-hidden="true" />重点风险情报</h2>
-      <router-link class="subtle-link" to="/intelligence">查看更多 →</router-link>
+      <h2>重点风险情报</h2>
+      <router-link class="subtle-link" to="/intelligence">查看全部</router-link>
     </div>
     <div v-if="items.length" class="table-scroll">
       <table class="data-table overview-table">

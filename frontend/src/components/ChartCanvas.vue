@@ -2,14 +2,13 @@
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { init, use } from 'echarts/core'
 import type { EChartsType } from 'echarts/core'
-import { BarChart, GraphChart, LineChart, PieChart } from 'echarts/charts'
+import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer, SVGRenderer } from 'echarts/renderers'
 import type { EChartsOption } from 'echarts'
 
 use([
   BarChart,
-  GraphChart,
   LineChart,
   PieChart,
   GridComponent,

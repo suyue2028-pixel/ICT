@@ -1,5 +1,7 @@
 import { apiGet } from './http'
 import type { IntelligenceItem, Severity } from '@/types'
+import { paperEnrichments } from './paperEnrichment'
+import type { EnrichmentSnapshot } from '@/types/enrichment'
 export interface Page<T> { items: T[]; total: number; page: number; page_size: number }
 export interface Source { id: string; name: string; category: string; adapter: string; enabled: boolean }
 export interface Document {
@@ -16,7 +18,7 @@ export interface Vulnerability { id: string; identifier: string; title: string; 
 export interface Relations { nodes: { id: string; type: string; label: string }[];
   edges: { from: string; to: string; type: string; evidence: { document_id: string; content_hash: string; source_url: string } }[] }
 export interface Stats { documents: number; vulnerabilities: number; category_count: number }
-export interface Enrichment { content_hash: string; source: Record<string, { state: string; value: unknown }> }
+export type Enrichment = EnrichmentSnapshot
 export function enrichedItem(item: IntelligenceItem, enrichment: Enrichment): IntelligenceItem {
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -38,11 +40,13 @@ export function enrichedItem(item: IntelligenceItem, enrichment: Enrichment): In
       ecosystem: typeof pkg.ecosystem === 'string' ? pkg.ecosystem : '',
       fixed: versions('fixed'), lastAffected: versions('last_affected'), introduced: versions('introduced') }
   })
-  return { ...item, structuredStatus: 'loaded', cwe: cwe.join('、') || item.cwe,
+  return { ...item, enrichment, structuredStatus: 'loaded', cwe: cwe.join('、') || item.cwe,
     cvss: typeof score === 'number' ? score : item.cvss,
     cvssVectors: cvss.flatMap(row => typeof row.vector === 'string' ? [row.vector] : []),
     sourceFields: Object.fromEntries(Object.entries(enrichment.source).map(([key, field]) => [key, field.state])),
-    versionFacts: facts }
+    versionFacts: facts,
+    paperEnrichments: paperEnrichments(enrichment.external?.papers),
+    paperEnrichmentRuns: (enrichment.external?.papers || []).map(row => ({ provider: row.provider, state: row.state })) }
 }
 export async function allPages<T>(path: string, isDemo: boolean) {
   const items: T[] = []
@@ -59,7 +63,7 @@ export function documentItem(doc: Document, sources: Source[]): IntelligenceItem
   const raw = doc.raw_payload
   const cve = [doc.external_id, raw?.vulnerability_id || '', ...(doc.source_aliases || raw?.aliases || [])].find(x => /^CVE-\d{4}-\d+$/i.test(x))
   const excerpt = doc.content || doc.excerpt || ''
-  return { id: doc.id, title: doc.title, summary: excerpt.slice(0, 240), severity,
+  return { id: doc.id, title: doc.title, sourceId: doc.source_id, externalId: doc.external_id, summary: excerpt.slice(0, 240), severity,
     publishedAt: doc.published_at?.slice(0, 10) || '', source: sources.find(x => x.id === doc.source_id)?.name || '来源待确认',
     cve, products: doc.source_products || raw?.products || [], evidence: [{ title: doc.title, url: doc.source_url, excerpt }],
     tags: [doc.document_type, doc.is_demo ? '虚构样本' : '真实来源', doc.content_completeness],

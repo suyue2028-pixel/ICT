@@ -4,7 +4,9 @@ import type { EChartsOption } from 'echarts'
 import { severityNames, severityOrder } from '@/stores/intelligence'
 import type { IntelligenceItem } from '@/types'
 
+export type OverviewMetricKey = 'intelligence' | 'critical' | 'sources' | 'products'
 export interface OverviewMetric {
+  key: OverviewMetricKey
   label: string
   value: number
   caption: string
@@ -59,20 +61,23 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
     }),
   )
   const metrics = computed<OverviewMetric[]>(() => [
-    { label: '情报总数', value: items.value.length, caption: '来源记录数，同一漏洞可有多条', tone: 'blue' },
+    { key: 'intelligence', label: '情报总数', value: items.value.length, caption: '来源记录数，同一漏洞可有多条', tone: 'blue' },
     {
+      key: 'critical',
       label: '严重风险',
       value: items.value.filter((item) => item.severity === 'critical').length,
       caption: '需优先关注',
       tone: 'red',
     },
     {
+      key: 'sources',
       label: '来源数量',
       value: new Set(items.value.map((item) => item.source)).size,
       caption: '已记录来源',
       tone: 'teal',
     },
     {
+      key: 'products',
       label: '关联产品',
       value: new Set(items.value.flatMap((item) => item.products)).size,
       caption: '来源记录的产品',
@@ -81,12 +86,12 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
   ])
 
   const severityOption = computed<EChartsOption>(() => ({
-    color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98', '#94a3b8'],
+    color: ['#c95465', '#d18b4d', '#c3a54c', '#5b967e', '#a5a5a5'],
     tooltip: {
       trigger: 'item',
-      backgroundColor: '#fff',
-      borderColor: '#e4deed',
-      textStyle: { color: '#414047', fontSize: 12 },
+      backgroundColor: '#ffffff',
+      borderColor: '#e2e2e2',
+      textStyle: { color: '#414141', fontSize: 12 },
     },
     series: [
       {
@@ -94,7 +99,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
         radius: ['62%', '87%'],
         center: ['50%', '50%'],
         label: { show: false },
-        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
         data: severityOrder.map((key) => ({
           name: severityNames[key],
           value: items.value.filter((item) => item.severity === key).length,
@@ -106,35 +111,35 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
   const trendOption = computed<EChartsOption>(() => {
     const dates = [...new Set(items.value.map((item) => item.publishedAt))].sort()
     return {
-      color: ['#ed6171', '#f39b57', '#efc354', '#4bbb98', '#94a3b8'],
+      color: ['#c95465', '#d18b4d', '#c3a54c', '#5b967e', '#a5a5a5'],
       legend: {
         top: 0,
         right: 0,
         icon: 'circle',
         itemWidth: 7,
         itemHeight: 7,
-        textStyle: { color: '#64748b', fontSize: 12 },
+        textStyle: { color: '#727272', fontSize: 12 },
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: '#fff',
-        borderColor: '#e5e7eb',
-        textStyle: { color: '#414047', fontSize: 12 },
+        backgroundColor: '#ffffff',
+        borderColor: '#e7e7e7',
+        textStyle: { color: '#414141', fontSize: 12 },
       },
       grid: { left: 34, right: 18, top: 40, bottom: 30 },
       xAxis: {
         type: 'category',
         data: dates.map((date) => date.slice(5)),
         boundaryGap: false,
-        axisLabel: { color: '#6b7280', fontSize: 12 },
-        axisLine: { lineStyle: { color: '#e5e7eb' } },
+        axisLabel: { color: '#727272', fontSize: 12 },
+        axisLine: { lineStyle: { color: '#e7e7e7' } },
         axisTick: { show: false },
       },
       yAxis: {
         type: 'value',
         minInterval: 1,
-        splitLine: { lineStyle: { color: '#eef0f3', type: 'dashed' } },
-        axisLabel: { color: '#6b7280', fontSize: 12 },
+        splitLine: { lineStyle: { color: '#f0f0f0', type: 'dashed' } },
+        axisLabel: { color: '#727272', fontSize: 12 },
       },
       series: severityOrder.map((key) => ({
         type: 'line',
@@ -142,7 +147,7 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
         smooth: true,
         symbolSize: 6,
         lineStyle: { width: 2 },
-        itemStyle: { borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderColor: '#ffffff', borderWidth: 2 },
         areaStyle: { opacity: 0.06 },
         data: dates.map(
           (date) =>
@@ -164,21 +169,21 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        backgroundColor: '#fff',
-        borderColor: '#e4deed',
-        textStyle: { color: '#414047', fontSize: 12 },
+        backgroundColor: '#ffffff',
+        borderColor: '#e2e2e2',
+        textStyle: { color: '#414141', fontSize: 12 },
       },
       grid: { left: 106, right: 28, top: 4, bottom: 28 },
       xAxis: {
         type: 'value',
         minInterval: 1,
-        splitLine: { lineStyle: { color: '#edeaf1', type: 'dashed' } },
-        axisLabel: { color: '#75727d', fontSize: 12 },
+        splitLine: { lineStyle: { color: '#ececec', type: 'dashed' } },
+        axisLabel: { color: '#747474', fontSize: 12 },
       },
       yAxis: {
         type: 'category',
         data: counts.map((row) => row.name),
-        axisLabel: { color: '#65636e', fontSize: 12 },
+        axisLabel: { color: '#656565', fontSize: 12 },
         axisLine: { show: false },
         axisTick: { show: false },
       },
@@ -189,13 +194,14 @@ export function useOverviewData(source: MaybeRefOrGetter<IntelligenceItem[]>) {
           data: counts.map((row) => row.count),
           barMaxWidth: 9,
           itemStyle: { borderRadius: [0, 4, 4, 0] },
-          label: { show: true, position: 'right', color: '#65636e', fontSize: 12 },
+          label: { show: true, position: 'right', color: '#656565', fontSize: 12 },
         },
       ],
     }
   })
 
   return {
+    currentItems: items,
     metrics,
     severityOption,
     trendOption,

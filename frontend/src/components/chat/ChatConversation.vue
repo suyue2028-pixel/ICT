@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { nextTick, useTemplateRef, watch } from 'vue'
-import assistantAvatar from '@/assets/assistant-avatar.svg'
 import type { ChatMessage } from '@/types'
 import AnswerContent from './AnswerContent.vue'
 
@@ -40,24 +39,10 @@ watch(
     aria-live="polite"
     aria-relevant="additions"
   >
-    <article v-for="message in messages" :key="message.id" :class="['message-row', message.role]">
-      <span
-        :class="['avatar', { 'assistant-avatar': message.role === 'assistant' }]"
-        aria-hidden="true"
-      >
-        <img
-          v-if="message.role === 'assistant'"
-          :src="assistantAvatar"
-          class="chat-avatar-image"
-          alt=""
-          width="36"
-          height="36"
-        />
-        <span v-else>我</span>
-      </span>
+    <article v-for="message in messages" :key="message.id" :class="['message-row', message.role, { 'welcome-message': message.id === 'welcome' }]">
       <div class="message-body">
         <div class="message-top">
-          <strong>{{ message.role === 'assistant' ? '情报助手' : '你' }}</strong
+          <strong>{{ message.role === 'assistant' ? '资料回答' : '你的问题' }}</strong
           ><span v-if="message.simulated" class="simulated-label small">模拟回答</span
           ><time>{{ message.time }}</time>
         </div>

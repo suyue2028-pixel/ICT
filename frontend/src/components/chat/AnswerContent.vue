@@ -26,17 +26,17 @@ const blocks = computed(() => answerBlocks(props.content))
 <style scoped>
 .answer-content { display: grid; gap: 14px; }
 .answer-paragraph { margin: 0; white-space: pre-wrap; }
-.answer-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12px; color: #27354a; }
-.answer-label span { color: #5b6d96; }
-.answer-quote { margin: 8px 0 0; border-left: 3px solid #b6c4e3; padding: 4px 0 4px 12px; color: #465266; line-height: 1.85; }
-.answer-versions { padding: 12px; border: 1px solid #e5eaf2; background: #f8fafd; border-radius: 8px; }
+.answer-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12px; color: #333333; }
+.answer-label span { color: #6c6c6c; }
+.answer-quote { margin: 8px 0 0; border-left: 3px solid var(--accent-line); padding: 4px 0 4px 12px; color: #515561; line-height: 1.85; }
+.answer-versions { padding: 12px; border: 1px solid var(--line); background: var(--surface-soft); border-radius: 10px; }
 .answer-fields { margin: 10px 0; display: grid; gap: 6px; }
 .answer-fields div { display: grid; grid-template-columns: minmax(90px, .8fr) minmax(0, 1.2fr); gap: 12px; }
-.answer-fields dt { color: #667085; font-size: 12px; }
-.answer-fields dd { margin: 0; font-weight: 600; color: #27354a; overflow-wrap: anywhere; }
-.answer-note { font-size: 11px; line-height: 1.7; color: #667085; margin: 8px 0; }
-.answer-original { font-size: 11px; color: #596b8a; }
+.answer-fields dt { color: #6f6f6f; font-size: 12px; }
+.answer-fields dd { margin: 0; font-weight: 600; color: #333333; overflow-wrap: anywhere; }
+.answer-note { font-size: 11px; line-height: 1.7; color: #6f6f6f; margin: 8px 0; }
+.answer-original { font-size: 11px; color: #696969; }
 .answer-original summary { cursor: pointer; }
 .answer-original pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-family: inherit; }
-.answer-original summary:focus-visible { outline: 2px solid #4262ed; outline-offset: 3px; }
+.answer-original summary:focus-visible { outline: 2px solid #686868; outline-offset: 3px; }
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { shallowRef } from 'vue'
 
-defineProps<{ disabled: boolean; sending: boolean }>()
+const props = defineProps<{ disabled: boolean; sending: boolean }>()
 const emit = defineEmits<{ submit: [question: string] }>()
 const question = shallowRef('')
 const suggestions = [
@@ -10,10 +10,16 @@ const suggestions = [
   '访问控制相关情报有哪些？',
 ]
 function submit(value = question.value) {
+  if (props.disabled || props.sending) return
   const clean = value.trim()
   if (!clean) return
   emit('submit', clean)
   question.value = ''
+}
+function enter(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229 || props.disabled || props.sending) return
+  event.preventDefault()
+  submit()
 }
 </script>
 
@@ -32,18 +38,20 @@ function submit(value = question.value) {
     </div>
     <form @submit.prevent="submit()">
       <label class="sr-only" for="chat-question">输入问题</label
-      ><input
+      ><textarea
         id="chat-question"
         v-model="question"
         :disabled="disabled || sending"
         name="question"
         autocomplete="off"
         maxlength="300"
-        placeholder="例如：智能体工具调用有哪些风险？"
+        rows="2"
+        placeholder="输入 CVE 编号或你想查询的问题"
+        @keydown.enter.exact="enter"
       /><button type="submit" :disabled="disabled || sending || !question.trim()">
-        {{ sending ? '生成中…' : '发送 ↗' }}
+        {{ sending ? '检索中…' : '发送' }}
       </button>
     </form>
-    <small>从当前资料范围检索证据；回答方式见消息标签，来源不足时会明确说明。</small>
+    <small>Enter 发送，Shift + Enter 换行。回答附来源，资料不足时会明确说明。</small>
   </div>
 </template>

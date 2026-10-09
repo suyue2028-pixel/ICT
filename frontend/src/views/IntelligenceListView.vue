@@ -55,9 +55,8 @@ function changePage(next: number) {
 <template>
   <div class="page-heading">
     <div>
-      <span class="eyebrow">工作空间 / 情报记录</span>
       <h1>情报中心</h1>
-      <p>检索、筛选并查看来源资料的证据链。</p>
+      <p>搜索安全情报，按风险筛选，查看详情和原始来源。</p>
     </div>
     <div class="heading-count">
       共 <strong>{{ filtered.length }}</strong> 条结果

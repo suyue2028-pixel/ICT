@@ -49,7 +49,7 @@ const emit = defineEmits<{ changePage: [page: number] }>()
               class="row-arrow"
               :to="`/intelligence/${item.id}`"
               :aria-label="`查看${item.id}详情`"
-              >→</router-link
+              >详情</router-link
             >
           </td>
         </tr>

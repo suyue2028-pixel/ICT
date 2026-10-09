@@ -1,8 +1,26 @@
+import type { EnrichmentSnapshot } from './enrichment'
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown'
 export interface Evidence {
   title: string
   url?: string
   excerpt?: string
+}
+export interface PaperQuote {
+  documentId: string
+  contentHash: string
+  sourceUrl: string
+  locator: string
+  excerpt: string
+}
+export interface PaperEnrichment {
+  title?: string
+  url?: string
+  enrichmentType: '论文关联'
+  method?: string
+  state: string
+  reviewState?: string
+  provider?: string
+  quotes: PaperQuote[]
 }
 export interface IntelligenceItem {
   id: string
@@ -11,6 +29,8 @@ export interface IntelligenceItem {
   severity: Severity
   publishedAt: string
   source: string
+  sourceId?: string
+  externalId?: string
   cve?: string
   cvss?: number
   cwe?: string
@@ -27,6 +47,9 @@ export interface IntelligenceItem {
   sourceFields?: Record<string, string>
   structuredStatus?: 'loaded' | 'unavailable' | 'historical'
   versionFacts?: { product: string; ecosystem: string; fixed: string[]; lastAffected: string[]; introduced: string[] }[]
+  paperEnrichments?: PaperEnrichment[]
+  paperEnrichmentRuns?: { provider?: string; state: string }[]
+  enrichment?: EnrichmentSnapshot
 }
 export interface GraphNode {
   id: string

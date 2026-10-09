@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { DataAnalysis, PieChart, Collection } from '@element-plus/icons-vue'
 import type { EChartsOption } from 'echarts'
 import ChartCanvas from '@/components/ChartCanvas.vue'
 import OverviewPriorityTable from './OverviewPriorityTable.vue'
@@ -21,7 +20,7 @@ defineProps<{
   <div class="dashboard-grid overview-charts">
     <section class="panel trend-panel">
       <div class="panel-title">
-        <h2><DataAnalysis class="section-icon" aria-hidden="true" />情报发布时间趋势</h2>
+        <h2>发布时间趋势</h2>
       </div>
       <ChartCanvas
         :option="trendOption"
@@ -31,7 +30,7 @@ defineProps<{
     </section>
     <section class="panel risk-panel">
       <div class="panel-title">
-        <h2><PieChart class="section-icon" aria-hidden="true" />风险等级分布</h2>
+        <h2>风险等级分布</h2>
       </div>
       <div class="risk-content">
         <div class="risk-donut">
@@ -58,7 +57,7 @@ defineProps<{
   <section class="panel sources-panel">
     <div class="panel-title">
       <div>
-        <h2><Collection class="section-icon" aria-hidden="true" />来源统计</h2>
+        <h2>来源统计</h2>
         <p>按当前时间范围内的情报统计，统计来自当前已加载的来源资料</p>
       </div>
       <span class="panel-index">已记录来源</span>

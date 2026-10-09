@@ -19,7 +19,6 @@ function isCurrent(path: string) {
       :aria-current="isCurrent(page.to) ? 'page' : undefined"
       :title="mode === 'rail' ? page.label : undefined"
     >
-      <component :is="page.icon" v-if="mode === 'rail'" class="nav-icon" aria-hidden="true" />
       <span>{{ page.label }}</span>
     </router-link>
   </nav>

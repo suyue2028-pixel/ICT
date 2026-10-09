@@ -19,13 +19,13 @@ defineProps<{ item: IntelligenceItem }>()
 
 <style scoped>
 .source-facts { margin-top: 18px; display: grid; gap: 12px; }
-.source-fact { padding: 12px 14px; background: #f8fafd; border: 1px solid #e5eaf2; border-radius: 8px; }
-.source-fact h3 { margin: 0 0 10px; color: #27354a; font-size: 12px; }
-.source-fact small { color: #667085; font-weight: 400; }
-.source-fact code { display: block; overflow-wrap: anywhere; color: #44516a; font-size: 11px; }
+.source-fact { padding: 12px 14px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 10px; }
+.source-fact h3 { margin: 0 0 10px; color: #333333; font-size: 12px; }
+.source-fact small { color: #6f6f6f; font-weight: 400; }
+.source-fact code { display: block; overflow-wrap: anywhere; color: #505050; font-size: 11px; }
 .source-fact dl { margin: 0; display: grid; gap: 6px; }
 .source-fact dl div { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; font-size: 12px; }
-.source-fact dt { color: #667085; }
-.source-fact dd { margin: 0; color: #27354a; overflow-wrap: anywhere; }
-.source-facts > p { margin: 0; color: #667085; font-size: 11px; line-height: 1.7; }
+.source-fact dt { color: #6f6f6f; }
+.source-fact dd { margin: 0; color: #333333; overflow-wrap: anywhere; }
+.source-facts > p { margin: 0; color: #6f6f6f; font-size: 11px; line-height: 1.7; }
 </style>
