@@ -28,6 +28,10 @@ def capture_samples(db, now, component_health):
                 RuntimeSample.observation_id == row.id, RuntimeSample.bucket == bucket)):
             continue
         snapshot = freshness_snapshot(db, now)
+        from backend.services.enrichment_quality import monitoring
+        quality = monitoring(db)
+        snapshot["enrichment_quality"] = {key: quality[key] for key in
+            ("scope", "scanned_documents", "scan_complete", "dimensions", "automatic_checks")}
         heartbeat = db.get(VerificationProbe, "beat-heartbeat")
         snapshot.update(components=component_health,
             beat_heartbeat_count=heartbeat.count if heartbeat else None,

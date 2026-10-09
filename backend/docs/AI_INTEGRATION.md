@@ -1,5 +1,7 @@
 # 后端与 Agent/RAG 联调契约 V1
 
+2026-10-09 新增管理员专用 `/api/v1/ops/enrichment-quality`：覆盖/问题清单、冻结审核批次、审核写入与评分。仅X-API-Key，前端和Agent令牌均不可调用；已有文档/富化/Agent协议兼容。预测变化或版本更新后旧审核不进入当前评分。详见 [富化质量契约与口径](ENRICHMENT_QUALITY.md)。
+
 2026-10-09：本机三端真实联调与本轮87项后端回归已完成；当前新增契约详见本文末尾“2026-10-09 增量契约与验证”和[运行手册](OPERATIONS_20261009.md)。独立人工质量评审与48小时观察仍未完成。
 
 2026-10-08 增量兼容更新：本机已连接真实外部 Agent，运行源项目统一为 D:\cit\后端开发。文档与 Tool 增加 last_checked_at/content_changed_at/indexed_at，旧版本时间未知为 null；文档/情报列表新增 recent_hours=48、time_basis=published/updated/discovered/changed、time_from/time_to；原参数继续支持。公开 /stats 增加 recent_48_hours，管理 /ops/freshness 返回来源调度/退避/时间覆盖；权限不变。索引 ACK 只有当前版本通过核验才写 indexed_at，新版本清空。详细口径见 [时效性契约](FRESHNESS.md)。下方未联调描述属于原始阶段记录。

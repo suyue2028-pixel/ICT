@@ -2910,6 +2910,546 @@
           }
         ]
       }
+    },
+    "/api/v1/ops/enrichment-quality": {
+      "get": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "Quality Summary",
+        "description": "覆盖率、结构/出处问题和最近同范围人工评测；自动校验不等于准确率。",
+        "operationId": "quality_summary_api_v1_ops_enrichment_quality_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "is_demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Demo"
+            }
+          },
+          {
+            "name": "ai_relevant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Ai Relevant"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "document_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "vulnerability",
+                "advisory",
+                "all"
+              ],
+              "type": "string",
+              "default": "vulnerability",
+              "title": "Document Type"
+            }
+          },
+          {
+            "name": "prediction_method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "source_reported",
+                "external",
+                "all"
+              ],
+              "type": "string",
+              "default": "source_reported",
+              "title": "Prediction Method"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment-quality/issues": {
+      "get": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "Quality Issues",
+        "operationId": "quality_issues_api_v1_ops_enrichment_quality_issues_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "is_demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Demo"
+            }
+          },
+          {
+            "name": "ai_relevant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Ai Relevant"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "document_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "vulnerability",
+                "advisory",
+                "all"
+              ],
+              "type": "string",
+              "default": "vulnerability",
+              "title": "Document Type"
+            }
+          },
+          {
+            "name": "prediction_method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "source_reported",
+                "external",
+                "all"
+              ],
+              "type": "string",
+              "default": "source_reported",
+              "title": "Prediction Method"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "error",
+                    "warning"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment-quality/batches": {
+      "post": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "New Batch",
+        "description": "分来源确定性抽样，冻结原文、版本和预测；不填入任何人工金标。",
+        "operationId": "new_batch_api_v1_ops_enrichment_quality_batches_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QualityBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "List Batches",
+        "operationId": "list_batches_api_v1_ops_enrichment_quality_batches_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "is_demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Demo"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment-quality/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "Export Batch",
+        "description": "私有审核材料含完整已保存原文；仅管理员导出，不进入公开情报接口。",
+        "operationId": "export_batch_api_v1_ops_enrichment_quality_batches__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment-quality/batches/{batch_id}/reviews": {
+      "post": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "Review Case",
+        "description": "人工标签追加保存；相同请求幂等，冲突/版本变化409，不覆盖旧标签。",
+        "operationId": "review_case_api_v1_ops_enrichment_quality_batches__batch_id__reviews_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QualityReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment-quality/batches/{batch_id}/report": {
+      "get": {
+        "tags": [
+          "富化质量审核"
+        ],
+        "summary": "Evaluate Batch",
+        "description": "逐维度TP/FP/FN、precision/recall、审核覆盖率；缺标签与零分母返回null。",
+        "operationId": "evaluate_batch_api_v1_ops_enrichment_quality_batches__batch_id__report_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "current_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Current Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3638,6 +4178,31 @@
         ],
         "title": "EnrichmentWrite"
       },
+      "FieldReview": {
+        "properties": {
+          "expected": {
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Expected"
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 10,
+            "title": "Basis"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected",
+          "basis"
+        ],
+        "title": "FieldReview"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3651,6 +4216,7 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "JsonValue": {},
       "KnowledgeAck": {
         "properties": {
           "status": {
@@ -3855,6 +4421,145 @@
           "page_size"
         ],
         "title": "Page[VulnerabilityRead]"
+      },
+      "QualityBatchRequest": {
+        "properties": {
+          "is_demo": {
+            "type": "boolean",
+            "title": "Is Demo",
+            "default": false
+          },
+          "ai_relevant": {
+            "type": "boolean",
+            "title": "Ai Relevant",
+            "default": true
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "vulnerability",
+              "advisory",
+              "all"
+            ],
+            "title": "Document Type",
+            "default": "vulnerability"
+          },
+          "prediction_method": {
+            "type": "string",
+            "enum": [
+              "source_reported",
+              "external",
+              "all"
+            ],
+            "title": "Prediction Method",
+            "default": "source_reported"
+          },
+          "per_source": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Per Source",
+            "default": 12
+          },
+          "max_cases": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Max Cases",
+            "default": 100
+          },
+          "seed": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Seed",
+            "default": "quality-v1"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "QualityBatchRequest"
+      },
+      "QualityReviewRequest": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Content Hash"
+          },
+          "prediction_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Prediction Hash"
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reviewer"
+          },
+          "annotation_origin": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai_assisted",
+              "synthetic"
+            ],
+            "title": "Annotation Origin"
+          },
+          "independent": {
+            "type": "boolean",
+            "title": "Independent"
+          },
+          "field_reviews": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FieldReview"
+            },
+            "propertyNames": {
+              "enum": [
+                "affected",
+                "cwe",
+                "cvss",
+                "remediation",
+                "analysis",
+                "poc"
+              ]
+            },
+            "type": "object",
+            "maxProperties": 6,
+            "minProperties": 1,
+            "title": "Field Reviews"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "content_hash",
+          "prediction_hash",
+          "reviewer",
+          "annotation_origin",
+          "independent",
+          "field_reviews"
+        ],
+        "title": "QualityReviewRequest"
       },
       "QuestionRequest": {
         "properties": {

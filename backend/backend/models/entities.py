@@ -253,3 +253,28 @@ class RuntimeSample(IdentityMixin, Base):
     bucket: Mapped[int] = mapped_column(Integer)
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     detail: Mapped[dict] = mapped_column(JSON)
+
+
+class EnrichmentQualityBatch(IdentityMixin, Base):
+    """Immutable version-bound predictions; never auto-populated with gold labels."""
+    __tablename__ = "enrichment_quality_batches"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    is_demo: Mapped[bool] = mapped_column(Boolean, index=True)
+    sample_size: Mapped[int] = mapped_column(Integer)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    selection: Mapped[dict] = mapped_column(JSON)
+    cases: Mapped[list] = mapped_column(JSON)
+
+
+class EnrichmentQualityReview(IdentityMixin, Base):
+    __tablename__ = "enrichment_quality_reviews"
+    __table_args__ = (UniqueConstraint("batch_id", "document_id", name="uq_quality_review_batch_document"),)
+    batch_id: Mapped[UUID] = mapped_column(ForeignKey("enrichment_quality_batches.id"), index=True)
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    prediction_hash: Mapped[str] = mapped_column(String(64))
+    reviewer: Mapped[str] = mapped_column(String(100))
+    annotation_origin: Mapped[str] = mapped_column(String(30))
+    independent: Mapped[bool] = mapped_column(Boolean)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    field_reviews: Mapped[dict] = mapped_column(JSON)
