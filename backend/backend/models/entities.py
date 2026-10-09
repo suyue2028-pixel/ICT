@@ -237,3 +237,19 @@ class VerificationProbe(TimestampMixin, Base):
     __tablename__ = "verification_probes"
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RuntimeObservation(IdentityMixin, Base):
+    __tablename__ = "runtime_observations"
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sample_seconds: Mapped[int] = mapped_column(Integer, default=60)
+
+
+class RuntimeSample(IdentityMixin, Base):
+    __tablename__ = "runtime_samples"
+    __table_args__ = (UniqueConstraint("observation_id", "bucket", name="uq_runtime_sample_bucket"),)
+    observation_id: Mapped[UUID] = mapped_column(ForeignKey("runtime_observations.id"), index=True)
+    bucket: Mapped[int] = mapped_column(Integer)
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict] = mapped_column(JSON)

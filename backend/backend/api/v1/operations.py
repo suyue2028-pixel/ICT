@@ -1,6 +1,11 @@
 """Sanitized local monitoring, measured latencies and explicit data coverage."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends, Query
+from uuid import UUID
+from pydantic import BaseModel, Field, ConfigDict
+from backend.models import RuntimeObservation, RuntimeSample
+from backend.services.observation import start_observation, observation_summary
+from backend.api.dependencies import require_record
 from sqlalchemy import func, select
 from backend.api.dependencies import Database
 from backend.core.config import get_settings
@@ -10,6 +15,39 @@ from backend.services.jobs import utc_now
 from backend.services.freshness import freshness_snapshot, source_observation
 
 router = APIRouter(prefix="/ops", tags=["运行监控"], dependencies=[Depends(require_admin)])
+
+
+class ObservationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hours: int = Field(default=48, ge=1, le=168, strict=True)
+
+
+@router.post("/observations", status_code=202)
+def begin_observation(body: ObservationRequest, db: Database):
+    """启动/复用持久化观察窗口；由现有唯一 beat 每分钟采样。"""
+    row = start_observation(db, utc_now(), body.hours)
+    db.commit()
+    return {"observation_id": row.id, "started_at": row.started_at, "ends_at": row.ends_at,
+            "status": "observing", "sample_seconds": row.sample_seconds}
+
+
+@router.get("/observations/{observation_id}")
+def read_observation(observation_id: UUID, db: Database):
+    row = require_record(db, RuntimeObservation, observation_id)
+    samples = list(db.scalars(select(RuntimeSample).where(RuntimeSample.observation_id == row.id)
+        .order_by(RuntimeSample.measured_at)))
+    return observation_summary(row, samples, utc_now())
+
+
+@router.get("/observations/{observation_id}/samples")
+def observation_samples(observation_id: UUID, db: Database, page: int = Query(1, ge=1),
+                        page_size: int = Query(20, ge=1, le=100)):
+    require_record(db, RuntimeObservation, observation_id)
+    query = select(RuntimeSample).where(RuntimeSample.observation_id == observation_id)
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = db.scalars(query.order_by(RuntimeSample.measured_at).offset((page - 1) * page_size).limit(page_size)).all()
+    return {"items": [{"measured_at": r.measured_at, "detail": r.detail} for r in rows],
+            "page": page, "page_size": page_size, "total": total}
 
 
 @router.get("/freshness")

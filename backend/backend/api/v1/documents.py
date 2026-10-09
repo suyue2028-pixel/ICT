@@ -11,6 +11,7 @@ from backend.core.security import require_admin
 from backend.services.jobs import utc_now
 from backend.schemas.contracts import DocumentRead, Page
 from backend.services.freshness import apply_time_filter, TIME_COLUMNS
+from backend.services.enrichment import structured_enrichment
 
 router = APIRouter(prefix="/documents", tags=["原始文档"])
 
@@ -91,4 +92,5 @@ def document_enrichment(document_id: UUID, db: Database):
                                  "evidence_id": row.id} for row in external_rows]
                                if external_rows else [{"state": "unprocessed"}])
     return {"document_id": document.id, "content_hash": document.content_hash,
-            "source": source, "external": external}
+            "source": source, "external": external,
+            "normalized": structured_enrichment(document, rows)}

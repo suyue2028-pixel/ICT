@@ -112,6 +112,31 @@ def verify_tick():
     return {"verification_only": True}
 
 
+@celery_app.task(name="backend.observe_runtime")
+def observe_runtime():
+    from backend.models import RuntimeObservation
+    from backend.services.observation import capture_samples
+    from backend.services.agent_gateway import check_health
+    import httpx
+    # Do not make HTTP calls while holding database locks. No paid model request.
+    with get_session_factory()() as db:
+        if not db.scalar(select(RuntimeObservation.id).where(RuntimeObservation.ends_at >= utc_now()).limit(1)):
+            return {"observations": 0}
+    health = {"worker_and_broker": True}
+    try:
+        check_health(get_settings())
+        health["agent"] = True
+    except Exception:
+        health["agent"] = False
+    try:
+        with httpx.Client(timeout=3, trust_env=False, follow_redirects=False) as client:
+            health["api"] = client.get("http://api:8000/health/ready").status_code == 200
+    except httpx.HTTPError:
+        health["api"] = False
+    with get_session_factory()() as db, db.begin():
+        return {"observations": capture_samples(db, utc_now(), health)}
+
+
 @celery_app.task(name="backend.index_event", soft_time_limit=720, time_limit=780)
 def index_event(event_id: str):
     """Index one current document version; duplicate deliveries cannot commit twice."""

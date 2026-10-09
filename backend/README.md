@@ -1,10 +1,12 @@
 # AI 安全知识情报系统 · 后端开发
 
+2026-10-09 已完成进一步改进：36 问题可复现评测、英文检索主题约束、跨用户权限与异常契约回归、来源版本范围结构化查询、持久化 48 小时观察、隔离备份恢复与有上限性能验证。已恢复本机三端，并核对运行容器源码哈希。详见 [本轮验收](docs/IMPROVEMENTS_20261009.md) 和 [实际运行、观察与恢复](docs/OPERATIONS_20261009.md)。观察尚未结束，已记录缺口；评测标注尚未独立人工审核。
+
 2026-10-08 更新：最近 48 小时筛选、来源调度状态、失败退避、恢复补采与索引时间已在原开发机器部署，见 [时效性说明](docs/FRESHNESS.md)。追溯问答新增生成模式与模型调用次数保存；Agent 检索、多轮及证据修复在配套 Agent PR 中，见 [问答修复说明](docs/QA_REPAIR.md)。原机器真实 DeepSeek 已联调，下方早期“未配置”描述保留原阶段记录。
 
 本次上传保留团队 Compose 项目名、数据隔离、忽略规则及项目虚拟环境配置。`deploy-timeliness.py`、`verify-timeliness-runtime.py` 和 Windows 三模块启动器为原机器的验证工具，含原机器路径；团队新克隆请按下方通用方式运行，不直接使用原机器部署脚本。
 
-这是团队仓库的完整后端工程，工程内部的 `backend/` 为 Python 包，不要单独搬运 `main.py`。原开发与验收目录是 `D:\cit\后端开发`，使用 Windows Python 3.12 和 Docker Desktop；下方保留原机器的验证说明。本轮补齐 B1—B8 后端能力、Agent 数据工具和网关，并实际采集七类来源；队友的 Agent/RAG 服务尚未部署，独立 Embedding 尚未配置，二者均不会被模拟答案替代。
+这是团队仓库的完整后端工程，工程内部的 `backend/` 为 Python 包，不要单独搬运 `main.py`。原开发与验收目录是 `D:\cit\后端开发`，使用 Windows Python 3.12 和 Docker Desktop；下方保留原机器的验证说明。本轮补齐 B1—B8 后端能力、Agent 数据工具和网关，并实际采集七类来源。本机已接通外部 Agent、缓存 E5 与 DeepSeek；独立云端 Embedding 尚未配置，团队其他机器需单独配置服务。
 
 ## 团队克隆后的运行方式
 
@@ -102,7 +104,7 @@ API 返回 202 和任务 ID，任务/outbox 一起提交；beat 补发 Redis 消
 
 内置索引：`INDEX_PROVIDER=internal`。现有 PostgreSQL 16 镜像无 pgvector，使用数据库浮点数组与精确余弦检索，保留旧卷。需另配本地 EMBEDDING_API_KEY、EMBEDDING_BASE_URL（官方云端业务空间/地域地址），默认 text-embedding-v4，不能使用 DeepSeek Key 代替。配置后任务会处理 pending 文档，云调用可能计费。只有真实向量写入可查询才为 indexed，缺配置明确 503。未对无向量的空库编造性能数据。
 
-外部队友模式：服务可用后设置 `AGENT_SERVICE_URL`、按需 `AGENT_SERVICE_TOKEN` 和 `INDEX_PROVIDER=external`。容器访问 Windows 服务可用 `http://host.docker.internal:端口`；工具 URL 由队友服务的网络位置决定。两个索引消费者不会同时派发同一事件。`/agent/query` 使用外部 Agent；当前服务未配置，返回 503。旧 `/qa/ask` 切换旧外部问答协议时设 `QA_PROVIDER=external` 并设置 `AI_SERVICE_URL`，无需删除 DeepSeek Key。这是两个明确的兼容接口，详见联调文档。
+外部队友模式：服务可用后设置 `AGENT_SERVICE_URL`、按需 `AGENT_SERVICE_TOKEN` 和 `INDEX_PROVIDER=external`。容器访问 Windows 服务可用 `http://host.docker.internal:端口`；工具 URL 由队友服务的网络位置决定。两个索引消费者不会同时派发同一事件。`/agent/query` 使用外部 Agent；服务未配置时返回 503，本机已完成真实联调，团队新机器仍需独立配置。旧 `/qa/ask` 切换旧外部问答协议时设 `QA_PROVIDER=external` 并设置 `AI_SERVICE_URL`，无需删除 DeepSeek Key。这是两个明确的兼容接口，详见联调文档。
 
 修改 `.env` 后运行 `docker compose up -d --force-recreate --wait api worker beat`，确保所有容器收到配置；在索引处理中不要切换 provider，先等待或处理租约。
 
@@ -127,4 +129,8 @@ API 返回 202 和任务 ID，任务/outbox 一起提交；beat 补发 Redis 消
 - [实际验证记录](docs/VERIFICATION.md)
 - [架构与可靠性](docs/ARCHITECTURE.md)
 
-真实 Agent、云端语义索引、跨文档推理及标注后的准确率/召回率仍需相应服务/审核；本次不制作前端、不处理 GitHub、不执行 POC 或资产扫描。
+本机真实 Agent/E5/DeepSeek 已联调；独立云端索引、跨机器部署、人工质量评分及完整容量/灾备仍需服务或审核。48 小时观察尚未结束且已有缺口；不把模拟测试、一次联调或草稿评测当作比赛达标。
+
+本次新增的恢复、观察与运行验证脚本仍属于原机器工具，团队新克隆继续使用上方通用启动方式。跨仓库契约测试在合并后的团队目录自动发现 Agent；独立工作区可通过 `ICT_AGENT_CONTRACT_FILE` 指定公开的 `integration/contracts.py` 路径，缺少 Agent 文件时该项跳过。
+
+2026-10-09 上传前复验：隔离上传工作区后端87/87、Agent91/91；共享契约测试指定待上传 Agent 文件执行，没有跳过。Compose 仅解析通过，Alembic check 无新操作；本次上传没有再次调用模型或重复执行恢复演练。

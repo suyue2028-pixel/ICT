@@ -77,7 +77,8 @@ def check_health(settings):
 def safe_trace(answer, settings):
     import re
     secrets = []
-    for name in ("admin_api_key", "deepseek_api_key", "agent_service_token", "agent_tool_token", "agent_write_token"):
+    for name in ("admin_api_key", "deepseek_api_key", "embedding_api_key", "postgres_password", "redis_password",
+                 "ai_service_token", "agent_service_token", "agent_tool_token", "agent_write_token"):
         value = getattr(settings, name, None)
         if value and value.get_secret_value():
             secrets.append(value.get_secret_value())

@@ -1,10 +1,12 @@
 # 后端与 Agent/RAG 联调契约 V1
 
+2026-10-09：本机三端真实联调与本轮87项后端回归已完成；当前新增契约详见本文末尾“2026-10-09 增量契约与验证”和[运行手册](OPERATIONS_20261009.md)。独立人工质量评审与48小时观察仍未完成。
+
 2026-10-08 增量兼容更新：本机已连接真实外部 Agent，运行源项目统一为 D:\cit\后端开发。文档与 Tool 增加 last_checked_at/content_changed_at/indexed_at，旧版本时间未知为 null；文档/情报列表新增 recent_hours=48、time_basis=published/updated/discovered/changed、time_from/time_to；原参数继续支持。公开 /stats 增加 recent_48_hours，管理 /ops/freshness 返回来源调度/退避/时间覆盖；权限不变。索引 ACK 只有当前版本通过核验才写 indexed_at，新版本清空。详细口径见 [时效性契约](FRESHNESS.md)。下方未联调描述属于原始阶段记录。
 
 统一 API 前缀 `/api/v1`，schema_version 为字符串 `"1"`，时间为带时区 ISO 8601，ID 为 UUID，版本为 64 位 SHA-256。实时 OpenAPI：<http://127.0.0.1:8010/docs>；导出文件 `docs/openapi.json`、`docs/contracts/`。
 
-本契约是后端已实现的接口及**拟交给队友实现的服务协议**。Agent 服务尚未运行，未声称双方已完成真实联调。后端保存数据、证据、会话、事件及调用审计；队友负责 RAG 切片/向量/重排、工具选择、回答、跨文档推理。保留的内置能力不与外部消费者同时抢事件。
+本契约是后端已实现的接口与队友服务协议。本机Agent已运行并完成真实E5/DeepSeek联调；跨机器部署与人工质量验收仍需相应检查。后端保存数据、证据、会话、事件及调用审计；队友负责RAG切片/向量/重排、工具选择、回答、跨文档推理。保留的内置能力不与外部消费者同时抢事件。
 
 ## 1. 网络与权限
 
@@ -101,3 +103,22 @@ sources 每条：document_id、content_hash、title、url、source_type、source
 # 2026-10-08 追溯问答增量说明
 
 当前本机外部 Agent/DeepSeek 已部署相关性、结论支持检查和连续追问修复。后端查询响应及调用详情新增可空 `generation_mode`、`llm_http_calls`，旧记录保持未知，服务间 V1 请求兼容。完整契约、使用方式及验收边界见 [QA_REPAIR.md](QA_REPAIR.md)。下文历史记录保留原阶段范围。
+
+# 2026-10-09 增量契约与验证
+
+本节为当前本机实现更新；文档后续早期“服务尚未配置”描述须结合时间理解。前端实际入口为 `POST /api/v1/agent/query`，普通用户Bearer；后端转发 `/v1/query`，服务端独立Bearer；后台Tool使用X-Agent-Token的只读凭据，租约/确认/富化回写使用另一个写凭据。管理员X-API-Key不进入前端。
+
+- 新会话省略session_id，连续追问传回响应的session_id；请求仍为query/session_id/is_demo。后端保存会话并发送最多8条历史，每条最多2000字符，单会话100轮。跨用户读取/续写/调用详情均拒绝。
+- Idempotency-Key在同一用户范围内复用；相同请求完成后返回相同调用，运行中409，内容不同409；失败后使用新键发起新调用。GET可有限重试，问答POST必须按幂等状态处理，避免重复费用。
+- generation_mode为live/extractive/mock/null，llm_http_calls为0—3或null；对应响应头继续兼容。旧历史未知仍null。工具轨迹由Agent报告、后端校验与脱敏，不能当作独立质量审计。
+- 超时504/agent_timeout；上游不可用502/agent_unavailable；结构无效502/agent_invalid_response；未配置503；预算429。格式仍为error.code/error.message/request_id。部分结果为200+partial，证据不足为200+insufficient_evidence，前端应展示状态。
+- 引用的document_id/content_hash/原始URL/locator必须对应原文当前版本，原文资料不可执行其中指令。事件只能由有效租约消费者确认，后端核对当前版本与可查询证明；证明失败不变成indexed。
+- 列表page从1开始，page_size最大100；时间筛选published/updated/discovered/changed，不同含义不可互换，返回带时区UTC，未知时间null。后端当前版本indexed_at不代表历史版本全量完成。
+
+`GET /api/v1/documents/{id}/enrichment` 保留原有source/external，并增加normalized。affected.items分别标记cpe/osv；CPE保留原criteria、命名分量、包含/排除边界和完整applicability_conditions，applicability=not_evaluated。OSV仅从明确fixed事件取得fixed_versions。每条结果可追溯到文档hash、evidence_id、source_url、locator；旧数据库原文和版本不改写。CWE/CVSS/remediation附原字段证据，缺失unknown，外部尚未处理仍unprocessed。
+
+这不是资产适用性引擎；不能把versionEndExcluding自动当修复版本，不能判断其他版本安全。Agent当前原始CPE布尔字段仍可能返回partial；如使用normalized，请保留版本校验并审查解析边界。
+
+管理观察接口新增：POST `/api/v1/ops/observations`（202，hours默认48，1—168，严格整数）；GET `/api/v1/ops/observations/{id}`；GET `/api/v1/ops/observations/{id}/samples`（分页）。同一个活动窗口复用。观测缺口、失败和未结束状态必须保留，不伪装持续可用。
+
+静态契约以scripts/export-contracts.py从实际模型生成；新增回归验证共享BackendQuery和AgentAnswer往返、静态AgentQueryResponse一致、缺字段、重复请求、超时、格式错误、权限和限流。前端无需新增管理密钥。
