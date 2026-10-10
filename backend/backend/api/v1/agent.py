@@ -93,7 +93,7 @@ def query_agent(body: AgentQuery, request: Request, db: Database, owner: User,
         answer = agent_gateway.call_agent(settings, payload)
         if response is not None:
             response.headers.update(answer._rag_headers)
-        agent_gateway.validate_answer(db, answer, body.is_demo)
+        agent_gateway.validate_answer(db, answer, body.is_demo, query=body.query)
         call_count = answer._rag_headers.get("X-RAG-LLM-Calls")
         response = AgentQueryResponse(**answer.model_dump(), session_id=conversation_id,
             invocation_id=invocation_id, request_id=request.state.request_id,

@@ -30,6 +30,23 @@ def call_agent(settings, payload):
             with client.stream("POST", endpoint(settings) + "/v1/query", headers=headers, json=payload) as response:
                 if response.status_code == 429:
                     raise HTTPException(503, "agent_rate_limited")
+                if response.status_code == 503:
+                    # Forward only public failure codes owned by this protocol.
+                    # Never expose arbitrary provider or upstream response text.
+                    raw_error = b""
+                    for part in response.iter_bytes(chunk_size=1024):
+                        raw_error += part
+                        if len(raw_error) > 4096:
+                            break
+                    try:
+                        error = json.loads(raw_error) if len(raw_error) <= 4096 else None
+                    except (ValueError, UnicodeDecodeError):
+                        error = None
+                    detail = error.get("detail") if isinstance(error, dict) else None
+                    if isinstance(detail, str) and detail in {
+                            "model_relevance_failed", "model_verification_failed", "model_generation_failed",
+                            "retrieval_failed", "backend_index_unavailable", "backend_index_embedding_signature_mismatch"}:
+                        raise HTTPException(503, detail)
                 response.raise_for_status()
                 parts, size = [], 0
                 for part in response.iter_bytes():
@@ -95,8 +112,21 @@ def safe_trace(answer, settings):
     return records
 
 
-def validate_answer(db, answer, is_demo):
+def validate_answer(db, answer, is_demo, *, query=None):
     from backend.api.v1.ai import _verify_citation
+    from backend.services.agent_conversation import conversation_kind, safe_conversation_answer
+    if answer.response_kind == "conversation":
+        if (not query or not conversation_kind(query) or answer.status != "completed"
+                or answer.retrieval_mode != "conversation" or answer.sources or answer.evidence
+                or answer.cve_ids or answer.risk_level != "UNKNOWN" or answer.tool_calls
+                or answer.tool_trace or answer.coverage.answered_topics or answer.coverage.missing_topics
+                or not safe_conversation_answer(answer.answer)):
+            raise HTTPException(502, "agent_invalid_conversation_response")
+        return
+    if answer.retrieval_mode == "conversation":
+        raise HTTPException(502, "agent_response_kind_mismatch")
+    if answer.status == "insufficient_evidence" and answer.coverage.answered_topics:
+        raise HTTPException(502, "agent_invalid_answer_coverage")
     if answer.status in {"completed", "partial"} and (not answer.sources or not answer.evidence):
         raise HTTPException(502, "agent_missing_evidence")
     citations = {}
