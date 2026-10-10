@@ -7,6 +7,21 @@ import { useIntelligenceStore } from '@/stores/intelligence'
 const store = useIntelligenceStore()
 const { messages, sending, submit, reset, userToken } = useDemoChat(() => store.items)
 const hasConversation = computed(() => messages.value.some(message => message.role === 'user'))
+const suggestions = computed(() => {
+  if (store.loading || store.error) return ['你能做什么？']
+  const items = store.latest.filter(item => item.isDemo === store.isDemo && Boolean(item.summary.trim()) && Boolean(item.title.trim()))
+  const identifiers = [...new Set(items.flatMap(item => item.cve && /^CVE-\d{4}-\d+$/i.test(item.cve) ? [item.cve.toUpperCase()] : []))]
+  const examples = identifiers.slice(0, 2).map(id => `${id} 是什么问题？请注明来源和资料缺口。`)
+  const document = items.find(item => item.documentType !== 'vulnerability' && !item.cve)
+  if (document) examples.push(`请概括《${document.title.slice(0, 70)}》记录的内容，并注明来源。`)
+  if (examples.length < 3 && identifiers[2]) examples.push(`${identifiers[2]} 的风险是什么？请注明来源。`)
+  return examples.length ? examples.slice(0, 3) : ['你能做什么？']
+})
+const suggestionsHint = computed(() => store.loading ? '资料正在加载，可以先了解助手的能力。'
+  : store.error ? '资料列表暂不可用，可以先了解助手的能力或直接输入问题。'
+  : !store.items.length ? '尚未加载资料，可以先了解助手的能力或直接输入问题。'
+  : suggestions.value[0] === '你能做什么？' ? '当前没有可用的资料示例，可以先了解助手的能力或直接输入问题。'
+  : '示例来自当前已加载资料，可回答范围以实际检索证据为准。')
 </script>
 <template>
   <div :class="['qa-page', { 'has-conversation': hasConversation }]">
@@ -16,9 +31,9 @@ const hasConversation = computed(() => messages.value.some(message => message.ro
   </div>
   <div class="qa-layout">
     <section class="panel chat-panel" aria-label="情报问答">
-      <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 回答附来源，可继续追问</div>
+      <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 支持基础对话，资料问答附来源</div>
       <ChatConversation :messages="messages" :sending="sending" />
-      <ChatComposer :disabled="!userToken" :sending="sending" @submit="submit" />
+      <ChatComposer :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
     </section>
     <section v-if="!userToken" class="qa-authorization">
       <h3>用户授权</h3><p>填写后端签发的短期用户令牌。</p>

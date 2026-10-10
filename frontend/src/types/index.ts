@@ -81,6 +81,13 @@ export interface Citation {
   intelligenceId: string
   label: string
 }
+export type ResponseKind = 'knowledge' | 'conversation'
+export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation'
+export type AnswerStatus = 'completed' | 'partial' | 'insufficient_evidence'
+export interface AnswerCoverage {
+  answered_topics: string[]
+  missing_topics: string[]
+}
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -89,6 +96,9 @@ export interface ChatMessage {
   citations?: Citation[]
   simulated?: boolean
   generationMode?: string
+  responseKind?: ResponseKind
+  status?: AnswerStatus | 'request_failed'
+  coverage?: AnswerCoverage
   warnings?: string[]
   evidence?: { document_id: string; content_hash: string; content: string; source: string; locator: string }[]
   requestId?: string
