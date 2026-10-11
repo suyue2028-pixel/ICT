@@ -44,6 +44,9 @@ class Tools:
             event["error_code"] = type(exc).__name__
             raise
         finally:
+            if name == "hybrid_search":
+                counts = state.pop("retrieval_counts", {})
+                event["input_summary"] = "; ".join(f"{key}={value}" for key, value in counts.items())[:500]
             event["duration_ms"] = max(0, round((time.monotonic() - event["at"]) * 1000))
 
     async def _execute(self, name, args, state):
@@ -58,7 +61,11 @@ class Tools:
             parsed = HybridArgs.model_validate(args)
             if state["identifiers"]:
                 raise ValueError("identifier request must use exact lookup")
-            return await self.retriever.search(snapshot, parsed.query, filters, parsed.limit)
+            counts = {}
+            # Keep diagnostics even when the provider or index raises an error.
+            state["retrieval_counts"] = counts
+            result = await self.retriever.search(snapshot, parsed.query, filters, parsed.limit, diagnostics=counts)
+            return result
         if name == "related_evidence":
             parsed = RelatedArgs.model_validate(args)
             selected = {e.evidence_id: e for e in state["evidence"]}

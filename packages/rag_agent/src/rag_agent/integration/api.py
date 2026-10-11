@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from ..schemas import Message, QueryRequest, QueryResponse
 from .contracts import (
-    AgentAnswer, AgentEvidence, AgentSource, BackendQuery, IndexProof,
+    AgentAnswer, AgentEvidence, AgentSource, AnswerCoverage, BackendQuery, IndexProof,
     IndexVerification, ToolTrace,
 )
 
@@ -175,16 +175,57 @@ def _bounded_answer(answer: str, byte_limit: int):
         size += line_size
     text = "\n".join(retained)
     if not text:
-        text = encoded[:available].decode("utf-8", errors="ignore").rstrip()
+        # Do not expose a half sentence or a citation with a missing bracket.
+        message = "回答超过长度限制，请缩小查询范围。"
+        text = message if len(message.encode("utf-8")) <= available else "..."[:available]
     text = text or "?"
     if len((text + marker).encode("utf-8")) <= byte_limit:
         text += marker
     return text, True
 
 
+def _answer_coverage(result) -> AnswerCoverage:
+    """Accept the internal model or an older result with no coverage field."""
+    raw = getattr(result, "coverage", None)
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        return AnswerCoverage()
+    try:
+        return AnswerCoverage.model_validate(raw)
+    except ValidationError:
+        # Optional presentation metadata must not hide an otherwise valid,
+        # source-checked answer. Invalid metadata is omitted conservatively.
+        return AnswerCoverage()
+
+
+def _demote_coverage(coverage: AnswerCoverage) -> None:
+    """Revoked or truncated conclusions leave their scope unverified."""
+    coverage.missing_topics = list(dict.fromkeys(
+        [*coverage.missing_topics, *coverage.answered_topics]))[:12]
+    coverage.answered_topics = []
+
+
 def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mode=None,
                  max_answer_tokens: int | None = None) -> AgentAnswer:
     """Only mapped, current backend source revisions can reach the gateway."""
+    coverage = _answer_coverage(result)
+    if result.response_kind == "conversation":
+        from ..agent.conversation import safe_conversation_answer
+        if (result.sources or result.claims or result.facts or result.metrics.tool_calls
+                or summary.get("tools") or coverage.answered_topics or coverage.missing_topics
+                or not safe_conversation_answer(result.answer)):
+            raise ValueError("invalid conversation response")
+        answer = result.answer
+        errors = list(result.warnings)
+        if max_answer_tokens is not None:
+            answer, truncated = _bounded_answer(answer, max_answer_tokens * 4)
+            if truncated:
+                errors.append("answer_budget_truncated")
+        return AgentAnswer(status="completed", answer=answer, response_kind="conversation",
+                           sources=[], cve_ids=[], risk_level="UNKNOWN", evidence=[],
+                           tool_calls=[], tool_trace=[], partial_errors=errors,
+                           retrieval_mode="conversation")
     sources, evidence, valid_ids, retained_metadata = {}, [], set(), {}
     errors = list(result.warnings)
     rejected = False
@@ -197,6 +238,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
         revision = metadata.get("revision", {})
         content = revision.get("content")
         original = content if isinstance(content, str) else ""
+        excerpt_truncated = len(item.excerpt) > 2000
         excerpt = item.excerpt[:2000]
         revision_text = json.dumps(revision, ensure_ascii=False)
         if excerpt not in original and excerpt not in revision_text:
@@ -225,7 +267,13 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
         sources[source_key] = source
         retained_metadata[source_key] = metadata
         evidence.append(converted)
-        valid_ids.add(item.evidence_id)
+        if excerpt_truncated:
+            # Keep a real source prefix for inspection, but it cannot establish
+            # claims/facts generated against the longer internal source value.
+            rejected = True
+            errors.append("transport_evidence_truncated")
+        else:
+            valid_ids.add(item.evidence_id)
 
     calls, traces, trace_errors = _backend_trace(summary, mappings)
     errors.extend(trace_errors)
@@ -248,6 +296,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
             errors.insert(0, "answer_rebuilt_after_citation_validation")
             errors.insert(0, _generation_note("extractive", result.metrics.llm_calls, configured_llm_mode))
         cves, risk = [], "UNKNOWN"
+        _demote_coverage(coverage)
     else:
         status = "completed" if result.status == "ok" else "partial"
         claims_invalid = any(not set(claim.evidence_ids).issubset(valid_ids) for claim in result.claims)
@@ -258,28 +307,38 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
             rebuilt_note = _generation_note("extractive", result.metrics.llm_calls, configured_llm_mode)
             if rebuilt_note not in errors:
                 errors.insert(0, rebuilt_note)
-            answer = _extractive_answer(evidence, "部分引用未通过原始版本核对，相关结论已撤下。")
+            answer = _extractive_answer(evidence, "部分引用未通过完整证据校验，相关结论已撤下。")
+            _demote_coverage(coverage)
         else:
             references = {item.evidence_id: number for number, item in enumerate(result.sources, 1)}
 
             answer = _public_references(result.answer, references)
+            if not result.claims:
+                # Source excerpts alone do not establish that a topic was
+                # answered. Only surviving, source-linked claims can carry it.
+                _demote_coverage(coverage)
         risk = _risk(result.facts, valid_ids)
     if len(answer) > 12000:
         answer = answer[:11940] + "\n回答超过传输长度限制，已截断；请缩小查询范围。"
         errors.append("transport_answer_truncated")
         if evidence:
             status = "partial"
+        _demote_coverage(coverage)
     if max_answer_tokens is not None:
-        answer, truncated = _bounded_answer(answer, max_answer_tokens)
+        # max_answer_tokens bounds provider generation; it is not a UTF-8 byte
+        # count. This separate generous transport guard is only an approximation.
+        answer, truncated = _bounded_answer(answer, max_answer_tokens * 4)
         if truncated:
             errors.insert(0, "answer_budget_truncated")
             if evidence:
                 status = "partial"
+            _demote_coverage(coverage)
     allowed = set().union(*(_allowed_cves(metadata) for metadata in retained_metadata.values()))
     cves = sorted({value.upper() for value in _CVE.findall(answer)} & allowed)[:100]
     mode = "structured" if "exact_lookup" in calls else "hybrid" if "hybrid_search" in calls else "keyword"
     return AgentAnswer(
         status=status, answer=answer or "没有满足要求的来源证据。", sources=list(sources.values()),
+        coverage=coverage,
         cve_ids=cves, risk_level=risk, evidence=evidence, tool_calls=calls,
         tool_trace=traces, partial_errors=list(dict.fromkeys(errors))[:20], retrieval_mode=mode,
     )
@@ -287,7 +346,17 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
 
 def create_app(service, index, service_token: str | None) -> FastAPI:
     """Inject service/index for local validation; all V1 routes require a token."""
-    app = FastAPI(title="ICT Agent backend V1 adapter", version="1")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # Loading cached CPU weights can exceed a query's deadline. Readiness
+        # means the embedding provider is usable, including after an Agent restart.
+        if service.embedding.mode == "live":
+            await service.embedding.query("readiness check")
+        yield
+
+    app = FastAPI(title="ICT Agent backend V1 adapter", version="1", lifespan=lifespan)
     app.state.service, app.state.index = service, index
     expected = (service_token or "").encode("utf-8")
 
@@ -340,7 +409,7 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
         except Exception:
             raise HTTPException(503, "backend_index_unavailable") from None
         request = QueryRequest(question=body.query, history=[
-            Message(role=item.role, content=item.content) for item in body.history[-6:]
+            Message(role=item.role, content=item.content) for item in body.history[-8:]
         ])
         try:
             result = await service.query(
@@ -360,6 +429,12 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
                 raise HTTPException(504, "agent_query_timeout", headers=result_headers)
             if "BudgetExceeded" in result.warnings:
                 raise HTTPException(429, "agent_call_budget_exceeded", headers=result_headers)
+            for warning, detail in (("relevance_check_failed", "model_relevance_failed"),
+                                    ("claim_support_check_failed", "model_verification_failed"),
+                                    ("model_generation_failed", "model_generation_failed"),
+                                    ("retrieval_failed", "retrieval_failed")):
+                if warning in result.warnings:
+                    raise HTTPException(503, detail, headers=result_headers)
             raise HTTPException(503, "agent_query_failed", headers=result_headers)
         response.headers.update(result_headers)
         try:

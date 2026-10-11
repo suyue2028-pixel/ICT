@@ -66,3 +66,6 @@ class AgentState(TypedDict, total=False):
     started: float
     output_mode: str
     selected_evidence: list[Any]
+    relevance_assignments: dict[str, Any]
+    requested_topics: list[dict[str, str]]
+    llm_error: str

@@ -1,0 +1,342 @@
+--- a/frontend/src/types/index.ts
++++ b/frontend/src/types/index.ts
+@@ -81,6 +81,13 @@
+   intelligenceId: string
+   label: string
+ }
++export type ResponseKind = 'knowledge' | 'conversation'
++export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation'
++export type AnswerStatus = 'completed' | 'partial' | 'insufficient_evidence'
++export interface AnswerCoverage {
++  answered_topics: string[]
++  missing_topics: string[]
++}
+ export interface ChatMessage {
+   id: string
+   role: 'user' | 'assistant'
+@@ -89,6 +96,9 @@
+   citations?: Citation[]
+   simulated?: boolean
+   generationMode?: string
++  responseKind?: ResponseKind
++  status?: AnswerStatus | 'request_failed'
++  coverage?: AnswerCoverage
+   warnings?: string[]
+   evidence?: { document_id: string; content_hash: string; content: string; source: string; locator: string }[]
+   requestId?: string
+--- a/frontend/src/api/http.ts
++++ b/frontend/src/api/http.ts
+@@ -25,7 +25,21 @@
+   if (axios.isAxiosError(error)) {
+     const code = error.response?.data?.error?.code || error.response?.data?.detail
+     if (error.response?.status === 401) return '用户会话未授权或已过期，请重新登录。'
+-    if (error.response?.status === 504) return '回答超时，请缩小问题范围后重试。'
++    if (error.response?.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code || '')) return '回答超时，请缩小问题范围后重试。'
++    const explanations: Record<string, string> = {
++      model_relevance_failed: '模型服务未能完成资料相关性核验，本次回答中断。这不代表知识库没有相关资料，请稍后重试。',
++      model_verification_failed: '模型服务未能完成回答的事实核验，本次未返回未经核实的答案。这不代表知识库没有相关资料，请稍后重试。',
++      model_generation_failed: '模型服务未能完成回答生成。这不代表知识库没有相关资料，请稍后重试。',
++      backend_index_unavailable: '资料检索索引暂不可用，本次未能完成检索。这不代表知识库没有相关资料，请检查服务状态后重试。',
++      backend_index_embedding_signature_mismatch: '资料检索索引与当前向量模型配置不一致，本次未能完成检索。这不代表知识库没有相关资料，请更新索引配置后重试。',
++      retrieval_failed: '资料检索服务异常，本次未能完成检索。这不代表知识库没有相关资料，请稍后重试。',
++      agent_query_failed: '问答处理异常，本次未能取得完整回答。这不代表知识库没有相关资料，请稍后重试。',
++      agent_rate_limited: '问答服务当前请求过多，请稍后重试。',
++      user_query_budget_exceeded: '当前用户的问答请求额度已用完，请等待额度恢复后重试。',
++      agent_call_budget_exceeded: '本次回答达到调用次数限制，请缩小问题范围后重试。',
++    }
++    if (typeof code === 'string' && explanations[code]) return explanations[code]
++    if (error.response?.status === 429) return '请求过于频繁或额度已用完，请稍后重试。'
+     return typeof code === 'string' ? `请求失败：${code}` : '无法连接服务，请检查服务状态后重试。'
+   }
+   return '请求失败，请重试。'
+--- a/frontend/src/composables/useDemoChat.ts
++++ b/frontend/src/composables/useDemoChat.ts
+@@ -1,10 +1,12 @@
+ import { computed, onMounted, shallowRef, watch } from 'vue'
++import axios from 'axios'
+ import { apiGet, ensureSession, errorMessage, http, userToken } from '@/api/http'
+ import { useIntelligenceStore } from '@/stores/intelligence'
+-import type { ChatMessage, IntelligenceItem } from '@/types'
++import type { AnswerCoverage, AnswerStatus, ChatMessage, IntelligenceItem, ResponseKind, RetrievalMode } from '@/types'
+ interface Answer {
+-  status: string; answer: string; session_id: string; request_id: string;
+-  partial_errors: string[]; retrieval_mode: string;
++  status: AnswerStatus; answer: string; session_id: string; request_id: string;
++  partial_errors: string[]; retrieval_mode: RetrievalMode; response_kind?: ResponseKind;
++  coverage?: AnswerCoverage;
+   sources: { document_id: string; title: string }[];
+   evidence: NonNullable<ChatMessage['evidence']>;
+ }
+@@ -12,10 +14,10 @@
+ export function useDemoChat(getItems: () => IntelligenceItem[]) {
+   const store = useIntelligenceStore()
+   const messages = shallowRef<ChatMessage[]>([{ id: 'welcome', role: 'assistant', content:
+-    '你好！我会从后端同步的资料中检索证据，并在回答中保留来源。可以输入漏洞编号，或询问 AI 安全风险。', time: '' }])
++    '你好！可以先聊聊你想了解什么，也可以输入漏洞编号或 AI 安全问题。我会为资料问答保留来源。', time: '', responseKind: 'conversation' }])
+   const sending = shallowRef(false), sessionId = shallowRef<string | null>(null)
+   let sequence = 0, context = 0
+-  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations'>
++  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'status' | 'coverage'>
+   let metadata: Metadata[] = []
+   const metadataKey = (id: string) => `ict:answer-meta:${id}`
+   function remember(id: string, row: Metadata) {
+@@ -26,7 +28,7 @@
+   function clearView() {
+     context += 1
+     sessionId.value = null
+-    messages.value = [{ id: 'welcome', role: 'assistant', content: '请在当前资料范围输入问题。', time: '' }]
++    messages.value = [{ id: 'welcome', role: 'assistant', content: '你好！可以直接交流，也可以在当前资料范围输入安全问题。', time: '', responseKind: 'conversation' }]
+     metadata = []
+   }
+   async function restore() {
+@@ -38,7 +40,7 @@
+     if (!stored || !userToken.value) return
+     try {
+       const result = await apiGet<{ is_demo: boolean; messages: { id?: string; role: 'user' | 'assistant'; content: string;
+-        citations: Answer['evidence']; created_at?: string }[] }>(`/agent/sessions/${stored}`)
++        citations: Answer['evidence']; retrieval_mode?: RetrievalMode | null; response_kind?: ResponseKind; created_at?: string }[] }>(`/agent/sessions/${stored}`)
+       if (version !== context) return
+       if (result.is_demo !== store.isDemo) throw new Error('session_scope_mismatch')
+       try { metadata = JSON.parse(sessionStorage.getItem(metadataKey(stored)) || '[]') as Metadata[]
+@@ -47,9 +49,15 @@
+       if (result.messages.length) messages.value = result.messages.map((row, index) => {
+         const date = row.created_at ? new Date(row.created_at) : null
+         const saved = row.role === 'assistant' ? metadata[assistantIndex++] : undefined
++        const kind = row.response_kind || (row.retrieval_mode === 'conversation' ? 'conversation' : saved?.responseKind || 'knowledge')
++        const restoredMode = kind === 'knowledge' && !row.citations.length && saved?.generationMode?.startsWith('资料摘录')
++          ? '历史消息 · 未记录可核验引用' : saved?.generationMode || '历史消息 · 生成模式未记录'
+         return { id: row.id || `history-${index}`, role: row.role,
+           content: row.content, time: date && Number.isFinite(date.getTime()) ? clock.format(date) : '',
+-          generationMode: row.role === 'assistant' ? saved?.generationMode || '历史消息 · 生成模式未记录' : undefined,
++          generationMode: row.role === 'assistant' ? restoredMode : undefined,
++          responseKind: row.role === 'assistant' ? kind : undefined,
++          status: saved?.status,
++          coverage: saved?.coverage,
+           warnings: saved?.warnings,
+           evidence: row.citations, citations: row.citations.filter((item, index, rows) => rows.findIndex(x => x.document_id === item.document_id && x.content_hash === item.content_hash) === index).map(item => ({ intelligenceId: item.document_id,
+             contentHash: item.content_hash, label: saved?.citations?.find(x => x.intelligenceId === item.document_id && x.contentHash === item.content_hash)?.label || getItems().find(x => x.id === item.document_id)?.title || '原始来源文档' })) }
+@@ -65,15 +73,50 @@
+   }
+   watch(() => store.isDemo, () => { clearView(); void restore() })
+   onMounted(() => { void restore() })
++  function responseKind(answer: Answer): ResponseKind {
++    return answer.response_kind || (answer.retrieval_mode === 'conversation' ? 'conversation' : 'knowledge')
++  }
+   function modeLabel(answer: Answer, headers: Record<string, unknown>) {
+     const notes = answer.partial_errors
+-    if (notes.some(x => x.includes('after_remote_attempt'))) return '资料摘录 · 大模型调用后降级'
+-    if (notes.some(x => x.includes('after_mock_attempt'))) return '资料摘录 · 测试替身调用后降级'
++    const conversation = responseKind(answer) === 'conversation'
++    const hasCode = (code: string) => notes.some(note => note === code || note.startsWith(`${code}:`))
++    const hasEvidence = answer.evidence.length > 0
++    if (!conversation) {
++      if (['model_generation_failed', 'relevance_check_failed', 'claim_support_check_failed'].some(hasCode)) {
++        return hasEvidence ? '模型服务异常 · 已显示资料证据' : '模型服务异常 · 未生成回答'
++      }
++      if (hasCode('retrieval_failed')) return hasEvidence ? '检索服务异常 · 仅显示已取得的证据' : '检索服务异常 · 未取得证据'
++      if (answer.status === 'insufficient_evidence' || !hasEvidence) return '证据不足 · 未生成资料回答'
++    }
++    if (notes.some(x => x.includes('after_remote_attempt'))) return conversation ? '模型暂不可用 · 本地回复' : '资料摘录 · 大模型调用后降级'
++    if (notes.some(x => x.includes('after_mock_attempt'))) return conversation ? '本地回复 · 测试替身调用后降级' : '资料摘录 · 测试替身调用后降级'
+     if (notes.some(x => x.includes('mock_not_real'))) return '测试替身结果'
+     if (headers['x-rag-answer-mode'] === 'extractive' || notes.some(x => x.includes('generation_mode:extractive'))) {
++      if (conversation) return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '模型暂不可用 · 本地回复' : '本地回复 · 未调用大模型'
+       return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '资料摘录 · 大模型调用后降级' : '资料摘录 · 未调用大模型生成'
+     }
+     return headers['x-rag-answer-mode'] === 'live' ? '大模型回答' : '回答 · 生成模式未提供'
++  }
++  function coverage(answer: Answer): AnswerCoverage | undefined {
++    if (!answer.coverage) return undefined
++    const topics = (value: unknown): string[] => Array.isArray(value)
++      ? [...new Set(value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()))].slice(0, 12)
++      : []
++    return { answered_topics: topics(answer.coverage.answered_topics), missing_topics: topics(answer.coverage.missing_topics) }
++  }
++  function failureLabel(cause: unknown) {
++    if (!axios.isAxiosError(cause)) return '请求失败'
++    const detail = cause.response?.data?.error?.code || cause.response?.data?.detail
++    if (['model_relevance_failed', 'model_verification_failed', 'model_generation_failed'].includes(detail)) return '模型服务异常 · 未生成回答'
++    if (['backend_index_unavailable', 'backend_index_embedding_signature_mismatch', 'retrieval_failed'].includes(detail)) return '检索服务异常 · 未取得证据'
++    if (cause.response?.status === 429 || detail === 'agent_rate_limited') return '请求受限 · 请稍后重试'
++    if (cause.response?.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(cause.code || '')) return '回答超时'
++    if (cause.response?.status === 401) return '用户会话未授权或已过期'
++    if ([502, 503].includes(cause.response?.status || 0)) return '问答服务异常 · 未取得回答'
++    return '请求失败'
++  }
++  function answerWarnings(answer: Answer) {
++    return answer.partial_errors.filter(x => !x.startsWith('generation_mode:') && !x.startsWith('conversation_local_reply:') && !x.startsWith('relevance_filter:'))
+   }
+   async function submit(question: string) {
+     const clean = question.trim()
+@@ -92,20 +135,24 @@
+       if (version !== context) return
+       sessionId.value = answer.session_id
+       remember(answer.session_id, { generationMode: modeLabel(answer, response.headers),
+-        warnings: answer.partial_errors.filter(x => !x.startsWith('generation_mode:')),
++        responseKind: responseKind(answer),
++        status: answer.status, coverage: coverage(answer),
++        warnings: answerWarnings(answer),
+         citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
+           contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) })
+       messages.value = [...messages.value, { id: `a-${++sequence}`, role: 'assistant', content: answer.answer,
+         time: clock.format(new Date()), evidence: answer.evidence, requestId: answer.request_id,
+         generationMode: modeLabel(answer, response.headers),
+-        warnings: answer.partial_errors.filter(x => !x.startsWith('generation_mode:')),
++        responseKind: responseKind(answer),
++        status: answer.status, coverage: coverage(answer),
++        warnings: answerWarnings(answer),
+         citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
+           contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) }]
+     } catch (cause) {
+       if (version !== context) return
+       messages.value = [...messages.value, { id: `error-${++sequence}`, role: 'assistant',
+         content: userToken.value ? errorMessage(cause) : '尚未获得用户会话，请填写短期用户令牌或重新启动本地服务。',
+-        time: clock.format(new Date()), generationMode: '请求失败' }]
++        time: clock.format(new Date()), status: 'request_failed', generationMode: failureLabel(cause) }]
+     } finally { sending.value = false }
+   }
+   return { messages: computed(() => messages.value), sending: computed(() => sending.value), sessionId, submit, reset, userToken }
+--- a/frontend/src/components/chat/ChatConversation.vue
++++ b/frontend/src/components/chat/ChatConversation.vue
+@@ -13,10 +13,24 @@
+   tool_trace_incomplete: '部分检索过程记录不完整',
+   answer_budget_truncated: '回答达到长度限制，可缩小问题范围后追问',
+   transport_answer_truncated: '回答达到传输长度限制',
++  transport_evidence_truncated: '部分来源摘录超过展示长度，相关生成结论已撤下',
++  requested_field_omitted_due_to_size: '部分请求字段超过引用长度限制，请核对原始资料',
+   transport_answer_limit: '回答达到长度限制',
++  coverage_incomplete: '现有证据仅支持问题的一部分',
++  retrieval_failed: '部分资料检索失败，不能据此判断知识库没有相关内容',
++  model_generation_failed: '大模型生成失败，当前仅显示已取得的资料证据；这不代表知识库没有相关资料',
++  relevance_check_failed: '大模型相关性核验失败，回答未完成；这不代表知识库没有相关资料',
++  claim_support_check_failed: '大模型事实核验失败，回答未完成；这不代表知识库没有相关资料',
+ }
+ function warningText(warnings: string[]) {
+-  return [...new Set(warnings.map(code => warningLabels[code] || '部分信息未完整返回'))].join('；')
++  return [...new Set(warnings.filter(code => !code.startsWith('relevance_filter:')).map(code => warningLabels[code.split(':')[0] || ''] || '部分信息未完整返回'))].join('；')
++}
++function messageHeading(message: ChatMessage) {
++  if (message.role === 'user') return '你的问题'
++  if (message.responseKind === 'conversation') return '基础对话'
++  if (message.status === 'request_failed') return '请求异常'
++  if (message.status === 'insufficient_evidence') return '资料不足'
++  return message.status === 'partial' ? '部分资料回答' : '资料回答'
+ }
+ watch(
+   () => props.messages.length,
+@@ -42,14 +56,19 @@
+     <article v-for="message in messages" :key="message.id" :class="['message-row', message.role, { 'welcome-message': message.id === 'welcome' }]">
+       <div class="message-body">
+         <div class="message-top">
+-          <strong>{{ message.role === 'assistant' ? '资料回答' : '你的问题' }}</strong
++          <strong>{{ messageHeading(message) }}</strong
+           ><span v-if="message.simulated" class="simulated-label small">模拟回答</span
+           ><time>{{ message.time }}</time>
+         </div>
+         <div v-if="message.generationMode" class="simulated-label small">{{ message.generationMode }}</div>
+         <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" /><template v-else>{{ message.content }}</template></div>
++        <div v-if="message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length" class="citation-box">
++          <div v-if="message.coverage?.answered_topics?.length"><strong>已有证据支持</strong><ul><li v-for="topic in message.coverage?.answered_topics || []" :key="topic">{{ topic }}</li></ul></div>
++          <div v-if="message.coverage?.missing_topics?.length"><strong>尚未核实的范围</strong><ul><li v-for="topic in message.coverage?.missing_topics || []" :key="topic">{{ topic }}</li></ul></div>
++        </div>
++        <p v-if="message.status === 'partial' && !message.coverage?.missing_topics?.length" class="muted">回答尚不完整，请结合原文证据和提示阅读。</p>
+         <details v-if="message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :key="index"><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
+-        <p v-if="message.warnings?.length" class="muted">{{ warningText(message.warnings) }}</p>
++        <p v-if="warningText(message.warnings || [])" class="muted">{{ warningText(message.warnings || []) }}</p>
+         <div v-if="message.citations?.length" class="citation-box">
+           <span>引用的来源资料</span
+           ><router-link
+@@ -60,13 +79,13 @@
+           >
+         </div>
+         <div
+-          v-else-if="message.role === 'assistant' && message.id !== 'welcome'"
++          v-else-if="message.role === 'assistant' && message.id !== 'welcome' && message.responseKind !== 'conversation' && message.status !== 'request_failed'"
+           class="citation-empty"
+         >
+-          引用来源：暂无数据
++          没有可核验的引用证据
+         </div>
+       </div>
+     </article>
+-    <div v-if="sending" class="thinking" role="status">正在检索资料并整理回答…</div>
++    <div v-if="sending" class="thinking" role="status">正在整理回复…</div>
+   </div>
+ </template>
+--- a/frontend/src/components/chat/ChatComposer.vue
++++ b/frontend/src/components/chat/ChatComposer.vue
+@@ -1,14 +1,12 @@
+ <script setup lang="ts">
+ import { shallowRef } from 'vue'
+ 
+-const props = defineProps<{ disabled: boolean; sending: boolean }>()
++const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
++  suggestions: () => ['你能做什么？'],
++  suggestionsHint: '可以先了解助手的能力，也可以直接输入问题。',
++})
+ const emit = defineEmits<{ submit: [question: string] }>()
+ const question = shallowRef('')
+-const suggestions = [
+-  '智能体工具审计有什么风险？',
+-  '提示注入应如何处理？',
+-  '访问控制相关情报有哪些？',
+-]
+ function submit(value = question.value) {
+   if (props.disabled || props.sending) return
+   const clean = value.trim()
+@@ -36,6 +34,7 @@
+         {{ sample }}
+       </button>
+     </div>
++    <small v-if="suggestionsHint">{{ suggestionsHint }}</small>
+     <form @submit.prevent="submit()">
+       <label class="sr-only" for="chat-question">输入问题</label
+       ><textarea
+@@ -49,9 +48,9 @@
+         placeholder="输入 CVE 编号或你想查询的问题"
+         @keydown.enter.exact="enter"
+       /><button type="submit" :disabled="disabled || sending || !question.trim()">
+-        {{ sending ? '检索中…' : '发送' }}
++        {{ sending ? '回复中…' : '发送' }}
+       </button>
+     </form>
+-    <small>Enter 发送，Shift + Enter 换行。回答附来源，资料不足时会明确说明。</small>
++    <small>Enter 发送，Shift + Enter 换行。安全资料问答附来源，资料不足时会明确说明。</small>
+   </div>
+ </template>
+--- a/frontend/src/views/QaView.vue
++++ b/frontend/src/views/QaView.vue
+@@ -7,6 +7,21 @@
+ const store = useIntelligenceStore()
+ const { messages, sending, submit, reset, userToken } = useDemoChat(() => store.items)
+ const hasConversation = computed(() => messages.value.some(message => message.role === 'user'))
++const suggestions = computed(() => {
++  if (store.loading || store.error) return ['你能做什么？']
++  const items = store.latest.filter(item => item.isDemo === store.isDemo && Boolean(item.summary.trim()) && Boolean(item.title.trim()))
++  const identifiers = [...new Set(items.flatMap(item => item.cve && /^CVE-\d{4}-\d+$/i.test(item.cve) ? [item.cve.toUpperCase()] : []))]
++  const examples = identifiers.slice(0, 2).map(id => `${id} 是什么问题？请注明来源和资料缺口。`)
++  const document = items.find(item => item.documentType !== 'vulnerability' && !item.cve)
++  if (document) examples.push(`请概括《${document.title.slice(0, 70)}》记录的内容，并注明来源。`)
++  if (examples.length < 3 && identifiers[2]) examples.push(`${identifiers[2]} 的风险是什么？请注明来源。`)
++  return examples.length ? examples.slice(0, 3) : ['你能做什么？']
++})
++const suggestionsHint = computed(() => store.loading ? '资料正在加载，可以先了解助手的能力。'
++  : store.error ? '资料列表暂不可用，可以先了解助手的能力或直接输入问题。'
++  : !store.items.length ? '尚未加载资料，可以先了解助手的能力或直接输入问题。'
++  : suggestions.value[0] === '你能做什么？' ? '当前没有可用的资料示例，可以先了解助手的能力或直接输入问题。'
++  : '示例来自当前已加载资料，可回答范围以实际检索证据为准。')
+ </script>
+ <template>
+   <div :class="['qa-page', { 'has-conversation': hasConversation }]">
+@@ -16,9 +31,9 @@
+   </div>
+   <div class="qa-layout">
+     <section class="panel chat-panel" aria-label="情报问答">
+-      <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 回答附来源，可继续追问</div>
++      <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 支持基础对话，资料问答附来源</div>
+       <ChatConversation :messages="messages" :sending="sending" />
+-      <ChatComposer :disabled="!userToken" :sending="sending" @submit="submit" />
++      <ChatComposer :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
+     </section>
+     <section v-if="!userToken" class="qa-authorization">
+       <h3>用户授权</h3><p>填写后端签发的短期用户令牌。</p>

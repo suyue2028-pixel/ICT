@@ -127,6 +127,34 @@
       "title": "AgentSource",
       "type": "object"
     },
+    "AnswerCoverage": {
+      "additionalProperties": false,
+      "description": "Display-only answer scope; never a substitute for source evidence.",
+      "properties": {
+        "answered_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Answered Topics",
+          "type": "array"
+        },
+        "missing_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Missing Topics",
+          "type": "array"
+        }
+      },
+      "title": "AnswerCoverage",
+      "type": "object"
+    },
     "ToolTrace": {
       "additionalProperties": false,
       "properties": {
@@ -218,6 +246,18 @@
       "title": "Answer",
       "type": "string"
     },
+    "response_kind": {
+      "default": "knowledge",
+      "enum": [
+        "knowledge",
+        "conversation"
+      ],
+      "title": "Response Kind",
+      "type": "string"
+    },
+    "coverage": {
+      "$ref": "#/$defs/AnswerCoverage"
+    },
     "sources": {
       "items": {
         "$ref": "#/$defs/AgentSource"
@@ -283,7 +323,8 @@
         "keyword_fallback",
         "semantic",
         "hybrid",
-        "structured"
+        "structured",
+        "conversation"
       ],
       "title": "Retrieval Mode",
       "type": "string"

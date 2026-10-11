@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import shutil
 import signal
 import socket
@@ -135,26 +136,46 @@ def load_state():
     return json.loads(STATE.read_text()) if STATE.exists() else {"processes": []}
 
 
+def save_state(state):
+    temporary = STATE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=2) + "\n")
+    temporary.replace(STATE)
+
+
 def owns_process(row):
     try:
         actual = subprocess.check_output(["ps", "-p", str(row["pid"]), "-o", "args="], text=True).strip()
-        return row["signature"] in actual and str(ROOT) in actual
-    except subprocess.CalledProcessError:
+        return (row["signature"] in actual and str(ROOT) in actual
+                and os.getpgid(row["pid"]) == row["pid"])
+    except (subprocess.CalledProcessError, ProcessLookupError):
         return False
 
 
-def stop(state=None):
-    state = load_state() if state is None else state
-    for row in reversed(state["processes"]):
+def owns_agent(row):
+    if (row.get("name") != "agent" or row.get("signature") != str(ROOT / ".venv/bin/python")
+            or not owns_process(row)):
+        return False
+    try:
+        actual = subprocess.check_output(["ps", "-p", str(row["pid"]), "-o", "args="], text=True).strip()
+        args = shlex.split(actual)
+        return ("uvicorn" in args and "examples.backend_api:app" in args
+                and "--app-dir" in args and args[args.index("--app-dir") + 1] == str(ROOT)
+                and "--port" in args and args[args.index("--port") + 1] == "9001")
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        return False
+
+
+def stop_rows(rows):
+    for row in reversed(rows):
         if owns_process(row):
             try:
                 os.killpg(row["pid"], signal.SIGTERM)
             except ProcessLookupError:
                 pass
     deadline = time.monotonic() + 8
-    while time.monotonic() < deadline and any(owns_process(row) for row in state["processes"]):
+    while time.monotonic() < deadline and any(owns_process(row) for row in rows):
         time.sleep(0.2)
-    for row in reversed(state["processes"]):
+    for row in reversed(rows):
         if owns_process(row):
             # PostgreSQL SIGINT performs a fast, durable shutdown; never SIGKILL.
             try:
@@ -162,12 +183,17 @@ def stop(state=None):
             except ProcessLookupError:
                 pass
     deadline = time.monotonic() + 8
-    while time.monotonic() < deadline and any(owns_process(row) for row in state["processes"]):
+    while time.monotonic() < deadline and any(owns_process(row) for row in rows):
         time.sleep(0.2)
-    survivors = [row for row in state["processes"] if owns_process(row)]
+    return [row for row in rows if owns_process(row)]
+
+
+def stop(state=None):
+    state = load_state() if state is None else state
+    survivors = stop_rows(state["processes"])
     if survivors:
         state["processes"] = survivors
-        STATE.write_text(json.dumps(state, indent=2) + "\n")
+        save_state(state)
         raise RuntimeError("Services still stopping; state retained: " + ", ".join(row["name"] for row in survivors))
     if STATE.exists():
         STATE.unlink()
@@ -193,13 +219,170 @@ def wait_http(url, headers=None, timeout=60):
     raise RuntimeError(f"Service not ready: {url}; see {LOCAL / 'logs'}")
 
 
+def agent_environment(env, backend, *, live):
+    """Build the same Agent configuration for full startup and replacement."""
+    rag_env = {**env, "PYTHONPATH": str(ROOT / "packages/rag_agent/src"),
+               "HF_HOME": str(ROOT / ".cache/huggingface"), "HF_HUB_OFFLINE": "1",
+               "RAG_BACKEND_DB_PATH": str(ROOT / "data/backend-rag.db"),
+               "RAG_BACKEND_URL": "http://127.0.0.1:8010",
+               "RAG_SERVICE_TOKEN": env["AGENT_SERVICE_TOKEN"],
+               "RAG_BACKEND_TOOL_TOKEN": env["AGENT_TOOL_TOKEN"],
+               "RAG_BACKEND_WRITE_TOKEN": env["AGENT_WRITE_TOKEN"],
+               "RAG_LLM_MODE": "live" if live else "extractive",
+               "RAG_LLM_BASE_URL": env.get("RAG_LLM_BASE_URL", "https://api.deepseek.com"),
+               "RAG_LLM_MODEL": env.get("RAG_LLM_MODEL", "deepseek-flash")}
+    key = env.get("RAG_LLM_KEY")
+    key_file = env.get("RAG_LLM_KEY_FILE")
+    if key and key_file:
+        raise RuntimeError("Configure RAG_LLM_KEY or RAG_LLM_KEY_FILE, not both; services preserved")
+    if not live:
+        # Extractive startup and rollback require no provider credentials.
+        rag_env.pop("RAG_LLM_KEY", None)
+        rag_env.pop("RAG_LLM_KEY_FILE", None)
+        return rag_env
+    default_key_file = ROOT / ".secrets/llm-api-key"
+    if not key and not key_file and default_key_file.exists():
+        key_file = str(default_key_file)
+        rag_env["RAG_LLM_KEY_FILE"] = key_file
+    if not key and not key_file:
+        # Existing teammate configuration is the last fallback, used only in
+        # process memory. An explicit file never competes with this fallback.
+        key = read_env(backend / ".env").get("DEEPSEEK_API_KEY")
+        if key:
+            rag_env["RAG_LLM_KEY"] = key
+        else:
+            raise RuntimeError("Live mode needs RAG_LLM_KEY, RAG_LLM_KEY_FILE, "
+                               ".secrets/llm-api-key, or the backend DeepSeek key; services preserved")
+    return rag_env
+
+
+def preflight_agent(rag_env):
+    python_agent = ROOT / ".venv/bin/python"
+    if not python_agent.exists():
+        raise RuntimeError("Missing Agent runtime; services preserved; see docs/fullstack_local.md")
+    # Settings validation also checks key-file readability/format. It imports
+    # no provider and makes no model request. Suppress all child output so even
+    # validation exceptions cannot disclose credentials.
+    code = ("from rag_agent.config import Settings\n"
+            "try:\n    Settings.from_env()\n"
+            "except Exception:\n    raise SystemExit(1)\n")
+    try:
+        result = subprocess.run([str(python_agent), "-c", code], cwd=ROOT, env=rag_env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Agent configuration preflight timed out; services preserved") from None
+    if result.returncode:
+        raise RuntimeError("Agent configuration preflight failed; check model URL, mode, "
+                           "and credential configuration; services preserved")
+
+
+def spawn_process(state, name, command, cwd, child_env):
+    with (LOCAL / "logs" / f"{name}.log").open("a") as output:
+        child = subprocess.Popen(command, cwd=cwd, env=child_env, stdout=output,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+    signature = "ICT-RAG" if name == "redis" else str(command[0]) if name == "postgres" else next(
+        (str(value) for value in command if str(ROOT) in str(value)), str(command[0]))
+    row = {"name": name, "pid": child.pid, "signature": signature}
+    state["processes"].append(row)
+    save_state(state)
+    return row
+
+
+def spawn_agent(state, rag_env):
+    python_agent = str(ROOT / ".venv/bin/python")
+    row = spawn_process(state, "agent", [python_agent, "-m", "uvicorn", "examples.backend_api:app",
+                        "--app-dir", str(ROOT), "--host", "127.0.0.1", "--port", "9001"], ROOT, rag_env)
+    health = wait_http("http://127.0.0.1:9001/v1/health",
+                       {"Authorization": "Bearer " + rag_env["RAG_SERVICE_TOKEN"]})
+    if not owns_agent(row) or health.get("llm_mode") != rag_env["RAG_LLM_MODE"]:
+        raise RuntimeError("Agent health did not confirm the owned process and requested generation mode")
+    return row
+
+
+def restart_agent(args):
+    state = load_state()
+    agent_rows = [row for row in state["processes"] if row["name"] == "agent"]
+    if len(agent_rows) != 1:
+        raise RuntimeError("Need exactly one recorded Agent; services preserved; use status")
+    old_row = agent_rows[0]
+    if not owns_agent(old_row):
+        raise RuntimeError("Recorded Agent ownership could not be confirmed; services preserved")
+    if not PRIVATE.exists():
+        raise RuntimeError("Existing local integration credentials are missing; services preserved")
+    backend = Path(state.get("backend_dir", ""))
+    if not (backend / "backend/main.py").exists():
+        raise RuntimeError("Recorded backend runtime directory is unavailable; services preserved")
+    env = configuration()
+    rag_env = agent_environment(env, backend, live=args.live)
+    preflight_agent(rag_env)
+    old_mode = state.get("llm_mode")
+    old_env = None
+    if old_mode in {"live", "extractive"}:
+        try:
+            old_env = agent_environment(env, backend, live=old_mode == "live")
+            preflight_agent(old_env)
+        except RuntimeError:
+            # Replacement may still succeed (for example live -> extractive
+            # after removing an invalid key), but rollback is then unavailable.
+            old_env = None
+    (LOCAL / "logs").mkdir(parents=True, exist_ok=True)
+    state["agent_status"] = "restarting"
+    state["agent_requested_mode"] = rag_env["RAG_LLM_MODE"]
+    save_state(state)
+    if stop_rows([old_row]):
+        state["agent_status"] = "stop_failed"
+        state.pop("agent_requested_mode", None)
+        save_state(state)
+        raise RuntimeError("Old Agent still running; other services preserved; replacement was not started")
+    state["processes"].remove(old_row)
+    state["llm_mode"] = None
+    state["agent_status"] = "starting"
+    save_state(state)
+    try:
+        check_port(9001)
+        spawn_agent(state, rag_env)
+    except BaseException:
+        failed_rows = [row for row in state["processes"] if row["name"] == "agent"]
+        survivors = stop_rows(failed_rows)
+        state["processes"] = [row for row in state["processes"] if row["name"] != "agent"] + survivors
+        state["llm_mode"] = None
+        state["agent_status"] = "stopping_failed" if survivors else "unavailable"
+        state.pop("agent_requested_mode", None)
+        save_state(state)
+        if old_env is not None and not survivors:
+            try:
+                check_port(9001)
+                state["agent_status"] = "restoring"
+                save_state(state)
+                spawn_agent(state, old_env)
+                state.update(llm_mode=old_mode, agent_status="ready")
+                save_state(state)
+            except BaseException:
+                restore_rows = [row for row in state["processes"] if row["name"] == "agent"]
+                restore_survivors = stop_rows(restore_rows)
+                state["processes"] = [row for row in state["processes"] if row["name"] != "agent"] + restore_survivors
+                state.update(llm_mode=None, agent_status="stopping_failed" if restore_survivors else "unavailable")
+                save_state(state)
+            else:
+                raise RuntimeError("Requested Agent restart failed; previous generation mode restored "
+                                   "with current configuration; other services preserved; see logs/agent.log") from None
+        raise RuntimeError("Agent restart failed and Agent is not ready; other services preserved; "
+                           "state retained; see logs/agent.log") from None
+    state.update(llm_mode=rag_env["RAG_LLM_MODE"], agent_status="ready")
+    state.pop("agent_requested_mode", None)
+    save_state(state)
+    print(f"AGENT READY http://127.0.0.1:9001 | generation={state['llm_mode']} | "
+          "other project services retained; provider request not yet verified", flush=True)
+
+
 def start(args):
     owned_state = {"processes": []}
     try:
         _start(args, owned_state)
     except BaseException:
         if owned_state["processes"]:
-            stop(owned_state)
+            managed = load_state()
+            stop(managed if managed.get("supervisor_pid") == os.getpid() else owned_state)
         raise
 
 
@@ -215,17 +398,13 @@ def _start(args, state):
         raise RuntimeError("Project processes already running; use status or stop first")
     for port in [5440, 6380, 8010, 9001, 5173]:
         check_port(port)
-    state.update(llm_mode="extractive", backend_dir=str(backend), frontend_dir=str(frontend))
+    rag_env = agent_environment(env, backend, live=args.live)
+    preflight_agent(rag_env)
+    state.update(llm_mode=None, agent_status="starting", backend_dir=str(backend),
+                 frontend_dir=str(frontend), supervisor_pid=None if args.detach else os.getpid())
 
     def spawn(name, command, cwd, child_env=env):
-        with (LOCAL / "logs" / f"{name}.log").open("a") as output:
-            child = subprocess.Popen(command, cwd=cwd, env=child_env, stdout=output,
-                                     stderr=subprocess.STDOUT, start_new_session=True)
-        signature = "ICT-RAG" if name == "redis" else str(command[0]) if name == "postgres" else next(
-            (str(value) for value in command if str(ROOT) in str(value)), str(command[0]))
-        state["processes"].append({"name": name, "pid": child.pid, "signature": signature})
-        STATE.write_text(json.dumps(state, indent=2) + "\n")
-        return child
+        return spawn_process(state, name, command, cwd, child_env)
 
     pgdata = ROOT / ".cache/fullstack/postgres-data"
     redisdata = ROOT / ".cache/fullstack/redis-data"
@@ -273,30 +452,15 @@ def _start(args, state):
                      "worker", "--loglevel=WARNING", "--pool=solo", "--hostname=ict-local@localhost"], backend)
     spawn("beat", [python_backend, "-m", "celery", "-A", "backend.tasks.celery_app:celery_app",
                    "beat", "--loglevel=WARNING", "--schedule", str(LOCAL / "celerybeat")], backend)
-    rag_env = {**env, "PYTHONPATH": str(ROOT / "packages/rag_agent/src"),
-               "HF_HOME": str(ROOT / ".cache/huggingface"), "HF_HUB_OFFLINE": "1",
-               "RAG_BACKEND_DB_PATH": str(ROOT / "data/backend-rag.db"),
-               "RAG_BACKEND_URL": "http://127.0.0.1:8010",
-               "RAG_SERVICE_TOKEN": env["AGENT_SERVICE_TOKEN"],
-               "RAG_BACKEND_TOOL_TOKEN": env["AGENT_TOOL_TOKEN"],
-               "RAG_BACKEND_WRITE_TOKEN": env["AGENT_WRITE_TOKEN"],
-               "RAG_LLM_MODE": "extractive", "RAG_LLM_MODEL": "deepseek-flash"}
-    # Explicit live option: reuse an existing configured provider credential in
-    # process memory. Normal startup makes no paid calls.
-    if args.live:
-        key = env.get("RAG_LLM_KEY") or read_env(backend / ".env").get("DEEPSEEK_API_KEY")
-        if key:
-            rag_env["RAG_LLM_KEY"] = key
-        elif not env.get("RAG_LLM_KEY_FILE"):
-            raise RuntimeError("Live mode requires a locally configured RAG_LLM_KEY_FILE or DeepSeek key")
-        rag_env["RAG_LLM_MODE"] = "live"
-        state["llm_mode"] = "live"
     python_agent = str(ROOT / ".venv/bin/python")
-    spawn("agent", [python_agent, "-m", "uvicorn", "examples.backend_api:app", "--app-dir", str(ROOT),
-                    "--host", "127.0.0.1", "--port", "9001"], ROOT, rag_env)
-    wait_http("http://127.0.0.1:9001/v1/health", {"Authorization": "Bearer " + env["AGENT_SERVICE_TOKEN"]})
+    spawn_agent(state, rag_env)
+    state.update(llm_mode=rag_env["RAG_LLM_MODE"], agent_status="ready")
+    save_state(state)
+    sync_env = {**rag_env, "RAG_LLM_MODE": "extractive"}
+    sync_env.pop("RAG_LLM_KEY", None)
+    sync_env.pop("RAG_LLM_KEY_FILE", None)
     spawn("sync", [python_agent, str(ROOT / "scripts/sync_backend.py"), "--all-scopes", "--poll-interval", "5"], ROOT,
-          {**rag_env, "RAG_LLM_MODE": "extractive"})
+          sync_env)
     token(env)
     frontend_env = frontend_environment(env, node)
     spawn("frontend", [node, str(frontend / "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1",
@@ -312,13 +476,21 @@ def _start(args, state):
             time.sleep(0.5)
     else:
         raise RuntimeError("Frontend not ready; see logs/frontend.log")
-    STATE.write_text(json.dumps(state, indent=2) + "\n")
+    save_state(state)
     print(f"READY http://127.0.0.1:5173 | real PostgreSQL/Redis/E5 | generation={state['llm_mode']}", flush=True)
     if not args.detach:
         try:
             while True:
                 time.sleep(2)
-                failed = [row["name"] for row in state["processes"] if not owns_process(row)]
+                # Agent-only replacement updates the shared registry. Monitor
+                # that registry rather than the old Agent PID held in memory.
+                managed = load_state()
+                replacing = managed.get("agent_status") in {
+                    "restarting", "starting", "restoring", "unavailable", "stopping_failed", "stop_failed"}
+                failed = [row["name"] for row in managed["processes"]
+                          if not (row["name"] == "agent" and replacing) and not owns_process(row)]
+                if not replacing and not any(row["name"] == "agent" for row in managed["processes"]):
+                    failed.append("agent")
                 if failed:
                     raise RuntimeError("Project processes stopped: " + ", ".join(failed))
         except KeyboardInterrupt:
@@ -327,7 +499,8 @@ def _start(args, state):
 
 def status():
     state = load_state()
-    print(json.dumps({"generation": state.get("llm_mode"), "processes": [
+    print(json.dumps({"generation": state.get("llm_mode"), "agent_status": state.get("agent_status"),
+        "requested_generation": state.get("agent_requested_mode"), "processes": [
         {"name": row["name"], "running": owns_process(row)} for row in state["processes"]]}, indent=2))
 
 
@@ -350,13 +523,15 @@ def seed():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["start", "stop", "status", "token", "seed"])
-    parser.add_argument("--live", action="store_true", help="Enable configured Flash provider; queries can incur provider charges")
+    parser.add_argument("command", choices=["start", "restart-agent", "stop", "status", "token", "seed"])
+    parser.add_argument("--live", action="store_true", help="Enable configured provider (default Flash); queries can incur provider charges")
     parser.add_argument("--detach", action="store_true", help="Leave only this project's child services running")
     args = parser.parse_args()
     try:
         if args.command == "start":
             start(args)
+        elif args.command == "restart-agent":
+            restart_agent(args)
         elif args.command == "stop":
             stop()
         elif args.command == "status":

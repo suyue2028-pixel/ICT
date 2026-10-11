@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -161,7 +161,7 @@ class Message(Model):
 
 class QueryRequest(Model):
     question: str = Field(min_length=1, max_length=4000)
-    history: list[Message] = Field(default_factory=list, max_length=6)
+    history: list[Message] = Field(default_factory=list, max_length=8)
     context: dict[str, list[str]] = Field(default_factory=dict)
     filters: Filters = Field(default_factory=Filters)
     timezone: str = "Asia/Shanghai"
@@ -190,6 +190,7 @@ class Claim(Model):
     text: str = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
     kind: Literal["fact", "inference"] = "fact"
+    topic_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class Metrics(Model):
@@ -201,9 +202,16 @@ class Metrics(Model):
     index_generation: int = 0
 
 
+class AnswerCoverage(Model):
+    answered_topics: list[Annotated[str, Field(min_length=1, max_length=120, strict=True)]] = Field(default_factory=list, max_length=12)
+    missing_topics: list[Annotated[str, Field(min_length=1, max_length=120, strict=True)]] = Field(default_factory=list, max_length=12)
+
+
 class QueryResponse(Model):
     status: Literal["ok", "partial", "insufficient_evidence", "error"]
     answer: str
+    response_kind: Literal["knowledge", "conversation"] = "knowledge"
+    coverage: AnswerCoverage = Field(default_factory=AnswerCoverage)
     claims: list[Claim] = Field(default_factory=list)
     sources: list[EvidenceDetail] = Field(default_factory=list)
     facts: list[Assertion] = Field(default_factory=list)
@@ -222,6 +230,6 @@ class Plan(Model):
 
 
 class Draft(Model):
-    claims: list[Claim] = Field(min_length=1, max_length=8)
+    claims: list[Claim] = Field(default_factory=list, max_length=8)
     # Models may propose facts, but validation requires an exact stored assertion.
     facts: list[Assertion] = Field(default_factory=list)

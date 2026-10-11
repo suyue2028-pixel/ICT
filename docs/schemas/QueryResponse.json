@@ -1,5 +1,32 @@
 {
   "$defs": {
+    "AnswerCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "answered_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Answered Topics",
+          "type": "array"
+        },
+        "missing_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Missing Topics",
+          "type": "array"
+        }
+      },
+      "title": "AnswerCoverage",
+      "type": "object"
+    },
     "Assertion": {
       "additionalProperties": false,
       "properties": {
@@ -96,6 +123,14 @@
           ],
           "title": "Kind",
           "type": "string"
+        },
+        "topic_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Topic Ids",
+          "type": "array"
         }
       },
       "required": [
@@ -222,6 +257,18 @@
     "answer": {
       "title": "Answer",
       "type": "string"
+    },
+    "response_kind": {
+      "default": "knowledge",
+      "enum": [
+        "knowledge",
+        "conversation"
+      ],
+      "title": "Response Kind",
+      "type": "string"
+    },
+    "coverage": {
+      "$ref": "#/$defs/AnswerCoverage"
     },
     "claims": {
       "items": {

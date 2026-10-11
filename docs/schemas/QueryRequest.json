@@ -162,7 +162,7 @@
       "items": {
         "$ref": "#/$defs/Message"
       },
-      "maxItems": 6,
+      "maxItems": 8,
       "title": "History",
       "type": "array"
     },

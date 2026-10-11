@@ -20,6 +20,7 @@ from .agent.tools import Tools
 from .agent.nodes import Nodes
 from .agent.graph import build_graph
 from .agent.state import Budget, BudgetExceeded
+from .agent.conversation import conversation_kind, fallback_reply, safe_conversation_answer
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ class RAGService:
         self.llm = llm or (RemoteLLM(self.settings) if self.settings.llm_mode == "live" else MockLLM() if self.settings.llm_mode == "mock" else None)
         self._write_lock = asyncio.Lock()
         self._run_summaries = OrderedDict()
-        self.retriever = HybridRetriever(self.embedding)
+        self.retriever = HybridRetriever(self.embedding, rank_pool=self.settings.retrieval_rank_pool,
+                                         vector_threshold=self.settings.retrieval_vector_threshold)
         self.nodes = Nodes(self.settings, Tools(self.retriever), self.llm)
         self.graph = build_graph(self.nodes)
 
@@ -89,6 +91,28 @@ class RAGService:
         """Bounded, process-local diagnostic summaries; backend persists sessions/logs."""
         return deepcopy(self._run_summaries[trace_id])
 
+    async def converse(self, state, kind):
+        """Social/help replies need no fabricated evidence or retrieval calls."""
+        answer, mode = fallback_reply(kind), "extractive"
+        state["trace"].append({"node": "conversation", "intent": kind})
+        if self.llm and self.llm.mode == "live":
+            try:
+                payload = {"question": state["request"].question, "intent": kind}
+                if "模型" in state["request"].question:
+                    payload["configured_model"] = self.settings.llm_model
+                result = await self.llm.complete("converse", payload, state["budget"],
+                                                 min(self.settings.llm_timeout, 8.0))
+                candidate = result.get("answer")
+                if not isinstance(candidate, str) or not safe_conversation_answer(candidate):
+                    raise ValueError("invalid conversation answer")
+                answer, mode = candidate.strip(), "live"
+            except (ValueError, RuntimeError, KeyError):
+                state["warnings"].append("conversation_local_reply:after_remote_attempt")
+        else:
+            state["warnings"].append("conversation_local_reply:no_remote_llm")
+        return QueryResponse(status="ok", answer=answer, response_kind="conversation",
+                             trace_id=state["trace_id"], warnings=state["warnings"], mode=mode)
+
     async def query(self, request: QueryRequest, *, document_ids=None, document_versions=None,
                     max_tool_calls=None, max_answer_tokens=None, timeout=None) -> QueryResponse:
         """Trusted adapter controls: scope and limits are never model-generated."""
@@ -114,13 +138,18 @@ class RAGService:
             state["warnings"].append("mock_embedding:仅用于流程回归，不代表真实语义检索")
         try:
             async with asyncio.timeout(duration):
-                snapshot = await asyncio.to_thread(self.store.snapshot, scope, versions)
-                state["snapshot"] = snapshot
-                if snapshot.signature and snapshot.signature != self.embedding.signature():
-                    raise ValueError("embedding index mismatch; rebuild required")
-                final = await self.graph.ainvoke(state, config={"recursion_limit": 24})
-                response = final["response"]
-                state = final
+                kind = conversation_kind(request.question)
+                has_filters = any(value not in (None, [], "") for value in request.filters.model_dump().values())
+                if kind and not has_filters:
+                    response = await self.converse(state, kind)
+                else:
+                    snapshot = await asyncio.to_thread(self.store.snapshot, scope, versions)
+                    state["snapshot"] = snapshot
+                    if snapshot.signature and snapshot.signature != self.embedding.signature():
+                        raise ValueError("embedding index mismatch; rebuild required")
+                    final = await self.graph.ainvoke(state, config={"recursion_limit": 24})
+                    response = final["response"]
+                    state = final
         except asyncio.CancelledError:
             raise  # Cancellation propagates to pending remote HTTP, never swallowed.
         except (TimeoutError, BudgetExceeded) as exc:
@@ -128,8 +157,9 @@ class RAGService:
                                      trace_id=state["trace_id"], warnings=[*state["warnings"], type(exc).__name__], mode="extractive")
         except Exception as exc:
             logger.warning("query_failed trace_id=%s type=%s", state["trace_id"], type(exc).__name__)
+            failure_notes = ["retrieval_failed"] if any(event.get("status") == "failed" for event in budget.events) else []
             response = QueryResponse(status="error", answer="查询失败，请检查索引模型与运行配置。", trace_id=state["trace_id"],
-                                     warnings=[*state["warnings"], str(exc)[:200] if isinstance(exc, ValueError) else type(exc).__name__], mode="extractive")
+                                     warnings=[*state["warnings"], *failure_notes, str(exc)[:200] if isinstance(exc, ValueError) else type(exc).__name__], mode="extractive")
         response.metrics = Metrics(elapsed_ms=(time.monotonic() - started) * 1000,
                                    llm_calls=budget.llm_calls, tool_calls=budget.tool_calls, retries=budget.retries,
                                    embedding_mode=self.embedding.mode, index_generation=state.get("snapshot").generation if state.get("snapshot") else 0)

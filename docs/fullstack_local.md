@@ -12,11 +12,15 @@ cd /Users/gshy/Desktop/ICT-RAG
 # 已运行时直接打开 http://127.0.0.1:5173
 # 停止后再次启动：
 .venv/bin/python scripts/run_fullstack.py start --detach
+# 只重启 Agent，其他服务和已有数据保留：
+.venv/bin/python scripts/run_fullstack.py restart-agent
 # 停止本项目服务，保留数据库和索引：
 .venv/bin/python scripts/run_fullstack.py stop
 ```
 
 省略 `--detach` 会在终端监督服务，Ctrl-C 会停止本项目子进程。停止脚本按 PID 与项目命令身份检查，只处理它记录的项目进程；若进程还未退出则保留管理状态。启动失败会清理本次已启动的进程。
+
+`restart-agent` 执行完就返回，不需要 `--detach`。它只替换记录中的 Agent 进程，复用现有前端、业务后端、PostgreSQL、Redis、Celery worker/beat 和同步 worker；不执行数据库迁移、资料采集或 `seed`。需要 `processes.json` 中记录的 Agent 仍属于本项目，且已有运行副本和秘密配置完整。源码更改会由新 Agent 加载；前后端源码不会因此更新。
 
 | 服务 | 本机地址/端口 | 用途 |
 |---|---|---|
@@ -88,12 +92,21 @@ cd ../../../..
 配置方式见 [大模型配置](llm_configuration.md)。确认有可用密钥后：
 
 ```sh
-export RAG_LLM_KEY_FILE="$PWD/.secrets/llm-api-key"
-.venv/bin/python scripts/run_fullstack.py stop
+# 密钥由团队成员私下配置到 .secrets/llm-api-key，无需粘贴到聊天中。
+# 显式设置 RAG_LLM_KEY 或 RAG_LLM_KEY_FILE 时，二者只能选其一。
+.venv/bin/python scripts/run_fullstack.py restart-agent --live
+.venv/bin/python scripts/run_fullstack.py status
+# 回到不调用供应商的来源摘录模式：
+.venv/bin/python scripts/run_fullstack.py restart-agent
+# 所有服务尚未运行时才使用完整启动：
 .venv/bin/python scripts/run_fullstack.py start --live --detach
 ```
 
-启动器也可在进程内读取后端副本已有 `.env` 的 `DEEPSEEK_API_KEY`；不会打印或提交密钥。模型为 `deepseek-flash`，官方 DeepSeek 接口关闭 thinking。该模式实际发送问题与证据到供应商，并可能收费。本次没有执行 live 调用。
+live 配置的密钥选择顺序：显式 `RAG_LLM_KEY` 或 `RAG_LLM_KEY_FILE`，已有项目 `.secrets/llm-api-key`，最后是后端副本 `.env` 中的 `DEEPSEEK_API_KEY`。默认文件不存在时不设置它；显式文件无效时不会静默切换其他密钥。模型默认 `deepseek-flash`，base URL 默认 `https://api.deepseek.com`；显式 `RAG_LLM_MODEL`、`RAG_LLM_BASE_URL` 会保留。官方 DeepSeek 接口关闭 thinking。凭据只传入 Agent 进程环境，不打印、写入进程状态或命令参数。同步 worker 不接收模型凭据。
+
+完整启动和单独重启共用同一份 Agent 环境构建逻辑。单独重启会先做配置与密钥文件格式预检，再停止旧 Agent；预检没有供应商请求。启动后用带服务认证的 `/v1/health` 确认进程归属及实际 `llm_mode`。`AGENT READY ... generation=live` 只证明服务加载 live 配置，供应商认证、额度和回答质量仍需要另外的实际问答验收。
+
+替换失败时会仅清理本次 Agent，尝试使用当前配置恢复原生成模式。恢复失败则保留其他服务，将状态记录为 `unavailable` 或 `stopping_failed`，命令返回失败；不会把它报告为 ready。日志仍在 `reports/local/fullstack/logs/agent.log`。2026-10-10 已实际重启 live Agent 并完成真实模型问答，见 [问答运行记录摘要](qa_evidence_improvement.md)；失败回滚分支未进行本轮故障注入验证。此前旧版非 detach 终端监督进程不会自动加载新脚本，使用单独重启前应确认本机服务来自 detach 启动；本版监督循环会跟随新的 Agent 登记。
 
 ## 接入契约
 
@@ -112,6 +125,6 @@ export RAG_LLM_KEY_FILE="$PWD/.secrets/llm-api-key"
 
 ## 实际验证与未验收范围
 
-见 [本轮报告](fullstack_validation.md)。本机已有 47 份真实资料，来源为 OSV 45、NIST 1、国内政策 1；47 个真实知识事件已 indexed。另有 3 份虚构样本，其中 1 份 AI 相关样本进入独立 demo 索引。
+见 [基础联调报告](fullstack_validation.md) 与 [2026-10-10 问答运行记录摘要](qa_evidence_improvement.md)。本机已有 47 份真实资料，来源为 OSV 45、NIST 1、国内政策 1；47 个真实知识事件已 indexed。另有 3 份虚构样本，其中 1 份 AI 相关样本进入独立 demo 索引。
 
-基础链路已联通。真实 Flash 生成、独立人工答案评测、更多渠道持续采集、复杂 CPE 适用性、资产匹配、生产登录与部署、高并发和比赛提交材料仍需继续完成；本机联调通过不代表这些已验收。
+基础链路已联通，真实 Flash 问答已运行。Flash 稳定性与完整质量评测、独立人工答案评测、更多渠道持续采集、复杂 CPE 适用性、资产匹配、生产登录与部署、高并发和比赛提交材料仍需继续完成；本机联调通过不代表这些已验收。

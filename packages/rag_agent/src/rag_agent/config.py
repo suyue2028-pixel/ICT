@@ -17,6 +17,8 @@ class Settings(Model):
     embedding_device: Literal["cpu", "mps"] = "cpu"
     chunk_tokens: int = Field(default=300, ge=32, le=480)
     overlap_tokens: int = Field(default=40, ge=0)
+    retrieval_rank_pool: int = Field(default=32, ge=8, le=100)
+    retrieval_vector_threshold: float = Field(default=0.78, ge=0, le=1)
     llm_mode: Literal["extractive", "live", "mock"] = "extractive"
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
@@ -48,6 +50,8 @@ class Settings(Model):
             "RAG_DB_PATH": "db_path", "RAG_EMBEDDING_PROVIDER": "embedding_provider",
             "RAG_EMBEDDING_MODEL": "embedding_model", "RAG_EMBEDDING_REVISION": "embedding_revision",
             "RAG_EMBEDDING_DEVICE": "embedding_device", "RAG_LLM_MODE": "llm_mode",
+            "RAG_RETRIEVAL_RANK_POOL": "retrieval_rank_pool",
+            "RAG_RETRIEVAL_VECTOR_THRESHOLD": "retrieval_vector_threshold",
             "RAG_LLM_BASE_URL": "llm_base_url", "RAG_LLM_MODEL": "llm_model", "RAG_LLM_KEY": "llm_key",
             "RAG_TIMEOUT": "request_timeout", "RAG_LLM_TIMEOUT": "llm_timeout",
         }
