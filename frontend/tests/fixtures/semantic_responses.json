@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "purpose": "Frontend rendering only; these examples are not real model/API results or factual gold.",
+  "cases": [
+    {"id": "affection", "question": "我喜欢你", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "谢谢你愿意这么说。想聊什么都可以。", "sources": [], "evidence": [], "partial_errors": []},
+    {"id": "arithmetic", "question": "2+2等于多少？", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "2+2=4。", "sources": [], "evidence": [], "partial_errors": []},
+    {"id": "daily_chat", "question": "今天过得怎么样？", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "我可以陪你聊聊今天发生的事情。你今天怎么样？", "sources": [], "evidence": [], "partial_errors": []},
+    {"id": "general_explanation", "question": "安全概念是什么意思？", "response_kind": "knowledge", "retrieval_mode": "llm_unverified", "status": "partial", "answer": "这里提供一般性的概念说明，不能当作某个具体漏洞的已核实事实。", "sources": [], "evidence": [], "partial_errors": ["search_not_configured"], "limitations": ["模型通用解释；未经过来源核验。"]}
+  ]
+}

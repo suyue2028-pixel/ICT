@@ -192,3 +192,15 @@ body .conversation-theme .field-grid small { color: #000000; }
 .conversation-theme .chat-compose form:focus-within { border-color: #000000; box-shadow: none; }
 .conversation-theme .message-feed { scrollbar-color: #000000 #ffffff; }
 .conversation-theme :is(a, button, input, textarea, select, summary):focus-visible { outline-color: #000000; }
+.conversation-theme :is(.session-notice, .failed-query) { border: 1px solid #000; border-radius: 10px; padding: 14px 16px; margin: 14px 0; overflow-wrap: anywhere; }
+.conversation-theme :is(.session-notice, .failed-query) p { margin: 0 0 10px; }
+.conversation-theme .failed-query :is(button, a) { margin: 0 12px 6px 0; }
+.conversation-theme .login-panel { max-width: 700px; padding: 24px; }
+.conversation-theme .login-panel form { display: grid; gap: 12px; margin: 24px 0; }
+.conversation-theme .login-panel input { color: #000; background: #fff; border: 1px solid #000; border-radius: 8px; padding: 12px; min-width: 0; }
+.conversation-theme .login-panel .primary-link { justify-self: start; }
+.conversation-theme .login-panel .ghost-button { margin: 0 12px 8px 0; }
+.conversation-theme .requirement-coverage li, .conversation-theme .execution-record li { margin: 12px 0; }
+.conversation-theme .requirement-coverage a { margin-right: 12px; }
+.conversation-theme .trace-reference, .conversation-theme .execution-record p { overflow-wrap: anywhere; }
+.conversation-theme .retry-authorization { display: inline-block; margin-top: 12px; }

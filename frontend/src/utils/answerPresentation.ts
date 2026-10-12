@@ -8,7 +8,8 @@ export interface AnswerBlock {
 }
 
 // Present only facts that appear in the answer. Original text is always retained.
-export function answerBlocks(content: string): AnswerBlock[] {
+export function answerBlocks(content: string, plain = false): AnswerBlock[] {
+  if (plain) return content.split(/\n+/).filter(line => line.trim()).map(text => ({ kind: 'text', text }))
   return content.split(/\n+/).filter(line => line.trim()).map(line => {
     const quote = line.match(/^来源《(.+?)》的原文摘录：(.*?)(\s*\[\d+\])?$/)
     if (quote) return { kind: 'quote', title: quote[1], text: quote[2] || '', reference: quote[3]?.trim() }

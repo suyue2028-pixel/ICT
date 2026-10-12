@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import ChatComposer from '@/components/chat/ChatComposer.vue'
 import ChatConversation from '@/components/chat/ChatConversation.vue'
 import { useDemoChat } from '@/composables/useDemoChat'
 import { useIntelligenceStore } from '@/stores/intelligence'
+import { sessionState } from '@/api/http'
+import { readQuestionDraft, saveQuestionDraft } from '@/utils/queryDraft'
 const store = useIntelligenceStore()
-const { messages, sending, submit, reset, userToken } = useDemoChat(() => store.items)
+const { messages, sending, submit, reset, userToken, failedQuestion } = useDemoChat(() => store.items)
+const draft = shallowRef(readQuestionDraft(store.isDemo))
+watch(draft, value => saveQuestionDraft(store.isDemo, value))
+watch(() => store.isDemo, () => { draft.value = readQuestionDraft(store.isDemo) })
 const hasConversation = computed(() => messages.value.some(message => message.role === 'user'))
 const suggestions = computed(() => {
   if (store.loading || store.error) return ['你能做什么？']
@@ -32,12 +37,17 @@ const suggestionsHint = computed(() => store.loading ? '资料正在加载，可
   <div class="qa-layout">
     <section class="panel chat-panel" aria-label="情报问答">
       <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 支持基础对话，资料问答附来源</div>
+      <div v-if="!userToken" class="session-notice" role="status">
+        <p>{{ sessionState === 'expired' ? '用户授权已过期，已输入的问题会保留。' : '尚未获得有效的用户授权，可先输入问题。' }}</p>
+        <router-link :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ sessionState === 'expired' ? '重新授权' : '前往用户授权' }} ↗</router-link>
+      </div>
       <ChatConversation :messages="messages" :sending="sending" />
-      <ChatComposer :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
-    </section>
-    <section v-if="!userToken" class="qa-authorization">
-      <h3>用户授权</h3><p>填写后端签发的短期用户令牌。</p>
-      <input v-model="userToken" type="password" autocomplete="off" aria-label="短期用户令牌" />
+      <div v-if="failedQuestion" class="failed-query" role="status"><p>上次未完成的问题：{{ failedQuestion }}</p>
+        <button class="ghost-button" type="button" :disabled="sending || !userToken" @click="submit(failedQuestion)">重试此问题</button>
+        <button class="ghost-button" type="button" :disabled="sending" @click="draft = failedQuestion">放回输入框</button>
+        <router-link v-if="!userToken" :to="{ path: '/login', query: { returnTo: '/qa' } }">授权后重试 ↗</router-link>
+      </div>
+      <ChatComposer v-model="draft" :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
     </section>
     <details class="qa-help">
       <summary>使用说明与资料范围</summary>

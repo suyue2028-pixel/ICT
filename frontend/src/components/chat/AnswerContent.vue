@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { answerBlocks } from '@/utils/answerPresentation'
-const props = defineProps<{ content: string }>()
-const blocks = computed(() => answerBlocks(props.content))
+const props = defineProps<{ content: string; plain?: boolean }>()
+const blocks = computed(() => answerBlocks(props.content, props.plain))
 </script>
 
 <template>

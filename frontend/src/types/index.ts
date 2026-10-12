@@ -82,11 +82,32 @@ export interface Citation {
   label: string
 }
 export type ResponseKind = 'knowledge' | 'conversation'
-export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation'
+export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation' | 'llm_unverified'
 export type AnswerStatus = 'completed' | 'partial' | 'insufficient_evidence'
 export interface AnswerCoverage {
   answered_topics: string[]
   missing_topics: string[]
+}
+export interface RequirementCoverage {
+  requirement_id: string
+  label: string
+  status: 'supported' | 'partial' | 'conflicting' | 'missing'
+  evidence_ids: string[]
+  reason: string
+}
+export interface AnswerWorkflow {
+  question_type: string
+  requirement_coverage: RequirementCoverage[]
+  retrieval_summary: { rounds: number; stop_reason: string; initial_tools: string[]; supplemental_tools: string[] }
+  limitations: string[]
+}
+export interface AnswerToolTrace {
+  tool: string
+  status: 'completed' | 'failed' | 'empty'
+  duration_ms: number
+  error_code?: string | null
+  input_summary?: string | null
+  document_ids?: string[]
 }
 export interface ChatMessage {
   id: string
@@ -97,9 +118,14 @@ export interface ChatMessage {
   simulated?: boolean
   generationMode?: string
   responseKind?: ResponseKind
+  retrievalMode?: RetrievalMode
   status?: AnswerStatus | 'request_failed'
   coverage?: AnswerCoverage
   warnings?: string[]
   evidence?: { document_id: string; content_hash: string; content: string; source: string; locator: string }[]
   requestId?: string
+  invocationId?: string
+  workflow?: AnswerWorkflow
+  toolTrace?: AnswerToolTrace[]
+  failureKind?: 'user_auth' | 'model' | 'search' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
 }

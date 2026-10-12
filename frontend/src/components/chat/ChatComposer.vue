@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { shallowRef } from 'vue'
+import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
+const props = withDefaults(defineProps<{ modelValue: string; disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
   suggestions: () => ['你能做什么？'],
   suggestionsHint: '可以先了解助手的能力，也可以直接输入问题。',
 })
-const emit = defineEmits<{ submit: [question: string] }>()
-const question = shallowRef('')
+const emit = defineEmits<{ submit: [question: string]; 'update:modelValue': [value: string] }>()
+const question = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
 function submit(value = question.value) {
   if (props.disabled || props.sending) return
   const clean = value.trim()
@@ -40,10 +40,10 @@ function enter(event: KeyboardEvent) {
       ><textarea
         id="chat-question"
         v-model="question"
-        :disabled="disabled || sending"
+        :disabled="sending"
         name="question"
         autocomplete="off"
-        maxlength="300"
+        maxlength="4000"
         rows="2"
         placeholder="输入 CVE 编号或你想查询的问题"
         @keydown.enter.exact="enter"
@@ -51,6 +51,6 @@ function enter(event: KeyboardEvent) {
         {{ sending ? '回复中…' : '发送' }}
       </button>
     </form>
-    <small>Enter 发送，Shift + Enter 换行。安全资料问答附来源，资料不足时会明确说明。</small>
+    <small>Enter 发送，Shift + Enter 换行。安全资料问答附来源，资料不足时会明确说明。{{ disabled ? '可先输入问题，授权后发送。' : '' }}</small>
   </div>
 </template>
