@@ -29,10 +29,15 @@ class Tools:
     def __init__(self, retriever):
         self.retriever = retriever
 
+    def registered(self, state):
+        external={'nvd_lookup','kev_lookup','osv_lookup','knowledge_lookup','web_search'} if state.get('external_executor') else set()
+        return self.ALLOWED | external
+
     async def call(self, name, args, state):
-        if name not in self.ALLOWED:
+        if name not in self.registered(state):
             raise ValueError("tool not in whitelist")
         event = state["budget"].tool(name)
+        event['round'] = state.get('retrieval_round',1)
         try:
             result = await self._execute(name, args, state)
             records = result[0] if isinstance(result, tuple) else result
@@ -41,7 +46,8 @@ class Tools:
             return result
         except BaseException as exc:
             event["status"] = "failed"
-            event["error_code"] = type(exc).__name__
+            code=getattr(exc,'code',None)
+            event["error_code"] = code if isinstance(code,str) and code.startswith(('intelligence_', 'backend_http_', 'search_')) else type(exc).__name__
             raise
         finally:
             if name == "hybrid_search":
@@ -50,6 +56,8 @@ class Tools:
             event["duration_ms"] = max(0, round((time.monotonic() - event["at"]) * 1000))
 
     async def _execute(self, name, args, state):
+        if name not in self.ALLOWED:
+            return await state['external_executor'](name,args,state)
         snapshot, filters = state["snapshot"], state["explicit_filters"]
         if name == "exact_lookup":
             parsed = ExactArgs.model_validate(args)

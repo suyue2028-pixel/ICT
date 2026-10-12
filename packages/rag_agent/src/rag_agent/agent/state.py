@@ -69,3 +69,19 @@ class AgentState(TypedDict, total=False):
     relevance_assignments: dict[str, Any]
     requested_topics: list[dict[str, str]]
     llm_error: str
+    requirements: list[Any]
+    requirement_coverage: list[Any]
+    question_type: str
+    fresh_required: bool
+    retrieval_round: int
+    attempted_tools: set
+    pending_tools: list[Any]
+    prior_evidence_fingerprint: set
+    external_checked: dict
+    external_checks: dict
+    limitations: list[str]
+    stop_reason: str
+    external_executor: Any
+    next_action: str
+    classification: Any
+    classified_identifiers: list[str]

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 import time
+from pydantic import ValidationError
 from zoneinfo import ZoneInfo
 from ..ingestion.normalize import identifiers
 from ..ingestion.extract import field_evidence
@@ -13,6 +14,9 @@ from .conversation import conversation_kind
 from .coverage import requested_topics, parse_relevance, validate_claim_topics, final_coverage
 from .presentation import (answer_requirements, assertion_payload, render_assertion,
                            render_claim, render_missing_fields)
+from .workflow import requirements, freshness_required, evaluate, next_tools, deduplicate, REGISTERED, package_entities
+from ..schemas import RetrievalSummary
+from ..providers.llm import TypedProviderError
 
 TRANSLATIONS = {"提示注入": "prompt injection", "提示词注入": "prompt injection", "数据投毒": "data poisoning", "供应链": "supply chain", "敏感信息": "sensitive information"}
 OUTPUT_REJECTION_REASONS = {
@@ -84,8 +88,31 @@ def conflicts(assertions):
         grouped[(a.entity_id, a.field, discriminator)].append(a)
     result = []
     for (entity, field, version), values in grouped.items():
-        unique = {json.dumps(a.value, sort_keys=True, ensure_ascii=False) for a in values}
-        if len(unique) > 1:
+        compared=[]
+        for a in values:
+            value=a.value
+            if field=='cvss' and isinstance(value,dict):
+                # A different assessor/type with the same score and vector is
+                # not a contradictory rating. Preserve both original records.
+                value={k:value.get(k) for k in ('version','score','vector','severity')}
+            if field=='exploitation' and isinstance(value,dict):
+                entry=value.get('entry',value)
+                if isinstance(entry,dict):
+                    value={'catalog':value.get('catalog')}
+                    for canonical,aliases in {'added_at':('dateAdded','added_at'),
+                        'required_action':('requiredAction','required_action'),
+                        'ransomware':('knownRansomwareCampaignUse','ransomware')}.items():
+                        for alias in aliases:
+                            if alias in entry:
+                                value[canonical]=entry[alias]
+                                break
+            compared.append(value)
+        if field=='exploitation' and all(isinstance(v,dict) for v in compared):
+            different=any(any(a[k]!=b[k] for k in a.keys() & b.keys())
+                for i,a in enumerate(compared) for b in compared[i+1:])
+        else:
+            different=len({json.dumps(v,sort_keys=True,ensure_ascii=False) for v in compared})>1
+        if different:
             result.append({"entity_id": entity, "field": field, "cvss_version": version or None,
                            "assertion_ids": [a.assertion_id for a in values],
                            "values": [a.value for a in values]})
@@ -146,6 +173,9 @@ class Nodes:
         filters = request.filters.model_copy(deep=True)
         # Identifier filters constrain targets; they must not introduce substitutes.
         ids = list(dict.fromkeys(identifiers(question) or filters.identifier))
+        if not ids and state.get('classified_identifiers'):
+            ids=state['classified_identifiers']
+            question=' '.join(ids)+' '+question
         clarification = ""
         if not ids and is_followup(question):
             question, ids, product, clarification = resolve_history(question, request.history, request.context, state["snapshot"].documents)
@@ -156,6 +186,10 @@ class Nodes:
                     filters.product = product
         if len(ids) > 8:
             clarification = "一次请求最多查询8个编号，请拆分请求。"
+        if not ids and re.search(r'CVE[-－]',question,re.I):
+            clarification='请提供标准 CVE 编号，例如 CVE-年份-至少四位数字；当前编号格式不能用于精确查询。'
+        if not ids and re.search(r'\b(?:PyPI|npm|Maven|crates\.io)\b',question,re.I) and not package_entities(question):
+            clarification='查询开源依赖漏洞需要明确的软件包生态、包名和版本，例如 PyPI langchain 0.0.200。'
         if re.search(r"最近|近\s*\d+\s*天", question):
             if "更新" in question:
                 clarification = "当前日期过滤按发布时间计算；请明确发布时间范围，更新时间筛选需后端扩展契约。"
@@ -173,6 +207,22 @@ class Nodes:
     async def plan(self, state):
         self.event(state, "plan")
         question = state["resolved_question"]
+        state['requirements'] = requirements(question, state['identifiers'])
+        classified=state.get('classification')
+        if classified and not state['identifiers'] and not requested_topics(question) and not package_entities(question):
+            from .workflow import Requirement
+            needs=classified.information_needs
+            if needs:
+                state['requirements']=[Requirement(id=f'semantic_need_{i}',label=label,field='concept')
+                    for i,label in enumerate(needs)]
+        state['fresh_required'] = freshness_required(question) or bool(classified and classified.freshness_required)
+        state['retrieval_round'] = 0
+        state['attempted_tools'] = set()
+        state['pending_tools'] = []
+        state['external_checked'] = {}
+        state['external_checks'] = {}
+        state['limitations'] = []
+        state['stop_reason'] = 'initial_retrieval'
         if state["clarification"]:
             plan = Plan(route="hybrid", subqueries=[question])
         elif state["identifiers"]:
@@ -182,25 +232,54 @@ class Nodes:
             plan = Plan(route="compare" if compare else "hybrid", subqueries=[question], expand_relations=compare)
             # In live mode, reserve the three calls for relevance, generation,
             # and support verification. Routing here is deterministic.
-            if self.llm and compare and self.llm.mode != "live":
+            ambiguous = not re.search(r'安全|漏洞|风险|注入|投毒|CVE|agent|RAG|security|risk|vulnerab', question, re.I) and len(question)>8
+            if not classified and self.llm and (compare or ambiguous) and (self.llm.mode != "live" or state['budget'].max_llm-state['budget'].llm_calls >= 5):
                 try:
-                    candidate = await self.llm.complete("plan", {"question": question, "hard_filters": state["explicit_filters"].model_dump(mode="json")}, state["budget"], self.settings.llm_timeout)
+                    candidate = await self.llm.complete("plan", {"question": question,
+                        "registered_tools": sorted(self.tools.registered(state)),
+                        "hard_filters": state["explicit_filters"].model_dump(mode="json")}, state["budget"], self.settings.llm_timeout)
                     plan = Plan.model_validate(candidate)
                     if plan.route == "exact":
                         raise ValueError("model cannot invent target identifiers")
+                    if not set(plan.tools).issubset(self.tools.registered(state)):
+                        raise ValueError('model requested unregistered tool')
+                    if any(identifiers(q) or 'http://' in q or 'https://' in q for q in plan.subqueries):
+                        raise ValueError('planner cannot invent entities or URLs')
                 except BudgetExceeded:
                     raise
                 except (ValueError, RuntimeError, KeyError) as exc:
                     state["warnings"].append(f"planning_fallback:{type(exc).__name__}")
-        state.update(plan=plan, subqueries=plan.subqueries)
+        plan.question_type = 'clarification' if state['clarification'] else 'cve' if state['identifiers'] else 'package' if package_entities(question) else 'comparison' if plan.route=='compare' else 'security_knowledge'
+        plan.fresh_required = state['fresh_required']
+        plan.tools = list(dict.fromkeys([('exact_lookup' if state['identifiers'] else 'hybrid_search'), *plan.tools]))
+        state.update(plan=plan, subqueries=plan.subqueries, question_type=plan.question_type)
+        state['trace'].append({'node':'retrieval_plan','question_type':plan.question_type,
+            'entities':state['identifiers'], 'requirements':[r.model_dump() for r in state['requirements']],
+            'fresh_required':state['fresh_required'], 'registered_tools':sorted(self.tools.registered(state)),
+            'tools':plan.tools,'preferred_sources':plan.preferred_sources})
         return state
 
     async def execute_tools(self, state):
         self.event(state, "execute_tools")
         if state["clarification"]:
+            state['stop_reason']='clarification_required'
             return state
+        state['retrieval_round'] = state.get('retrieval_round',0)+1
+        previous = list(state['evidence'])
+        state['prior_evidence_fingerprint'] = {(e.url, e.excerpt) for e in previous}
+        pending = state.pop('pending_tools',[])
         evidence = []
-        if state["identifiers"]:
+        if pending:
+            for name,args in pending:
+                state['attempted_tools'].add((name,tuple(sorted(args.items()))))
+                try:
+                    evidence.extend(await self.tools.call(name,args,state))
+                except BudgetExceeded:
+                    raise
+                except Exception as exc:
+                    state['limitations'].append(name+':'+getattr(exc,'code','intelligence_source_unavailable'))
+            evidence = deduplicate(evidence+previous,state['snapshot'])
+        elif state["identifiers"]:
             evidence, missing = await self.tools.call("exact_lookup", {"identifiers": state["identifiers"]}, state)
             state["missing_fields"] = ["identifier:" + i for i in missing]
         else:
@@ -217,7 +296,7 @@ class Nodes:
                             seen.add(ev.evidence_id)
                         if len(evidence) == 8:
                             break
-        state["evidence"] = evidence
+        state["evidence"] = deduplicate(evidence+previous,state['snapshot'])
         if evidence and state["plan"].expand_relations:
             related = await self.tools.call("related_evidence", {"evidence_ids": [e.evidence_id for e in evidence]}, state)
             # Make room for a second document when possible; never displace exact target coverage.
@@ -234,9 +313,14 @@ class Nodes:
     async def assess_evidence(self, state):
         self.event(state, "assess_evidence")
         question = state["resolved_question"]
-        topics = requested_topics(question)
+        topics = [{'id':r.id,'label':r.label} for r in state.get('requirements',[]) if r.field=='concept']
         state["requested_topics"] = topics
         state["relevance_assignments"] = {}
+        # Recompute missing fields for the current evidence set. A recovered
+        # source must clear the earlier "not found" message.
+        documents={e.document_id:state['snapshot'].documents[e.document_id] for e in state['evidence']}
+        state['missing_fields']=['identifier:'+target for target in state['identifiers']
+            if not any(target in {i.value.upper() for i in doc.identifiers} for doc in documents.values())]
         # Relevance is optional when it would consume generation/verification
         # budget. The final verifier also checks relevance and support.
         can_assess = state["budget"].max_llm - state["budget"].llm_calls >= 3
@@ -245,7 +329,7 @@ class Nodes:
             selected = []
             try:
                 result = await self.llm.complete("assess", {"question": question,
-                    "answer_requirements": answer_requirements(question, state["identifiers"]),
+                    "answer_requirements": {**answer_requirements(question, state["identifiers"]), 'coverage_topics':topics},
                     "evidence": model_evidence(state, state["evidence"])}, state["budget"], self.settings.llm_timeout)
                 selections, retained = parse_relevance(result, state["evidence"], topics)
                 selected = [e for e in state["evidence"] if e.evidence_id in retained]
@@ -254,9 +338,10 @@ class Nodes:
                     row.model_dump(mode="json") for row in selections]})
             except BudgetExceeded:
                 raise
-            except (ValueError, RuntimeError, KeyError):
+            except (ValueError, RuntimeError, KeyError) as exc:
                 state["warnings"].append("relevance_check_failed")
                 state["llm_error"] = "relevance_check_failed"
+                if isinstance(exc,TypedProviderError): state['warnings'].append(exc.code)
             state["evidence"] = selected
             docs = {e.document_id for e in selected}
             state["assertions"] = [a for a in state["assertions"] if a.document_id in docs]
@@ -277,33 +362,88 @@ class Nodes:
             if re.search(r"修复版本|补丁版本|fixed.*version|fixed\s+in", question, re.I):
                 required.add("fixed_version")
             for field in sorted(required):
-                for doc_id in dict.fromkeys(e.document_id for e in state["evidence"]):
-                    if not any(a.document_id == doc_id and a.field == field for a in state["assertions"]):
-                        state["missing_fields"].append(f"{doc_id}:{field}")
+                for entity in state['identifiers']:
+                    if not any(a.entity_id.upper()==entity and a.field==field for a in state['assertions']):
+                        state['missing_fields'].append(f'{entity}:{field}')
                 if field == "affected_version" and any(a.field == field and isinstance(a.value, dict) and a.value.get("parsed") is False for a in state["assertions"]):
                     state["missing_fields"].append("affected_applicability:unparsed_CPE_boolean_conditions")
             if re.search(r"比较|对比|compare", question, re.I) and len({e.document_id for e in state["evidence"]}) < 2:
                 state["missing_fields"].append("comparison:second_document")
             if "mitigation" in requested:
-                for doc_id in dict.fromkeys(e.document_id for e in state["evidence"]):
-                    if not any(a.document_id == doc_id and a.field in {"fixed_version", "mitigation"} for a in state["assertions"]):
-                        state["missing_fields"].append(f"{doc_id}:remediation")
+                for entity in state['identifiers']:
+                    if not any(a.entity_id.upper()==entity and a.field in {'fixed_version','mitigation'} for a in state['assertions']):
+                        state['missing_fields'].append(f'{entity}:remediation')
         state["missing_fields"] = list(dict.fromkeys(state["missing_fields"]))
+        state['requirement_coverage'] = evaluate(state)
+        state['trace'].append({'node':'requirement_evaluation','round':state['retrieval_round'],
+            'requirements':[row.model_dump() for row in state['requirement_coverage']]})
+        return state
+
+    async def choose_recovery(self, state):
+        self.event(state, 'choose_recovery')
+        state['next_action'] = self.after_assess(state)
         return state
 
     def after_assess(self, state):
+        if state['clarification'] or state.get('llm_error'):
+            state['stop_reason']='clarification_required' if state['clarification'] else 'model_failed'
+            return 'synthesize'
+        package=package_entities(state['resolved_question'])
+        needs_package_lookup=bool(package and 'osv_lookup' in self.tools.registered(state)
+            and ('osv_lookup',tuple(sorted(package.items()))) not in state.get('attempted_tools',set()))
+        if state.get('requirement_coverage') and all(r.status=='supported' for r in state['requirement_coverage']) and not needs_package_lookup:
+            state['stop_reason']='requirements_supported'
+            return 'synthesize'
+        if state.get('retrieval_round',0)>=getattr(self.settings,'max_retrieval_rounds',3):
+            state['stop_reason']='max_rounds'
+            return 'synthesize'
+        if state.get('external_executor') and state['budget'].max_tools-state['budget'].tool_calls<2:
+            state['stop_reason']='tool_budget_reserved'
+            return 'synthesize'
+        # A new registered candidate still deserves its bounded attempt.
+        pending=next_tools(state,self.tools.registered(state))
+        if state.get('retrieval_round',0)>1 and not pending and {(e.url,e.excerpt) for e in state['evidence']} <= state.get('prior_evidence_fingerprint',set()):
+            state['stop_reason']='no_new_evidence'
+            return 'synthesize'
+        if state['budget'].remaining()<4:
+            state['stop_reason']='deadline_reserved'
+            return 'synthesize'
+        if pending:
+            if (not state['identifiers'] and self.llm and self.llm.mode=='live'
+                    and state['budget'].max_llm-state['budget'].llm_calls<3):
+                state['stop_reason']='model_budget_reserved'
+                return 'synthesize'
+            state['pending_tools']=pending
+            return 'rewrite'
+        if (state.get('evidence') and not state['identifiers'] and state['retry_count']<self.settings.max_retries
+                and self.llm and self.llm.mode=='live' and state['budget'].max_llm-state['budget'].llm_calls>=3
+                and any(r.status!='supported' for r in state['requirement_coverage'])):
+            state['stop_reason']='expand_local_query'
+            return 'rewrite'
         if (not state["clarification"] and not state["evidence"] and not state["identifiers"]
                 and state["retry_count"] < self.settings.max_retries
                 and not any(w.startswith("relevance_filter:") or w == "relevance_check_failed" for w in state["warnings"])):
             return "rewrite"
+        state['stop_reason']='available_tools_exhausted'
         return "synthesize"
 
     async def rewrite(self, state):
         self.event(state, "rewrite")
         state["retry_count"] += 1
         state["budget"].retries += 1
+        if state.get('pending_tools'):
+            state['trace'].append({'node':'recovery_plan','round':state['retrieval_round']+1,
+                'tools':[name for name,_ in state['pending_tools']],
+                'missing_requirements':[r.requirement_id for r in state['requirement_coverage'] if r.status!='supported']})
+            return state
         query = state["resolved_question"]
         rewritten = query + " " + " ".join(en for zh, en in TRANSLATIONS.items() if zh in query)
+        if state.get('evidence'):
+            missing={r.requirement_id for r in state.get('requirement_coverage',[]) if r.status!='supported'}
+            additions={'audit_logging':'audit logs logging traceability', 'prompt_injection':'prompt injection',
+                'permissions':'least privilege permission access control', 'tool_execution':'tool abuse execution risk',
+                'mitigation':'mitigation remediation security control'}
+            rewritten += ' '+' '.join(additions.get(key,key.replace('_',' ')) for key in sorted(missing))
         if self.llm and self.llm.mode != "live" and state["budget"].llm_calls < self.settings.max_llm_calls - 1:
             try:
                 result = await self.llm.complete("rewrite", {"question": query, "hard_filters": state["explicit_filters"].model_dump(mode="json")}, state["budget"], self.settings.llm_timeout)
@@ -340,6 +480,9 @@ class Nodes:
             return state
         # Fields are source evidence, distinct from the <=8 retrieved body chunks.
         requirements = answer_requirements(state["resolved_question"], state["identifiers"])
+        requirements['coverage_topics']=state.get('requested_topics',[])
+        if any(r.field=='exploitation' for r in state.get('requirements',[])):
+            requirements['requested_fields'].append('exploitation')
         requested_fields = set(requirements["requested_fields"])
         offered_assertions = [a for a in state["assertions"] if a.field in requested_fields and
                               all(len(state["snapshot"].evidence[i].excerpt) <= 2000 for i in a.evidence_ids)]
@@ -376,21 +519,49 @@ class Nodes:
         state["selected_evidence"] = list({**body, **fields}.values())
         if self.llm:
             try:
-                result = await self.llm.complete("synthesize", {
+                payload = {
                     "question": state["resolved_question"], "evidence": model_evidence(state, state["selected_evidence"]),
                     "answer_requirements": requirements,
+                    "retrieval_context": {'fresh_required':state.get('fresh_required',False),
+                        'checks':[{'tool':name,'identifier':identifier,**checked}
+                            for (name,identifier),checked in state.get('external_checks',{}).items()]},
                     "evidence_scope": {eid: row.model_dump(mode="json") for eid, row in state.get("relevance_assignments", {}).items()},
                     "stored_assertions": assertion_payload(offered_assertions),
                     "missing_fields": render_missing_fields(state["missing_fields"]),
                     "conflicts": [{"field": c["field"], "entity_id": c["entity_id"],
                                    "assertion_ids": [i for i in c["assertion_ids"] if i in offered_ids]}
                                   for c in state["conflicts"] if any(i in offered_ids for i in c["assertion_ids"])],
-                }, state["budget"], self.settings.llm_timeout)
-                state["draft"] = Draft.model_validate(result)
+                }
+                for attempt in range(2):
+                    result = await self.llm.complete('synthesize',payload,state['budget'],self.settings.llm_timeout)
+                    try:
+                        state['draft']=Draft.model_validate(result)
+                        break
+                    except ValidationError as exc:
+                        # Record only schema paths/types, never model text,
+                        # unknown field names, Pydantic input or context.
+                        allowed={'claims','facts','text','evidence_ids','kind','topic_ids',
+                            'assertion_id','document_id','version','entity_id','field','value',
+                            'origin','verification','recorded_at'}
+                        feedback=[{'path':'.'.join(str(part) if isinstance(part,int) or part in allowed
+                            else 'unknown_key' for part in err['loc']), 'type':err['type']}
+                            for err in exc.errors(include_input=False,include_context=False)[:8]]
+                        state['trace'].append({'node':'generation_schema_error','errors':feedback})
+                        if (attempt==0 and state['budget'].max_llm-state['budget'].llm_calls>=2
+                                and state['budget'].remaining()>=4):
+                            state['warnings'].append('model_schema_retry')
+                            payload={**payload,'validation_feedback':feedback,
+                                'output_contract':{'root_keys':['claims'],'max_claims':8,
+                                    'claim_keys':['text','evidence_ids','kind','topic_ids'],
+                                    'ids':'existing string IDs only','kind':['fact','inference'],
+                                    'facts':'omit; never copy display assertions'}}
+                            continue
+                        raise
                 state["output_mode"] = self.llm.mode
             except BudgetExceeded:
                 raise
             except (ValueError, RuntimeError, KeyError) as exc:
+                if isinstance(exc,TypedProviderError): state['warnings'].append(exc.code)
                 categories = {"provider output truncated": "model_output_truncated",
                               "provider returned invalid JSON output": "model_output_invalid_json",
                               "provider returned empty output": "model_output_empty",
@@ -440,15 +611,29 @@ class Nodes:
         if draft and draft.claims and state["output_mode"] == "live":
             if state["budget"].llm_calls < state["budget"].max_llm:
                 try:
-                    result = await self.llm.complete("verify", {
+                    verify_requirements=answer_requirements(state['resolved_question'],state['identifiers'])
+                    verify_requirements['coverage_topics']=topics
+                    payload = {
                         "question": state["resolved_question"],
-                        "answer_requirements": answer_requirements(state["resolved_question"], state["identifiers"]),
+                        "answer_requirements": verify_requirements,
+                        "evidence_scope": {eid: row.model_dump(mode='json') for eid,row in assignments.items()},
                         "claims": [c.model_dump(mode="json") for c in draft.claims],
                         "evidence": model_evidence(state, selected),
-                    }, state["budget"], self.settings.llm_timeout)
-                    indexes = result.get("supported_claim_indexes")
-                    if not isinstance(indexes, list) or any(type(i) is not int or not 0 <= i < len(draft.claims) for i in indexes):
-                        raise ValueError("invalid support result")
+                    }
+                    for attempt in range(2):
+                        result = await self.llm.complete('verify',payload,state['budget'],self.settings.llm_timeout)
+                        indexes = result.get('supported_claim_indexes')
+                        if (set(result)=={'supported_claim_indexes'} and isinstance(indexes,list)
+                                and all(type(i) is int and 0<=i<len(draft.claims) for i in indexes)):
+                            break
+                        if attempt==0 and state['budget'].llm_calls<state['budget'].max_llm and state['budget'].remaining()>=3:
+                            state['warnings'].append('verification_schema_retry')
+                            state['trace'].append({'node':'verification_schema_error','error_type':'invalid_claim_indexes'})
+                            payload={**payload,'output_contract':{'root_keys':['supported_claim_indexes'],
+                                'index_type':'zero-based integers only','valid_indexes':list(range(len(draft.claims))),
+                                'no_supported_claims':[]}}
+                            continue
+                        raise ValueError('invalid support result')
                     retained = [c for i, c in enumerate(draft.claims) if i in indexes]
                     if len(retained) < len(draft.claims):
                         state["warnings"].append("unsupported_claims_removed")
@@ -456,9 +641,10 @@ class Nodes:
                     claims_verified = True
                 except BudgetExceeded:
                     raise
-                except (ValueError, RuntimeError, KeyError):
+                except (ValueError, RuntimeError, KeyError) as exc:
                     state["warnings"].append("claim_support_check_failed")
                     state["llm_error"] = "claim_support_check_failed"
+                    if isinstance(exc,TypedProviderError): state['warnings'].append(exc.code)
                     draft = None
             else:
                 state["warnings"].append("claim_support_check_unavailable:call_budget")
@@ -510,8 +696,22 @@ class Nodes:
             # Structured facts remain machine-readable and require their evidence.
             cited = {i for c in claims for i in c.evidence_ids} | {i for a in state["assertions"] for i in a.evidence_ids}
             sources = [e for e in selected if e.evidence_id in cited]
+        final_requirements=evaluate(state, final=True, verified=claims_verified, claims=claims,sources=sources)
+        limitations=list(dict.fromkeys([*state.get('limitations',[]),
+            *[row.label+'：'+row.reason for row in final_requirements if row.status!='supported']]))[:20]
+        if sources and limitations:
+            status='partial'
+            answer+='\n证据边界：'+'；'.join(limitations)
+        events=state['budget'].events
+        initial=[];supplemental=[]
+        for event in events:
+            target=supplemental if event.get('round',1)>1 else initial
+            if event['tool'] not in target:target.append(event['tool'])
         state["response"] = QueryResponse(status=status, answer=answer, claims=claims, sources=sources,
                                           coverage=coverage,
+                                          question_type=state.get('question_type'),requirement_coverage=final_requirements,
+                                          retrieval_summary=RetrievalSummary(rounds=state.get('retrieval_round',0),stop_reason=state.get('stop_reason','done'),initial_tools=initial,supplemental_tools=supplemental),
+                                          limitations=limitations,
                                           facts=state["assertions"] if sources else [], missing_fields=state["missing_fields"], conflicts=state["conflicts"],
                                           warnings=state["warnings"], trace_id=state["trace_id"], mode=state["output_mode"])
         return state

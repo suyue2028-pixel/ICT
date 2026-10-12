@@ -60,5 +60,6 @@ def fallback_reply(kind: str) -> str:
 
 def safe_conversation_answer(answer: str) -> bool:
     """A second boundary: social replies cannot carry factual identifiers/quotes."""
-    return (isinstance(answer, str) and bool(answer.strip()) and len(answer) <= 1000
-            and not re.search(r"\d|https?://|www\.|\[[^\]]*\]|<[^>]+>", answer, re.I))
+    return (isinstance(answer, str) and bool(answer.strip()) and len(answer) <= 4000
+            and not re.search(r"https?://|www\.|\[[^\]]*\]|<[^>]+>|\b(?:CVE-\d|GHSA-)|"
+                              r"CVSS.{0,30}\d|(?:修复版本|受影响版本|fixed in|affected version).{0,30}\d", answer, re.I))

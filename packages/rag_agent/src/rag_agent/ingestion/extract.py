@@ -59,7 +59,7 @@ def extract(doc, doc_id, version, chunk_evidence):
                                      "warning": "CPE boolean applicability is recorded, not resolved"}, "/raw_payload/cve/configurations", source_value=cve["configurations"])
     # Backend adapters may deliver source-recorded fields with exact JSON pointers.
     for i, item in enumerate(raw.get("source_fields", [])):
-        if item.get("field") in {"cvss", "affected_version", "fixed_version", "mitigation", "poc_reference"} and "value" in item:
+        if item.get("field") in {"cvss", "affected_version", "fixed_version", "mitigation", "poc_reference", "exploitation"} and "value" in item:
             add(item["field"], item["value"], f"/raw_payload/source_fields/{i}/value", ent=item.get("entity_id", entity))
     for ev in chunk_evidence:
         for match in re.finditer(r"(?:fixed\s+in(?:\s+version)?|修复版本\s*[:：为])\s*(v?\d+\.\d+(?:\.\d+)?)", ev.excerpt, re.I):

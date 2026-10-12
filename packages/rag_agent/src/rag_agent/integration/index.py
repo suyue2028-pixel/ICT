@@ -93,7 +93,7 @@ def _fields(revision):
                         and type(vector.get("score")) in {int, float}
                         and np.isfinite(vector["score"]) and 0 <= vector["score"] <= 10):
                     records.append({"field": "cvss", "value": deepcopy(vector)})
-        elif field in {"affected", "remediation", "poc", "affected_version", "fixed_version", "mitigation", "poc_reference"}:
+        elif field in {"affected", "remediation", "poc", "affected_version", "fixed_version", "mitigation", "poc_reference", "exploitation"}:
             mapped = {"affected": "affected_version", "remediation": "mitigation", "poc": "poc_reference"}.get(field, field)
             if value not in (None, {}, [], ""):
                 records.append({"field": mapped, "value": deepcopy(value)})

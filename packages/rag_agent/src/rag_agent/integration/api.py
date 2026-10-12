@@ -210,6 +210,28 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
                  max_answer_tokens: int | None = None) -> AgentAnswer:
     """Only mapped, current backend source revisions can reach the gateway."""
     coverage = _answer_coverage(result)
+    if result.retrieval_mode_override=='llm_unverified':
+        from ..agent.semantic import UNVERIFIED_NOTICE,safe_unverified_answer
+        if (result.sources or result.claims or result.facts or result.status!='partial'
+                or coverage.answered_topics or UNVERIFIED_NOTICE not in result.limitations
+                or not safe_unverified_answer(result.answer)):
+            raise ValueError('invalid unverified explanation')
+        calls,trace,trace_warnings=_backend_trace(summary,mappings)
+        answer=result.answer
+        errors=[*result.warnings,*trace_warnings]
+        if max_answer_tokens is not None:
+            answer,truncated=_bounded_answer(answer,max_answer_tokens*4)
+            if truncated:
+                errors.append('answer_budget_truncated')
+                if UNVERIFIED_NOTICE not in answer:
+                    answer=UNVERIFIED_NOTICE
+        return AgentAnswer(status='partial',answer=answer,response_kind='knowledge',
+            question_type='general_explanation',coverage=coverage,
+            requirement_coverage=[row.model_copy(update={'status':'missing','evidence_ids':[]}).model_dump()
+                for row in result.requirement_coverage],
+            retrieval_summary=result.retrieval_summary.model_dump(),limitations=result.limitations,
+            sources=[],evidence=[],cve_ids=[],risk_level='UNKNOWN',tool_calls=calls,tool_trace=trace,
+            partial_errors=list(dict.fromkeys(errors))[:20],retrieval_mode='llm_unverified')
     if result.response_kind == "conversation":
         from ..agent.conversation import safe_conversation_answer
         if (result.sources or result.claims or result.facts or result.metrics.tool_calls
@@ -227,6 +249,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
                            tool_calls=[], tool_trace=[], partial_errors=errors,
                            retrieval_mode="conversation")
     sources, evidence, valid_ids, retained_metadata = {}, [], set(), {}
+    public_ids = {}
     errors = list(result.warnings)
     rejected = False
     for item in result.sources:
@@ -274,6 +297,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
             errors.append("transport_evidence_truncated")
         else:
             valid_ids.add(item.evidence_id)
+            public_ids[item.evidence_id]=len(evidence)
 
     calls, traces, trace_errors = _backend_trace(summary, mappings)
     errors.extend(trace_errors)
@@ -310,7 +334,7 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
             answer = _extractive_answer(evidence, "部分引用未通过完整证据校验，相关结论已撤下。")
             _demote_coverage(coverage)
         else:
-            references = {item.evidence_id: number for number, item in enumerate(result.sources, 1)}
+            references = public_ids
 
             answer = _public_references(result.answer, references)
             if not result.claims:
@@ -336,9 +360,22 @@ def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mod
     allowed = set().union(*(_allowed_cves(metadata) for metadata in retained_metadata.values()))
     cves = sorted({value.upper() for value in _CVE.findall(answer)} & allowed)[:100]
     mode = "structured" if "exact_lookup" in calls else "hybrid" if "hybrid_search" in calls else "keyword"
+    requirement_rows=[]
+    rebuilt=any(code in errors for code in ('answer_rebuilt_after_citation_validation','transport_answer_truncated','answer_budget_truncated'))
+    for row in result.requirement_coverage:
+        data=row.model_dump()
+        ids=[str(public_ids[eid]) for eid in row.evidence_ids if eid in public_ids]
+        data['evidence_ids']=list(dict.fromkeys(ids))
+        if data['status']=='missing' or not ids:
+            data['status']='missing';data['evidence_ids']=[]
+        elif rebuilt and data['status']=='supported':
+            data['status']='partial';data['reason']='部分引用或正文未能完整保留，当前仅有可核验来源摘录。'
+        requirement_rows.append(data)
     return AgentAnswer(
         status=status, answer=answer or "没有满足要求的来源证据。", sources=list(sources.values()),
         coverage=coverage,
+        question_type=result.question_type,requirement_coverage=requirement_rows,
+        retrieval_summary=result.retrieval_summary.model_dump(),limitations=result.limitations,
         cve_ids=cves, risk_level=risk, evidence=evidence, tool_calls=calls,
         tool_trace=traces, partial_errors=list(dict.fromkeys(errors))[:20], retrieval_mode=mode,
     )
@@ -395,6 +432,7 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
         except Exception:
             raise HTTPException(503, "backend_index_unavailable") from None
         return {"schema_version": "1", "status": "ok", "llm_mode": service.settings.llm_mode,
+                "llm_transport": service.settings.llm_transport,
                 "embedding_provider": service.settings.embedding_provider,
                 "embedding_mode": service.embedding.mode,
                 "backend_documents": {"real": len(scopes[0]), "demo": len(scopes[1])}}
@@ -404,32 +442,45 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
         response.headers["X-Request-ID"] = body.request_id
         response.headers["X-RAG-Answer-Mode"] = service.settings.llm_mode
         response.headers["X-RAG-Embedding-Mode"] = service.embedding.mode
-        try:
-            mappings = await asyncio.to_thread(index.mappings, body.is_demo)
-        except Exception:
-            raise HTTPException(503, "backend_index_unavailable") from None
+        mappings={}
+        async def load_scope():
+            nonlocal mappings
+            mappings=await asyncio.to_thread(index.mappings,body.is_demo)
+            return {rag_id for rag_id,_ in mappings},{rag_id:version for rag_id,version in mappings}
         request = QueryRequest(question=body.query, history=[
             Message(role=item.role, content=item.content) for item in body.history[-8:]
         ])
         try:
+            external_executor=None
+            if service.settings.external_tools_enabled and not body.is_demo:
+                from .intelligence import IntelligenceExecutor
+                external_executor=IntelligenceExecutor(service,index)
             result = await service.query(
-                request, document_ids={rag_id for rag_id, _ in mappings},
-                document_versions={rag_id: version for rag_id, version in mappings},
+                request,scope_loader=load_scope,
                 max_tool_calls=body.limits.max_tool_calls,
                 max_answer_tokens=body.limits.max_answer_tokens,
                 timeout=min(service.settings.request_timeout, 25.0),
+                external_executor=external_executor,
             )
         except TimeoutError:
             raise HTTPException(504, "agent_query_timeout") from None
         result_headers = {"X-Request-ID": body.request_id, "X-RAG-Answer-Mode": result.mode,
                           "X-RAG-Embedding-Mode": result.metrics.embedding_mode,
                           "X-RAG-LLM-Calls": str(result.metrics.llm_calls)}
+        # Provider errors remain service errors even if safe source excerpts
+        # exist. Do not turn an upstream auth failure into a normal response.
+        from ..providers.llm import SAFE_PROVIDER_CODES
+        for code in sorted(SAFE_PROVIDER_CODES):
+            if code in result.warnings:
+                raise HTTPException(504 if code=='platform_model_timeout' else 502 if code in {'platform_model_auth_failed','platform_internal_auth_failed'} else 503,code,headers=result_headers)
         if result.status == "error":
             if "TimeoutError" in result.warnings:
                 raise HTTPException(504, "agent_query_timeout", headers=result_headers)
             if "BudgetExceeded" in result.warnings:
                 raise HTTPException(429, "agent_call_budget_exceeded", headers=result_headers)
             for warning, detail in (("relevance_check_failed", "model_relevance_failed"),
+                                    ("intent_classification_failed", "intent_classification_failed"),
+                                    ("general_explanation_failed", "general_explanation_failed"),
                                     ("claim_support_check_failed", "model_verification_failed"),
                                     ("model_generation_failed", "model_generation_failed"),
                                     ("retrieval_failed", "retrieval_failed")):
@@ -437,6 +488,8 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
                     raise HTTPException(503, detail, headers=result_headers)
             raise HTTPException(503, "agent_query_failed", headers=result_headers)
         response.headers.update(result_headers)
+        if external_executor and result.response_kind!='conversation':
+            mappings=await asyncio.to_thread(index.mappings,body.is_demo)
         try:
             summary = service.get_run_summary(result.trace_id)
         except KeyError:

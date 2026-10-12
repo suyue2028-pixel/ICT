@@ -14,13 +14,15 @@ from .ingestion.extract import extract
 from .enrichment.rules import enrich as enrich_rules
 from .providers.embedding import E5Embedding
 from .providers.mock import MockEmbedding, MockLLM
-from .providers.llm import RemoteLLM
+from .providers.llm import BackendLLM, RemoteLLM, TypedProviderError
 from .retrieval.hybrid import HybridRetriever
 from .agent.tools import Tools
 from .agent.nodes import Nodes
 from .agent.graph import build_graph
 from .agent.state import Budget, BudgetExceeded
 from .agent.conversation import conversation_kind, fallback_reply, safe_conversation_answer
+from .agent.semantic import (SemanticClassification,RoutingAmbiguity,validated_targets,can_explain_unverified,
+    safe_unverified_answer,UNVERIFIED_NOTICE)
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,8 @@ class RAGService:
         self.settings = settings or Settings.from_env()
         self.store = SQLiteStore(self.settings.db_path)
         self.embedding = embedding or (MockEmbedding() if self.settings.embedding_provider == "mock" else E5Embedding(self.settings.embedding_model, self.settings.embedding_revision, self.settings.embedding_device))
-        self.llm = llm or (RemoteLLM(self.settings) if self.settings.llm_mode == "live" else MockLLM() if self.settings.llm_mode == "mock" else None)
+        self.llm = llm or ((BackendLLM(self.settings) if self.settings.llm_transport == "backend" else RemoteLLM(self.settings))
+                          if self.settings.llm_mode == "live" else MockLLM() if self.settings.llm_mode == "mock" else None)
         self._write_lock = asyncio.Lock()
         self._run_summaries = OrderedDict()
         self.retriever = HybridRetriever(self.embedding, rank_pool=self.settings.retrieval_rank_pool,
@@ -83,6 +86,26 @@ class RAGService:
     async def get_evidence(self, evidence_id):
         return await asyncio.to_thread(self.store.get_evidence, evidence_id)
 
+    async def explain_unverified(self, state, classification):
+        """One format-only repair, with the same safety guard and shared budget."""
+        budget=state['budget']
+        payload={'question':state['resolved_question'],'information_needs':classification.information_needs,
+            'history':[m.model_dump(mode='json') for m in state['request'].history[-8:]]}
+        for attempt in range(2):
+            try:
+                result=await self.llm.complete('general_explain',payload,budget,min(8,self.settings.llm_timeout))
+                answer=result.get('answer')
+                if not safe_unverified_answer(answer):raise ValueError('invalid unverified explanation')
+                return answer
+            except (ValueError,RuntimeError,KeyError) as exc:
+                if isinstance(exc,BudgetExceeded):raise
+                repairable=not isinstance(exc,TypedProviderError) or exc.code=='platform_model_format_invalid'
+                if attempt or not repairable or budget.llm_calls>=budget.max_llm or budget.remaining()<3:raise
+                state['warnings'].append('general_explanation_schema_retry')
+                state['trace'].append({'node':'general_explanation_schema_error','error_type':type(exc).__name__})
+                payload={**payload,'output_contract':{'root_keys':['answer'],
+                    'answer':'short conceptual text only; no references, URLs, product/version/patch facts or decimal examples'}}
+
     async def deactivate(self, document_id):
         async with self._write_lock:
             await asyncio.to_thread(self.store.deactivate, document_id)
@@ -106,7 +129,11 @@ class RAGService:
                 if not isinstance(candidate, str) or not safe_conversation_answer(candidate):
                     raise ValueError("invalid conversation answer")
                 answer, mode = candidate.strip(), "live"
-            except (ValueError, RuntimeError, KeyError):
+            except (ValueError, RuntimeError, KeyError) as exc:
+                if isinstance(exc,TypedProviderError):
+                    state['warnings'].append(exc.code)
+                    return QueryResponse(status='error',answer='平台模型服务暂时无法完成对话，请稍后重试。',
+                        response_kind='conversation',trace_id=state['trace_id'],warnings=state['warnings'],mode='extractive')
                 state["warnings"].append("conversation_local_reply:after_remote_attempt")
         else:
             state["warnings"].append("conversation_local_reply:no_remote_llm")
@@ -114,7 +141,8 @@ class RAGService:
                              trace_id=state["trace_id"], warnings=state["warnings"], mode=mode)
 
     async def query(self, request: QueryRequest, *, document_ids=None, document_versions=None,
-                    max_tool_calls=None, max_answer_tokens=None, timeout=None) -> QueryResponse:
+                    max_tool_calls=None, max_answer_tokens=None, timeout=None, external_executor=None,
+                    scope_loader=None) -> QueryResponse:
         """Trusted adapter controls: scope and limits are never model-generated."""
         request = QueryRequest.model_validate(request)
         if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 1):
@@ -133,23 +161,85 @@ class RAGService:
         state = {"request": request, "original_question": request.question, "resolved_question": request.question,
                  "explicit_filters": request.filters, "plan": None, "subqueries": [], "evidence": [], "assertions": [],
                  "missing_fields": [], "conflicts": [], "retry_count": 0, "budget": budget, "deadline": budget.deadline,
-                 "warnings": [], "trace_id": uuid.uuid4().hex, "trace": [], "started": started, "clarification": ""}
+                 "warnings": [], "trace_id": uuid.uuid4().hex, "trace": [], "started": started, "clarification": "",
+                 "external_executor":external_executor}
         if self.embedding.mode == "mock":
             state["warnings"].append("mock_embedding:仅用于流程回归，不代表真实语义检索")
         try:
             async with asyncio.timeout(duration):
-                kind = conversation_kind(request.question)
                 has_filters = any(value not in (None, [], "") for value in request.filters.model_dump().values())
-                if kind and not has_filters:
+                classification=None
+                if self.llm and self.llm.mode=='live':
+                    try:
+                        raw=await self.llm.complete('classify',{'question':request.question,
+                            'history':[m.model_dump(mode='json') for m in request.history[-8:]]},
+                            budget,min(8,self.settings.llm_timeout))
+                        classification=SemanticClassification.model_validate(raw)
+                        state['classified_identifiers']=[]
+                        try:
+                            state['classified_identifiers']=validated_targets(classification,request)
+                        except RoutingAmbiguity:
+                            classification=classification.model_copy(update={'intent':'clarification','conversation_answer':None})
+                            state['warnings'].append('historical_target_ambiguous')
+                    except BudgetExceeded:
+                        raise
+                    except (ValueError,RuntimeError,KeyError) as exc:
+                        state['warnings'].append('intent_classification_failed')
+                        if isinstance(exc,TypedProviderError):state['warnings'].append(exc.code)
+                        # Preserve stage and a safe error type, never invalid
+                        # provider output or Pydantic input/context.
+                        state['trace'].append({'node':'classify','status':'failed','error_type':type(exc).__name__})
+                        classification=None
+                    else:
+                        if (state['classified_identifiers'] or has_filters) and classification.intent=='general':
+                            classification=classification.model_copy(update={'intent':'security','conversation_answer':None})
+                            state['warnings'].append('classification_entity_guard')
+                        state['classification']=classification
+                        state['trace'].append({'node':'classify','status':'completed','intent':classification.intent,
+                            'entities':classification.entities.model_dump(),'information_needs':classification.information_needs,
+                            'freshness_required':classification.freshness_required})
+                # Only explicit offline/test modes retain legacy fixtures.
+                # Every online request above calls the real semantic model.
+                kind=conversation_kind(request.question) if not self.llm or self.llm.mode!='live' else None
+                if self.llm and self.llm.mode=='live' and classification is None:
+                    response=QueryResponse(status='error',answer='模型未能完成问题分类，请重试。',
+                        warnings=state['warnings'],trace_id=state['trace_id'],mode='extractive')
+                elif classification and classification.intent=='general':
+                    response=QueryResponse(status='ok',answer=classification.conversation_answer,
+                        response_kind='conversation',question_type='general',trace_id=state['trace_id'],mode='live')
+                elif classification and classification.intent=='clarification':
+                    response=QueryResponse(status='insufficient_evidence',answer='请明确本次查询的漏洞编号或对象，我再继续分析。',
+                        question_type='clarification',trace_id=state['trace_id'],mode='live')
+                elif kind and not has_filters:
                     response = await self.converse(state, kind)
                 else:
+                    if scope_loader is not None:
+                        try: scope,versions=await scope_loader()
+                        except Exception:
+                            state['warnings'].append('retrieval_failed')
+                            raise RuntimeError('local_retrieval_unavailable') from None
                     snapshot = await asyncio.to_thread(self.store.snapshot, scope, versions)
                     state["snapshot"] = snapshot
                     if snapshot.signature and snapshot.signature != self.embedding.signature():
                         raise ValueError("embedding index mismatch; rebuild required")
-                    final = await self.graph.ainvoke(state, config={"recursion_limit": 24})
+                    final = await self.graph.ainvoke(state, config={"recursion_limit": 36})
                     response = final["response"]
                     state = final
+                    if (classification and response.status=='insufficient_evidence' and not response.sources
+                            and self.settings.allow_unverified_concepts and can_explain_unverified(state)
+                            and budget.max_llm-budget.llm_calls>=1 and budget.remaining()>=3):
+                        try:
+                            text=await self.explain_unverified(state,classification)
+                            response=response.model_copy(update={'status':'partial','answer':UNVERIFIED_NOTICE+'\n'+text,
+                                'mode':'live','retrieval_mode_override':'llm_unverified','question_type':'general_explanation',
+                                'warnings':list(dict.fromkeys([*response.warnings,*state['warnings']]))[:20],
+                                'limitations':list(dict.fromkeys([UNVERIFIED_NOTICE,*response.limitations]))[:20]})
+                            state['trace'].append({'node':'general_explanation','status':'completed','verified':False})
+                        except (ValueError,RuntimeError,KeyError) as exc:
+                            state['warnings'].append('general_explanation_failed')
+                            if isinstance(exc,TypedProviderError):state['warnings'].append(exc.code)
+                            response=response.model_copy(update={'status':'error','warnings':state['warnings'],
+                                'answer':'模型未能完成通用解释，请稍后重试。'})
         except asyncio.CancelledError:
             raise  # Cancellation propagates to pending remote HTTP, never swallowed.
         except (TimeoutError, BudgetExceeded) as exc:
@@ -164,7 +254,8 @@ class RAGService:
                                    llm_calls=budget.llm_calls, tool_calls=budget.tool_calls, retries=budget.retries,
                                    embedding_mode=self.embedding.mode, index_generation=state.get("snapshot").generation if state.get("snapshot") else 0)
         summary = {"trace_id": response.trace_id, "nodes": state["trace"], "tools": deepcopy(budget.events),
-                   "evidence_ids": [e.evidence_id for e in state["evidence"]], "metrics": response.metrics.model_dump()}
+                   "evidence_ids": [e.evidence_id for e in state["evidence"]], "metrics": response.metrics.model_dump(),
+                   'llm_usage':deepcopy(getattr(budget,'llm_usage',[]))}
         self._run_summaries[response.trace_id] = summary
         while len(self._run_summaries) > 128:
             self._run_summaries.popitem(last=False)

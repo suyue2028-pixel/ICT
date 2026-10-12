@@ -1,6 +1,6 @@
 # 后端与 Agent HTTP V1 接入
 
-更新日期：2026-10-04（Asia/Shanghai）。依据 GitHub `suyue2028-pixel/ICT` 的 `feature/backend-integration` 分支提交 `a33913da1b63dbc638e2cbff266aabc970833597`，10月3日经 GitHub 连接核对，该分支与此前快照一致。
+更新日期：2026-10-12（Asia/Shanghai）。当前平台模型和动态检索增量见 [动态 Agent 架构与接入](dynamic_agent_architecture.md)。本机前后端运行副本的增量另存为 `integration/*_patches/dynamic_agent_v1.patch`；本页下方带旧日期的记录说明历史验证。
 
 本接口供业务后端调用。前端继续访问后端的 `POST /api/v1/agent/query`；用户认证、会话、请求幂等和调用记录由后端维护。独立 `/demo/*` 路由仍供原有资料演示使用。
 
@@ -29,7 +29,7 @@ python -m uvicorn examples.backend_api:app --host 127.0.0.1 --port 9001
 | 后端地址 | RAG_BACKEND_URL=http://127.0.0.1:8010 | 原生本机后端地址 |
 | Agent 地址 | V1 监听9001 | AGENT_SERVICE_URL=http://127.0.0.1:9001 |
 | 外部索引模式 | 同步worker | INDEX_PROVIDER=external |
-| 大模型生成 | RAG_LLM_KEY / RAG_LLM_KEY_FILE | Agent 自己的供应商凭据，不能拿服务令牌代替 |
+| 大模型生成 | RAG_LLM_TRANSPORT=backend；RAG_LLM_GATEWAY_URL、RAG_LLM_SERVICE_TOKEN | 调用后端统一模型内部接口，服务令牌对应AGENT_TOOL_TOKEN；供应商Key仅由后端读取 |
 
 如果后端在容器运行，需按容器网络配置实际可访问的 Agent 地址。后端源码允许 `http://host.docker.internal:9001`；`localhost` 指向调用方自身。服务当前绑定回环地址，任何跨机器部署都应另行配置网络与 HTTPS。
 
@@ -83,7 +83,7 @@ export RAG_BACKEND_URL=http://127.0.0.1:8010
 
 ## 本次范围与后端仍需完成的接入
 
-Agent代码、独立验证和真实端到端联调是不同验收项。本机后端目前还缺PostgreSQL/Redis/迁移；因此不能把本地契约样本通过解释为真实后端文档已经同步。
+Agent代码、独立验证和真实端到端联调是不同验收项。当前本机 PostgreSQL/Redis/迁移及真实 E5 同步已经具备，平台模型、CVE、官方情报和引用实际验证见 [本轮验收](dynamic_agent_validation.md)。历史单元测试仍不能代表真实供应商调用。
 
 后端同学接入顺序：基础服务ready→配置三类令牌及Agent URL→INDEX_PROVIDER=external→采集产生事件→worker同步→后端自身来源核验通过→前端接真实问答。前端的代理/CORS、用户token和字段转换仍由前后端同学完成。
 

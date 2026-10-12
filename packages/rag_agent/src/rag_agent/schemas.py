@@ -207,11 +207,31 @@ class AnswerCoverage(Model):
     missing_topics: list[Annotated[str, Field(min_length=1, max_length=120, strict=True)]] = Field(default_factory=list, max_length=12)
 
 
+class RequirementCoverage(Model):
+    requirement_id: str = Field(max_length=40)
+    label: str = Field(max_length=120)
+    status: Literal['supported', 'partial', 'conflicting', 'missing']
+    evidence_ids: list[str] = Field(default_factory=list, max_length=50)
+    reason: str = Field(max_length=200)
+
+
+class RetrievalSummary(Model):
+    rounds: int = Field(default=0, ge=0, le=3)
+    stop_reason: str = Field(default='not_started', max_length=80)
+    initial_tools: list[str] = Field(default_factory=list, max_length=10)
+    supplemental_tools: list[str] = Field(default_factory=list, max_length=10)
+
+
 class QueryResponse(Model):
     status: Literal["ok", "partial", "insufficient_evidence", "error"]
     answer: str
     response_kind: Literal["knowledge", "conversation"] = "knowledge"
+    retrieval_mode_override: Literal['llm_unverified'] | None = None
     coverage: AnswerCoverage = Field(default_factory=AnswerCoverage)
+    question_type: str | None = Field(default=None, max_length=80)
+    requirement_coverage: list[RequirementCoverage] = Field(default_factory=list, max_length=40)
+    retrieval_summary: RetrievalSummary = Field(default_factory=RetrievalSummary)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
     claims: list[Claim] = Field(default_factory=list)
     sources: list[EvidenceDetail] = Field(default_factory=list)
     facts: list[Assertion] = Field(default_factory=list)
@@ -227,6 +247,11 @@ class Plan(Model):
     route: Literal["exact", "hybrid", "compare"]
     subqueries: list[str] = Field(min_length=1, max_length=3)
     expand_relations: bool = False
+    question_type: Literal['cve', 'security_knowledge', 'comparison', 'package', 'clarification'] = 'security_knowledge'
+    fresh_required: bool = False
+    tools: list[Literal['exact_lookup','hybrid_search','related_evidence','get_assertions',
+                        'nvd_lookup','kev_lookup','osv_lookup','knowledge_lookup','web_search']] = Field(default_factory=list, max_length=9)
+    preferred_sources: list[Literal['local','NVD','CISA KEV','OSV','OWASP','web']] = Field(default_factory=lambda:['local'], max_length=6)
 
 
 class Draft(Model):

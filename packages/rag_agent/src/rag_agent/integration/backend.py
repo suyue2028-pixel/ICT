@@ -131,6 +131,27 @@ class BackendClient:
                             json=body, params=params,
                         ) as response:
                             if not 200 <= response.status_code < 300:
+                                if path == '/api/v1/internal/intelligence/lookup':
+                                    safe_codes={'intelligence_timeout','intelligence_rate_limited',
+                                        'intelligence_source_unavailable','intelligence_invalid_response',
+                                        'intelligence_entity_mismatch','intelligence_response_too_large'}
+                                    safe_codes |= {'search_not_configured','search_timeout','search_rate_limited',
+                                        'search_unavailable','search_invalid_response','search_unsafe_url',
+                                        'search_auth_failed','search_budget_exceeded','search_response_too_large'}
+                                    error_body=bytearray()
+                                    async for part in response.aiter_bytes(chunk_size=1024):
+                                        if len(error_body)+len(part)>4096:
+                                            break
+                                        error_body.extend(part)
+                                    try:
+                                        payload=json.loads(error_body)
+                                        code=payload.get('detail')
+                                        if code is None:
+                                            code=payload.get('error',{}).get('code')
+                                    except (ValueError,TypeError,AttributeError):
+                                        code=None
+                                    if isinstance(code,str) and code in safe_codes:
+                                        raise BackendError(code,status_code=response.status_code)
                                 raise BackendError(f"backend_http_{response.status_code}", status_code=response.status_code)
                             raw = bytearray()
                             async for part in response.aiter_bytes(chunk_size=8192):

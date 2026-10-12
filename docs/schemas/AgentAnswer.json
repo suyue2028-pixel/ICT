@@ -155,6 +155,91 @@
       "title": "AnswerCoverage",
       "type": "object"
     },
+    "RequirementCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "requirement_id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Requirement Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "partial",
+            "conflicting",
+            "missing"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "reason": {
+          "maxLength": 200,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement_id",
+        "label",
+        "status",
+        "reason"
+      ],
+      "title": "RequirementCoverage",
+      "type": "object"
+    },
+    "RetrievalSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "rounds": {
+          "default": 0,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Rounds",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "default": "not_started",
+          "maxLength": 80,
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "initial_tools": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Initial Tools",
+          "type": "array"
+        },
+        "supplemental_tools": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Supplemental Tools",
+          "type": "array"
+        }
+      },
+      "title": "RetrievalSummary",
+      "type": "object"
+    },
     "ToolTrace": {
       "additionalProperties": false,
       "properties": {
@@ -258,6 +343,46 @@
     "coverage": {
       "$ref": "#/$defs/AnswerCoverage"
     },
+    "question_type": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Question Type"
+    },
+    "requirement_coverage": {
+      "items": {
+        "$ref": "#/$defs/RequirementCoverage"
+      },
+      "maxItems": 40,
+      "title": "Requirement Coverage",
+      "type": "array"
+    },
+    "retrieval_summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetrievalSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Limitations",
+      "type": "array"
+    },
     "sources": {
       "items": {
         "$ref": "#/$defs/AgentSource"
@@ -324,7 +449,8 @@
         "semantic",
         "hybrid",
         "structured",
-        "conversation"
+        "conversation",
+        "llm_unverified"
       ],
       "title": "Retrieval Mode",
       "type": "string"

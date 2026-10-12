@@ -125,11 +125,64 @@ def frontend_environment(env, node):
     # credential on the server. Database/admin/model keys stay out of the file.
     agent_status_file = PRIVATE.with_name("fullstack-agent-status.env")
     write_private(agent_status_file, "RAG_SERVICE_TOKEN=" + env["AGENT_SERVICE_TOKEN"] + "\n")
-    return {**env, "ICT_LOCAL_SESSION_FILE": str(LOCAL / "session.json"),
+    return {**without_model_credentials(env), "ICT_LOCAL_SESSION_FILE": str(LOCAL / "session.json"),
             "ICT_BACKEND_ORIGIN": "http://127.0.0.1:8010",
             "ICT_LOCAL_AGENT_ORIGIN": "http://127.0.0.1:9001",
             "ICT_LOCAL_AGENT_ENV_FILE": str(agent_status_file),
             "PATH": str(Path(node).parent) + os.pathsep + env.get("PATH", "")}
+
+
+MODEL_CREDENTIAL_NAMES = frozenset({
+    "RAG_LLM_KEY", "RAG_LLM_KEY_FILE", "LLM_API_KEY", "LLM_API_KEY_FILE",
+    "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+    "TAVILY_API_KEY", "TAVILY_API_KEY_FILE",
+})
+
+
+def without_model_credentials(env):
+    """Supplier key values and paths belong only to the backend process."""
+    return {key: value for key, value in env.items() if key not in MODEL_CREDENTIAL_NAMES
+            and not (key.startswith("VITE_") and any(marker in key for marker in ("KEY", "TOKEN", "SECRET")))}
+
+
+def backend_environment(env, backend, *, live):
+    """Pass key-file paths to FastAPI without reading their secret contents."""
+    backend_env = dict(env)
+    default_search_file=ROOT/'.secrets/tavily-api-key'
+    if not env.get('TAVILY_API_KEY') and not env.get('TAVILY_API_KEY_FILE') and default_search_file.is_file():
+        backend_env['TAVILY_API_KEY_FILE']=str(default_search_file)
+    backend_env["LLM_PROVIDER"] = env.get("LLM_PROVIDER", "deepseek")
+    model = env.get("LLM_MODEL") or env.get("RAG_LLM_MODEL")
+    if model:
+        backend_env["LLM_MODEL"] = model
+    elif backend_env["LLM_PROVIDER"] == "deepseek":
+        backend_env["LLM_MODEL"] = "deepseek-flash"
+    if env.get("LLM_BASE_URL") or env.get("RAG_LLM_BASE_URL"):
+        backend_env["LLM_BASE_URL"] = env.get("LLM_BASE_URL", env.get("RAG_LLM_BASE_URL", ""))
+    if not live:
+        return backend_env
+    # Modern platform settings take precedence over legacy Agent settings.
+    key = env.get("LLM_API_KEY")
+    key_file = env.get("LLM_API_KEY_FILE")
+    if key and key_file:
+        raise RuntimeError("Configure LLM_API_KEY or LLM_API_KEY_FILE, not both; services preserved")
+    if not key and not key_file:
+        key, key_file = env.get("RAG_LLM_KEY"), env.get("RAG_LLM_KEY_FILE")
+        if key and key_file:
+            raise RuntimeError("Configure RAG_LLM_KEY or RAG_LLM_KEY_FILE, not both; services preserved")
+        if key:
+            backend_env["LLM_API_KEY"] = key
+        elif key_file:
+            backend_env["LLM_API_KEY_FILE"] = key_file
+        elif not any(env.get(name) for name in ("DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY")):
+            default_key_file = ROOT / ".secrets/llm-api-key"
+            if default_key_file.is_file():
+                backend_env["LLM_API_KEY_FILE"] = str(default_key_file)
+            # Existing backend .env is read by backend Settings. The launcher
+            # deliberately does not load/extract its model credential.
+            elif not (backend / ".env").exists():
+                raise RuntimeError("Platform live mode needs a backend model credential; services preserved")
+    return backend_env
 
 
 def load_state():
@@ -221,7 +274,7 @@ def wait_http(url, headers=None, timeout=60):
 
 def agent_environment(env, backend, *, live):
     """Build the same Agent configuration for full startup and replacement."""
-    rag_env = {**env, "PYTHONPATH": str(ROOT / "packages/rag_agent/src"),
+    rag_env = {**without_model_credentials(env), "PYTHONPATH": str(ROOT / "packages/rag_agent/src"),
                "HF_HOME": str(ROOT / ".cache/huggingface"), "HF_HUB_OFFLINE": "1",
                "RAG_BACKEND_DB_PATH": str(ROOT / "data/backend-rag.db"),
                "RAG_BACKEND_URL": "http://127.0.0.1:8010",
@@ -229,30 +282,11 @@ def agent_environment(env, backend, *, live):
                "RAG_BACKEND_TOOL_TOKEN": env["AGENT_TOOL_TOKEN"],
                "RAG_BACKEND_WRITE_TOKEN": env["AGENT_WRITE_TOKEN"],
                "RAG_LLM_MODE": "live" if live else "extractive",
-               "RAG_LLM_BASE_URL": env.get("RAG_LLM_BASE_URL", "https://api.deepseek.com"),
-               "RAG_LLM_MODEL": env.get("RAG_LLM_MODEL", "deepseek-flash")}
-    key = env.get("RAG_LLM_KEY")
-    key_file = env.get("RAG_LLM_KEY_FILE")
-    if key and key_file:
-        raise RuntimeError("Configure RAG_LLM_KEY or RAG_LLM_KEY_FILE, not both; services preserved")
-    if not live:
-        # Extractive startup and rollback require no provider credentials.
-        rag_env.pop("RAG_LLM_KEY", None)
-        rag_env.pop("RAG_LLM_KEY_FILE", None)
-        return rag_env
-    default_key_file = ROOT / ".secrets/llm-api-key"
-    if not key and not key_file and default_key_file.exists():
-        key_file = str(default_key_file)
-        rag_env["RAG_LLM_KEY_FILE"] = key_file
-    if not key and not key_file:
-        # Existing teammate configuration is the last fallback, used only in
-        # process memory. An explicit file never competes with this fallback.
-        key = read_env(backend / ".env").get("DEEPSEEK_API_KEY")
-        if key:
-            rag_env["RAG_LLM_KEY"] = key
-        else:
-            raise RuntimeError("Live mode needs RAG_LLM_KEY, RAG_LLM_KEY_FILE, "
-                               ".secrets/llm-api-key, or the backend DeepSeek key; services preserved")
+               "RAG_LLM_TRANSPORT": "backend",
+               "RAG_EXTERNAL_TOOLS_ENABLED": env.get("RAG_EXTERNAL_TOOLS_ENABLED", "true"),
+               "RAG_LLM_GATEWAY_URL": "http://127.0.0.1:8010",
+               "RAG_LLM_SERVICE_TOKEN": env["AGENT_TOOL_TOKEN"],
+               "RAG_LLM_MODEL": env.get("LLM_MODEL", env.get("RAG_LLM_MODEL", "deepseek-flash"))}
     return rag_env
 
 
@@ -260,8 +294,8 @@ def preflight_agent(rag_env):
     python_agent = ROOT / ".venv/bin/python"
     if not python_agent.exists():
         raise RuntimeError("Missing Agent runtime; services preserved; see docs/fullstack_local.md")
-    # Settings validation also checks key-file readability/format. It imports
-    # no provider and makes no model request. Suppress all child output so even
+    # Agent Settings validate the internal service credential; platform key-file
+    # validation belongs to backend Settings. This makes no model request. Suppress all child output so even
     # validation exceptions cannot disclose credentials.
     code = ("from rag_agent.config import Settings\n"
             "try:\n    Settings.from_env()\n"
@@ -274,6 +308,40 @@ def preflight_agent(rag_env):
     if result.returncode:
         raise RuntimeError("Agent configuration preflight failed; check model URL, mode, "
                            "and credential configuration; services preserved")
+
+
+def preflight_backend(backend, backend_env, *, live):
+    """Validate backend platform settings without contacting its supplier."""
+    if not live:
+        return
+    code = ("from backend.core.config import Settings\n"
+            "try:\n    configured = Settings().platform_llm_configured\n"
+            "except Exception:\n    raise SystemExit(1)\n"
+            "raise SystemExit(0 if configured else 1)\n")
+    try:
+        result = subprocess.run([str(backend / ".venv/bin/python"), "-c", code], cwd=backend, env=backend_env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Backend model configuration preflight timed out; services preserved") from None
+    if result.returncode:
+        raise RuntimeError("Backend platform model is not configured; check private server settings or use --extractive; services preserved")
+
+
+def check_platform_backend(env):
+    """Check the running internal API and supported workflow without a model call."""
+    req = urllib.request.Request("http://127.0.0.1:8010/api/v1/internal/llm/capabilities",
+                                 headers={"X-Agent-Token": env["AGENT_TOOL_TOKEN"]})
+    try:
+        with OPENER.open(req, timeout=5) as response:
+            info = json.loads(response.read(16000))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        raise RuntimeError("Running backend platform-model endpoint is unavailable; update/restart backend first; services preserved") from None
+    if not isinstance(info, dict) or not isinstance(info.get("capabilities"), dict):
+        raise RuntimeError("Running backend returned an invalid model capability response; services preserved")
+    capabilities = info["capabilities"]
+    if (not info.get("configured") or not info.get("supported_model")
+            or not capabilities.get("json_object") or not capabilities.get("server_tool_workflow")):
+        raise RuntimeError("Running backend model is unconfigured or lacks the Agent JSON workflow capability; services preserved")
 
 
 def spawn_process(state, name, command, cwd, child_env):
@@ -313,8 +381,12 @@ def restart_agent(args):
     if not (backend / "backend/main.py").exists():
         raise RuntimeError("Recorded backend runtime directory is unavailable; services preserved")
     env = configuration()
+    backend_env = backend_environment(env, backend, live=args.live)
     rag_env = agent_environment(env, backend, live=args.live)
     preflight_agent(rag_env)
+    preflight_backend(backend, backend_env, live=args.live)
+    if args.live:
+        check_platform_backend(env)
     old_mode = state.get("llm_mode")
     old_env = None
     if old_mode in {"live", "extractive"}:
@@ -391,6 +463,8 @@ def _start(args, state):
     (LOCAL / "logs").mkdir(exist_ok=True)
     env = configuration()
     backend, frontend, pg, redis, node = paths()
+    backend_env = backend_environment(env, backend, live=args.live)
+    process_env = without_model_credentials(env)
     for required in [pg / "postgres", redis / "redis-server", backend / ".venv/bin/python", ROOT / ".venv/bin/python", Path(node)]:
         if not required.exists():
             raise RuntimeError(f"Missing runtime: {required}; see docs/fullstack_local.md")
@@ -400,10 +474,11 @@ def _start(args, state):
         check_port(port)
     rag_env = agent_environment(env, backend, live=args.live)
     preflight_agent(rag_env)
+    preflight_backend(backend, backend_env, live=args.live)
     state.update(llm_mode=None, agent_status="starting", backend_dir=str(backend),
                  frontend_dir=str(frontend), supervisor_pid=None if args.detach else os.getpid())
 
-    def spawn(name, command, cwd, child_env=env):
+    def spawn(name, command, cwd, child_env=process_env):
         return spawn_process(state, name, command, cwd, child_env)
 
     pgdata = ROOT / ".cache/fullstack/postgres-data"
@@ -422,7 +497,7 @@ def _start(args, state):
             password_file.unlink(missing_ok=True)
     spawn("postgres", [str(pg / "postgres"), "-D", str(pgdata), "-h", "127.0.0.1", "-p", "5440",
                        "-k", str(LOCAL), "-c", "max_connections=40"], ROOT)
-    pg_env = {**env, "PGHOST": "127.0.0.1", "PGPORT": "5440", "PGUSER": env["POSTGRES_USER"],
+    pg_env = {**process_env, "PGHOST": "127.0.0.1", "PGPORT": "5440", "PGUSER": env["POSTGRES_USER"],
               "PGPASSWORD": env["POSTGRES_PASSWORD"]}
     for _ in range(40):
         ready = subprocess.run([str(pg / "pg_isready"), "-h", "127.0.0.1", "-p", "5440"],
@@ -446,8 +521,10 @@ def _start(args, state):
         subprocess.run([python_backend, "-m", "backend.bootstrap"], cwd=backend, env=env,
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     spawn("backend", [python_backend, "-m", "uvicorn", "backend.main:app", "--app-dir", str(backend),
-                      "--host", "127.0.0.1", "--port", "8010"], backend)
+                      "--host", "127.0.0.1", "--port", "8010"], backend, backend_env)
     wait_http("http://127.0.0.1:8010/health/ready")
+    if args.live:
+        check_platform_backend(env)
     spawn("worker", [python_backend, "-m", "celery", "-A", "backend.tasks.celery_app:celery_app",
                      "worker", "--loglevel=WARNING", "--pool=solo", "--hostname=ict-local@localhost"], backend)
     spawn("beat", [python_backend, "-m", "celery", "-A", "backend.tasks.celery_app:celery_app",
@@ -524,7 +601,11 @@ def seed():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["start", "restart-agent", "stop", "status", "token", "seed"])
-    parser.add_argument("--live", action="store_true", help="Enable configured provider (default Flash); queries can incur provider charges")
+    model_mode = parser.add_mutually_exclusive_group()
+    model_mode.add_argument("--live", action="store_true", default=True,
+                            help="Use the platform backend model (default); queries can incur provider charges")
+    model_mode.add_argument("--extractive", dest="live", action="store_false",
+                            help="Explicit offline mode: retrieve verified excerpts without model calls")
     parser.add_argument("--detach", action="store_true", help="Leave only this project's child services running")
     args = parser.parse_args()
     try:

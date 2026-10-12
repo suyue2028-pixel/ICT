@@ -20,28 +20,54 @@ class Settings(Model):
     retrieval_rank_pool: int = Field(default=32, ge=8, le=100)
     retrieval_vector_threshold: float = Field(default=0.78, ge=0, le=1)
     llm_mode: Literal["extractive", "live", "mock"] = "extractive"
+    # Platform mode keeps supplier credentials in the business backend. Direct
+    # access is an explicit compatibility/development option.
+    llm_transport: Literal["backend", "direct"] = "backend"
+    llm_gateway_url: str = "http://127.0.0.1:8010"
+    llm_service_token: SecretStr = SecretStr("")
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
     llm_key: SecretStr = SecretStr("")
     request_timeout: float = Field(default=30, gt=0, le=300)
     llm_timeout: float = Field(default=20, gt=0)
-    max_llm_calls: int = Field(default=3, ge=0, le=3)
-    max_tool_calls: int = Field(default=8, ge=1, le=8)
+    max_llm_calls: int = Field(default=6, ge=0, le=8)
+    allow_unverified_concepts: bool = True
+    max_tool_calls: int = Field(default=10, ge=1, le=10)
     max_retries: int = Field(default=1, ge=0, le=1)
+    max_retrieval_rounds: int = Field(default=3, ge=1, le=3)
+    external_tools_enabled: bool = False
 
     @model_validator(mode="after")
     def valid(self):
         parsed = urlsplit(self.llm_base_url)
+        try:
+            parsed.port
+        except ValueError:
+            raise ValueError("invalid LLM base URL port") from None
         if (not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment
                 or parsed.scheme not in {"http", "https"}
                 or (parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"})):
             raise ValueError("LLM base URL must use HTTPS or loopback HTTP without embedded credentials")
+        gateway = urlsplit(self.llm_gateway_url)
+        try:
+            gateway.port
+        except ValueError:
+            raise ValueError("invalid LLM gateway URL port") from None
+        if (not gateway.hostname or gateway.username or gateway.password or gateway.query or gateway.fragment
+                or gateway.scheme not in {"http", "https"}
+                or (gateway.scheme == "http" and gateway.hostname not in {"localhost", "127.0.0.1", "::1"})):
+            raise ValueError("LLM gateway URL must use HTTPS or loopback HTTP without embedded credentials")
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap must be below chunk size")
         if self.embedding_provider == "e5" and not re.fullmatch(r"[a-f0-9]{40}", self.embedding_revision):
             raise ValueError("E5 revision must be an immutable 40-character model commit")
-        if self.llm_mode == "live" and (not self.llm_key.get_secret_value() or not self.llm_model):
-            raise ValueError("live mode requires RAG_LLM_KEY and RAG_LLM_MODEL")
+        if self.llm_mode == "live":
+            if self.llm_transport == "direct" and (not self.llm_key.get_secret_value() or not self.llm_model):
+                raise ValueError("direct live mode requires RAG_LLM_KEY and RAG_LLM_MODEL")
+            if self.llm_transport == "backend" and not self.llm_service_token.get_secret_value():
+                raise ValueError("platform live mode requires RAG_BACKEND_TOOL_TOKEN or RAG_LLM_SERVICE_TOKEN")
+            if self.llm_transport == "backend" and self.llm_key.get_secret_value():
+                raise ValueError("platform live mode must not receive a supplier API key")
         return self
 
     @classmethod
@@ -50,13 +76,27 @@ class Settings(Model):
             "RAG_DB_PATH": "db_path", "RAG_EMBEDDING_PROVIDER": "embedding_provider",
             "RAG_EMBEDDING_MODEL": "embedding_model", "RAG_EMBEDDING_REVISION": "embedding_revision",
             "RAG_EMBEDDING_DEVICE": "embedding_device", "RAG_LLM_MODE": "llm_mode",
+            "RAG_LLM_TRANSPORT": "llm_transport", "RAG_LLM_GATEWAY_URL": "llm_gateway_url",
+            "RAG_LLM_SERVICE_TOKEN": "llm_service_token",
             "RAG_RETRIEVAL_RANK_POOL": "retrieval_rank_pool",
             "RAG_RETRIEVAL_VECTOR_THRESHOLD": "retrieval_vector_threshold",
             "RAG_LLM_BASE_URL": "llm_base_url", "RAG_LLM_MODEL": "llm_model", "RAG_LLM_KEY": "llm_key",
             "RAG_TIMEOUT": "request_timeout", "RAG_LLM_TIMEOUT": "llm_timeout",
+            "RAG_MAX_LLM_CALLS": "max_llm_calls", "RAG_MAX_TOOL_CALLS": "max_tool_calls",
+            "RAG_MAX_RETRIEVAL_ROUNDS": "max_retrieval_rounds",
+            "RAG_EXTERNAL_TOOLS_ENABLED": "external_tools_enabled",
+            "RAG_ALLOW_UNVERIFIED_CONCEPTS": "allow_unverified_concepts",
         }
         values = {v: os.environ[k] for k, v in mapping.items() if k in os.environ}
+        if "llm_gateway_url" not in values and os.environ.get("RAG_BACKEND_URL"):
+            values["llm_gateway_url"] = os.environ["RAG_BACKEND_URL"]
+        if not values.get("llm_service_token") and os.environ.get("RAG_BACKEND_TOOL_TOKEN"):
+            values["llm_service_token"] = os.environ["RAG_BACKEND_TOOL_TOKEN"]
         key_file = os.environ.get("RAG_LLM_KEY_FILE")
+        if values.get("llm_transport", "backend") == "backend":
+            if key_file or values.get("llm_key"):
+                raise ValueError("supplier keys belong to the backend; use explicit RAG_LLM_TRANSPORT=direct for legacy mode")
+            key_file = None
         if key_file:
             if values.get("llm_key"):
                 raise ValueError("configure RAG_LLM_KEY or RAG_LLM_KEY_FILE, not both")
