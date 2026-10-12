@@ -1,144 +1,169 @@
-import { computed, onMounted, shallowRef, watch } from 'vue'
-import axios from 'axios'
-import { apiGet, ensureSession, http, requestFailure, UserAuthorizationRequired, userToken } from '@/api/http'
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { ensureSession, errorMessage, http, userToken, requestFailure, UserAuthorizationRequired } from '@/api/http'
 import { normalizeWorkflow, normalizeToolTrace, returnedWorkflow } from '@/utils/answerWorkflow'
-import { generationModeLabel as modeLabel, responseKind, UNVERIFIED_EXPLANATION_LABEL } from '@/utils/chatPresentation'
+import { generationModeLabel, responseKind, UNVERIFIED_EXPLANATION_LABEL } from '@/utils/chatPresentation'
 import { readFailedQuestion, saveFailedQuestion } from '@/utils/queryDraft'
 import { useIntelligenceStore } from '@/stores/intelligence'
-import type { AnswerCoverage, AnswerStatus, ChatMessage, IntelligenceItem, ResponseKind, RetrievalMode } from '@/types'
-interface Answer {
-  status: AnswerStatus; answer: string; session_id: string; request_id: string;
-  partial_errors: string[]; retrieval_mode: RetrievalMode; response_kind?: ResponseKind;
-  coverage?: AnswerCoverage; workflow?: unknown; tool_trace?: unknown; invocation_id?: string;
-  question_type?: string | null; requirement_coverage?: unknown; retrieval_summary?: unknown; limitations?: unknown;
-  sources: { document_id: string; title: string }[];
-  evidence: NonNullable<ChatMessage['evidence']>;
-}
+import { useChatHistory } from './useChatHistory'
+import { chatStorageKey, savedMetadata, savedSelection, saveMetadata, saveSelection } from '@/utils/chatHistoryStorage'
+import type { AnswerMetadata, ChatAnswer, SavedSession } from '@/api/chat'
+import type { ChatMessage, IntelligenceItem } from '@/types'
+
 const clock = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' })
+const welcome = (): ChatMessage[] => [{ id: 'welcome', role: 'assistant', content:
+  '你好！输入漏洞编号或安全问题，我会帮你查找资料并保留来源。也可以从历史会话继续之前的对话。', time: '', responseKind: 'conversation' }]
+
 export function useDemoChat(getItems: () => IntelligenceItem[]) {
   const store = useIntelligenceStore()
-  const messages = shallowRef<ChatMessage[]>([{ id: 'welcome', role: 'assistant', content:
-    '你好！可以先聊聊你想了解什么，也可以输入漏洞编号或 AI 安全问题。我会为资料问答保留来源。', time: '', responseKind: 'conversation' }])
-  const sending = shallowRef(false), sessionId = shallowRef<string | null>(null)
   const failedQuestion = shallowRef(readFailedQuestion(store.isDemo))
-  let sequence = 0, context = 0
-  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'retrievalMode' | 'status' | 'coverage' | 'workflow' | 'toolTrace' | 'invocationId' | 'requestId'>
-  let metadata: Metadata[] = []
-  const metadataKey = (id: string) => `ict:answer-meta:${id}`
-  function remember(id: string, row: Metadata) {
-    metadata.push(row)
-    try { sessionStorage.setItem(metadataKey(id), JSON.stringify(metadata)) } catch { /* Storage can be disabled. */ }
+  const history = useChatHistory(() => store.isDemo)
+  const messages = shallowRef<ChatMessage[]>(welcome())
+  const sending = shallowRef(false), restoring = shallowRef(false), conversationError = shallowRef('')
+  const ready = shallowRef(false)
+  const sessionId = shallowRef<string | null>(null)
+  let context = 0, storageKey = '', metadata: AnswerMetadata[] = []
+  const legacyKey = () => `ict:session:${store.isDemo ? 'demo' : 'real'}`
+
+  function modeLabel(mode?: string | null, calls?: number | null) {
+    if (mode === 'mock') return '测试替身结果'
+    if (mode === 'extractive') return calls && calls > 0 ? '资料摘录 · 大模型调用后降级' : '资料摘录 · 未调用大模型生成'
+    if (mode === 'live') return '大模型回答'
+    return '历史消息 · 生成模式未记录'
   }
-  const sessionKey = () => `ict:session:${store.isDemo ? 'demo' : 'real'}`
-  function clearView() {
-    context += 1
-    sessionId.value = null
-    messages.value = [{ id: 'welcome', role: 'assistant', content: '你好！可以直接交流，也可以在当前资料范围输入安全问题。', time: '', responseKind: 'conversation' }]
-    metadata = []
-    failedQuestion.value = readFailedQuestion(store.isDemo)
+
+  function restoreMessages(session: SavedSession) {
+    let assistantIndex = 0
+    return session.messages.map((row, index): ChatMessage => {
+      const date = row.created_at ? new Date(row.created_at) : null
+      const saved = row.role === 'assistant' ? metadata[assistantIndex++] : undefined
+      const evidence = row.citations || []
+      const kind = row.response_kind || (row.retrieval_mode === 'conversation' ? 'conversation' : saved?.responseKind || 'knowledge')
+      const retrievalMode = row.retrieval_mode || saved?.retrievalMode
+      const restoredMode = retrievalMode === 'llm_unverified' ? UNVERIFIED_EXPLANATION_LABEL
+        : kind === 'knowledge' && !evidence.length && saved?.generationMode?.startsWith('资料摘录')
+          ? '历史消息 · 未记录可核验引用'
+          : row.generation_mode ? modeLabel(row.generation_mode, row.llm_http_calls) : saved?.generationMode || modeLabel()
+      return { id: row.id || `history-${index}`, role: row.role, content: row.content, persisted: true,
+        time: date && Number.isFinite(date.getTime()) ? clock.format(date) : '',
+        generationMode: row.role === 'assistant' ? restoredMode : undefined,
+        responseKind: row.role === 'assistant' ? kind : undefined,
+        retrievalMode: row.role === 'assistant' ? retrievalMode : undefined,
+        status: saved?.status, coverage: saved?.coverage,
+        workflow: normalizeWorkflow(saved?.workflow, evidence.length), toolTrace: normalizeToolTrace(saved?.toolTrace),
+        invocationId: saved?.invocationId, requestId: saved?.requestId,
+        warnings: saved?.warnings, evidence,
+        citations: evidence.filter((item, i, rows) => rows.findIndex(other => other.document_id === item.document_id
+          && other.content_hash === item.content_hash) === i).map(item => ({ intelligenceId: item.document_id,
+          contentHash: item.content_hash, label: saved?.citations?.find(citation => citation.intelligenceId === item.document_id
+            && citation.contentHash === item.content_hash)?.label || getItems().find(doc => doc.id === item.document_id)?.title || '原始来源文档' })) }
+    })
   }
-  async function restore() {
-    const version = context, key = sessionKey()
-    await ensureSession()
-    if (version !== context) return
-    const stored = sessionStorage.getItem(key)
-    sessionId.value = stored
-    if (!stored || !userToken.value) return
+
+  async function openSession(id: string) {
+    if (sending.value) return
+    const version = ++context
+    restoring.value = true; conversationError.value = ''
     try {
-      const result = await apiGet<{ is_demo: boolean; messages: { id?: string; role: 'user' | 'assistant'; content: string;
-        citations: Answer['evidence']; retrieval_mode?: RetrievalMode | null; response_kind?: ResponseKind; created_at?: string }[] }>(`/agent/sessions/${stored}`)
+      const session = await history.open(id)
       if (version !== context) return
-      if (result.is_demo !== store.isDemo) throw new Error('session_scope_mismatch')
-      try { metadata = JSON.parse(sessionStorage.getItem(metadataKey(stored)) || '[]') as Metadata[]
-        if (!Array.isArray(metadata)) metadata = [] } catch { metadata = [] }
-      let assistantIndex = 0
-      if (result.messages.length) messages.value = result.messages.map((row, index) => {
-        const date = row.created_at ? new Date(row.created_at) : null
-        const saved = row.role === 'assistant' ? metadata[assistantIndex++] : undefined
-        const kind = row.response_kind || (row.retrieval_mode === 'conversation' ? 'conversation' : saved?.responseKind || 'knowledge')
-        const retrievalMode = row.retrieval_mode || saved?.retrievalMode
-        const restoredMode = retrievalMode === 'llm_unverified' ? UNVERIFIED_EXPLANATION_LABEL : kind === 'knowledge' && !row.citations.length && saved?.generationMode?.startsWith('资料摘录')
-          ? '历史消息 · 未记录可核验引用' : saved?.generationMode || '历史消息 · 生成模式未记录'
-        return { id: row.id || `history-${index}`, role: row.role,
-          content: row.content, time: date && Number.isFinite(date.getTime()) ? clock.format(date) : '',
-          generationMode: row.role === 'assistant' ? restoredMode : undefined,
-          responseKind: row.role === 'assistant' ? kind : undefined,
-          retrievalMode: row.role === 'assistant' ? retrievalMode : undefined,
-          status: saved?.status,
-          coverage: saved?.coverage,
-          workflow: normalizeWorkflow(saved?.workflow, row.citations.length),
-          toolTrace: normalizeToolTrace(saved?.toolTrace),
-          invocationId: saved?.invocationId, requestId: saved?.requestId,
-          warnings: saved?.warnings,
-          evidence: row.citations, citations: row.citations.filter((item, index, rows) => rows.findIndex(x => x.document_id === item.document_id && x.content_hash === item.content_hash) === index).map(item => ({ intelligenceId: item.document_id,
-            contentHash: item.content_hash, label: saved?.citations?.find(x => x.intelligenceId === item.document_id && x.contentHash === item.content_hash)?.label || getItems().find(x => x.id === item.document_id)?.title || '原始来源文档' })) }
-      })
-      while (metadata.length < assistantIndex) metadata.push({})
+      metadata = savedMetadata(storageKey, id)
+      messages.value = restoreMessages(session)
+      while (metadata.length < session.messages.filter(row => row.role === 'assistant').length) metadata.push({})
+      sessionId.value = id; saveSelection(storageKey, id)
     } catch (cause) {
-      // A stale credential or transient failure must not discard conversation history.
-      if (version === context && axios.isAxiosError(cause) && [403, 404].includes(cause.response?.status || 0)) {
-        sessionId.value = null; sessionStorage.removeItem(key)
-      }
-    }
+      if (version === context) conversationError.value = `无法打开这段历史会话。${errorMessage(cause)}`
+    } finally { if (version === context) restoring.value = false }
   }
+
   function reset() {
-    sessionStorage.removeItem(sessionKey())
-    clearView()
+    if (sending.value || restoring.value) return
+    context++; sessionId.value = null; messages.value = welcome(); metadata = []; conversationError.value = ''
+    if (storageKey) saveSelection(storageKey, null)
+    try { sessionStorage.removeItem(legacyKey()) } catch { /* Optional selection cache. */ }
   }
-  watch(() => store.isDemo, () => { clearView(); void restore() })
-  onMounted(() => { void restore() })
-  function coverage(answer: Answer): AnswerCoverage | undefined {
+
+  watch([() => store.isDemo, userToken], async ([scope, token]) => {
+    const version = ++context
+    failedQuestion.value = readFailedQuestion(scope)
+    messages.value = welcome(); sessionId.value = null; metadata = []; storageKey = ''
+    sending.value = false; restoring.value = false; ready.value = false; conversationError.value = ''; history.clear()
+    if (!token) { await ensureSession(); return }
+    try {
+      const key = await chatStorageKey(token, scope)
+      if (version !== context) return
+      storageKey = key
+      ready.value = true
+      void history.loadMore()
+      let selected = savedSelection(key)
+      if (selected === null) {
+        try { selected = sessionStorage.getItem(legacyKey()) } catch { /* No legacy selection. */ }
+      }
+      if (selected && selected !== 'new') await openSession(selected)
+    } catch (cause) { if (version === context) conversationError.value = errorMessage(cause) }
+  }, { immediate: true })
+
+  onBeforeUnmount(() => { context++; history.clear() })
+
+  function answerMode(answer: ChatAnswer, headers: Record<string, unknown>) {
+    return generationModeLabel(answer, { ...headers,
+      'x-rag-answer-mode': answer.generation_mode ?? headers['x-rag-answer-mode'],
+      'x-rag-llm-calls': answer.llm_http_calls ?? headers['x-rag-llm-calls'],
+    })
+  }
+  function coverage(answer: ChatAnswer) {
     if (!answer.coverage) return undefined
     const topics = (value: unknown): string[] => Array.isArray(value)
-      ? [...new Set(value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()))].slice(0, 12)
-      : []
+      ? [...new Set(value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()))].slice(0, 12) : []
     return { answered_topics: topics(answer.coverage.answered_topics), missing_topics: topics(answer.coverage.missing_topics) }
   }
-  function answerWarnings(answer: Answer) {
-    return answer.partial_errors.filter(x => !x.startsWith('generation_mode:') && !x.startsWith('conversation_local_reply:') && !x.startsWith('relevance_filter:'))
-  }
+
   async function submit(question: string) {
     const clean = question.trim()
-    if (!clean || sending.value) return
-    const version = context, scope = store.isDemo, key = sessionKey(), previousSession = sessionId.value
-    sending.value = true
-    messages.value = [...messages.value, { id: `u-${++sequence}`, role: 'user', content: clean, time: clock.format(new Date()) }]
+    if (!clean || sending.value || restoring.value || !storageKey) return
+    const version = context, scope = store.isDemo, questionId = crypto.randomUUID()
+    saveFailedQuestion(scope, clean)
+    sending.value = true; conversationError.value = ''
+    messages.value = [...messages.value.filter(row => row.id !== 'welcome'), {
+      id: questionId, role: 'user', content: clean, time: clock.format(new Date()), persisted: false,
+    }]
     try {
       await ensureSession()
       if (version !== context) return
       if (!userToken.value) throw new UserAuthorizationRequired()
-      const response = await http.post<Answer>('/agent/query', { query: clean, session_id: previousSession,
+      const response = await http.post<ChatAnswer>('/agent/query', { query: clean, session_id: sessionId.value,
         is_demo: scope }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
+      if (version !== context) return
       const answer = response.data
-      sessionStorage.setItem(key, answer.session_id)
-      if (version !== context) return
-      sessionId.value = answer.session_id
       failedQuestion.value = ''; saveFailedQuestion(scope, '')
-      const workflow = returnedWorkflow(answer, answer.evidence.length), toolTrace = normalizeToolTrace(answer.tool_trace)
-      remember(answer.session_id, { generationMode: modeLabel(answer, response.headers),
+      sessionId.value = answer.session_id
+      const presentation: AnswerMetadata = { generationMode: answerMode(answer, response.headers),
         responseKind: responseKind(answer), retrievalMode: answer.retrieval_mode,
         status: answer.status, coverage: coverage(answer),
-        workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
-        warnings: answerWarnings(answer),
+        workflow: returnedWorkflow(answer, answer.evidence.length), toolTrace: normalizeToolTrace(answer.tool_trace),
+        invocationId: answer.invocation_id, requestId: answer.request_id,
+        warnings: answer.partial_errors.filter(note => !['generation_mode:', 'conversation_local_reply:', 'relevance_filter:'].some(prefix => note.startsWith(prefix))),
         citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
-          contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) })
-      messages.value = [...messages.value, { id: `a-${++sequence}`, role: 'assistant', content: answer.answer,
-        time: clock.format(new Date()), evidence: answer.evidence,
-        generationMode: modeLabel(answer, response.headers),
-        responseKind: responseKind(answer), retrievalMode: answer.retrieval_mode,
-        status: answer.status, coverage: coverage(answer),
-        workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
-        warnings: answerWarnings(answer),
-        citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
-          contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) }]
+          contentHash: source.content_hash || answer.evidence.find(row => row.document_id === source.document_id)?.content_hash,
+          label: source.title })) }
+      metadata.push(presentation)
+      saveMetadata(storageKey, answer.session_id, metadata); saveSelection(storageKey, answer.session_id)
+      messages.value = [...messages.value.map(row => row.id === questionId ? { ...row, persisted: true } : row), {
+        id: crypto.randomUUID(), role: 'assistant', content: answer.answer, persisted: true,
+        time: clock.format(new Date()), evidence: answer.evidence, requestId: answer.request_id, ...presentation,
+      }]
+      history.remember(answer.session_id, messages.value.filter(row => row.persisted), new Date().toISOString())
     } catch (cause) {
+      if (scope === store.isDemo) failedQuestion.value = readFailedQuestion(scope)
       if (version !== context) return
-      failedQuestion.value = clean; saveFailedQuestion(scope, clean)
       const failure = requestFailure(cause)
-      messages.value = [...messages.value, { id: `error-${++sequence}`, role: 'assistant',
-        content: failure.message, failureKind: failure.kind,
-        time: clock.format(new Date()), status: 'request_failed', generationMode: failure.heading }]
-    } finally { sending.value = false }
+      messages.value = [...messages.value, { id: crypto.randomUUID(), role: 'assistant',
+        content: failure.message, failureKind: failure.kind, status: 'request_failed',
+        time: clock.format(new Date()), generationMode: failure.heading, persisted: false }]
+    } finally { if (version === context) sending.value = false }
   }
-  return { messages: computed(() => messages.value), sending: computed(() => sending.value), sessionId, failedQuestion, submit, reset, userToken }
+
+  return { messages: computed(() => messages.value), sending: computed(() => sending.value),
+    ready: computed(() => ready.value),
+    restoring: computed(() => restoring.value), conversationError: computed(() => conversationError.value),
+    sessionId: computed(() => sessionId.value), history, failedQuestion, submit, reset, openSession, userToken }
 }

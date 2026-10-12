@@ -4,10 +4,14 @@
   color: #000000;
   font-size: 14px;
   line-height: 1.5;
-  background: #ffffff;
+  background: var(--page-background);
   color-scheme: light;
   font-variant-numeric: tabular-nums;
   --ink: #000000;
+  --page-bg: #ffffff;
+  --page-background: #ffffff;
+  --panel-background: #ffffff;
+  --chrome-background: #ffffff;
   --muted: #000000;
   --line: #000000;
   --link: #000000;
@@ -38,7 +42,7 @@ body,
 body {
   min-width: 320px;
   padding: 0;
-  background: #ffffff;
+  background: var(--page-background);
   -webkit-tap-highlight-color: #7171711a;
 }
 button,
@@ -99,7 +103,7 @@ button:disabled {
   grid-template-rows: auto 1fr;
   min-height: 100vh;
   margin: 0 auto;
-  background: #ffffff;
+  background: var(--page-background);
 }
 .sidebar {
   grid-column: 1;
@@ -1561,6 +1565,13 @@ button:disabled {
   background: transparent;
   color: var(--ink);
   height: 36px;
+}
+.workspace-search input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.workspace-search:focus-within {
+  box-shadow: 0 0 0 1px var(--ink);
 }
 .workspace-search input::placeholder {
   color: #898989;

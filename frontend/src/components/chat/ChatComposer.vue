@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{ modelValue: string; disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
-  suggestions: () => ['你能做什么？'],
-  suggestionsHint: '可以先了解助手的能力，也可以直接输入问题。',
-})
+const props = defineProps<{ modelValue: string; disabled: boolean; sending: boolean }>()
 const emit = defineEmits<{ submit: [question: string]; 'update:modelValue': [value: string] }>()
 const question = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
 function submit(value = question.value) {
@@ -23,18 +20,6 @@ function enter(event: KeyboardEvent) {
 
 <template>
   <div class="chat-compose">
-    <div class="suggestions" aria-label="示例问题">
-      <button
-        v-for="sample in suggestions"
-        :key="sample"
-        type="button"
-        :disabled="disabled || sending"
-        @click="submit(sample)"
-      >
-        {{ sample }}
-      </button>
-    </div>
-    <small v-if="suggestionsHint">{{ suggestionsHint }}</small>
     <form @submit.prevent="submit()">
       <label class="sr-only" for="chat-question">输入问题</label
       ><textarea

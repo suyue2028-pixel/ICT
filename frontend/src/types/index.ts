@@ -110,6 +110,7 @@ export interface AnswerToolTrace {
   document_ids?: string[]
 }
 export interface ChatMessage {
+  persisted?: boolean
   id: string
   role: 'user' | 'assistant'
   content: string

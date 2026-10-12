@@ -14,7 +14,7 @@ function revealEvidence(messageId: string, id: string) {
   element?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
 }
 watch(
-  () => props.messages.length,
+  () => [props.messages.at(-1)?.id, props.sending],
   async () => {
     await nextTick()
     feed.value?.scrollTo({
@@ -97,3 +97,32 @@ watch(
     <div v-if="sending" class="thinking" role="status">请求处理中，正在等待服务端回答与执行记录…</div>
   </div>
 </template>
+
+<style scoped>
+
+.message-feed .message-row { flex-direction: row; margin-bottom: 20px; }
+
+.message-feed .message-row.user { justify-content: flex-end; }
+
+.message-feed .message-row.assistant { justify-content: flex-start; }
+
+.message-feed .message-row .message-body { width: fit-content; min-width: 0; border: 1px solid #000; border-radius: 16px; padding: 16px 18px; background: #fff; text-align: left; overflow-wrap: anywhere; }
+
+.message-feed .message-row.user .message-body { max-width: 84%; border-radius: 16px 16px 4px 16px; }
+
+.message-feed .message-row.assistant .message-body { max-width: 92%; border-radius: 16px 16px 16px 4px; }
+
+.message-feed .message-row .message-bubble { background: transparent; border: 0; padding: 0; color: #000; }
+
+.message-feed .message-row .message-top { display: flex; align-items: center; justify-content: flex-start; padding-bottom: 9px; margin-bottom: 10px; border-bottom: 1px solid #000; }
+
+
+.message-top time { margin-left: auto; }
+
+.message-feed .welcome-message { margin-top: 6px; }
+
+.message-feed .thinking { margin: 0 0 12px; text-align: right; }
+
+@media (max-width: 760px) { .message-feed .message-row .message-body { padding: 12px; } .message-feed .message-row.user .message-body { max-width: 86%; } .message-feed .message-row.assistant .message-body { max-width: 94%; } }
+
+</style>

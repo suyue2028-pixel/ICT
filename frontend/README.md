@@ -1,4 +1,4 @@
-﻿# AI 安全知识情报系统 · 前端
+# AI 安全知识情报系统 · 前端
 
 Vue 3、TypeScript、Vite、Pinia、Element Plus、Axios 和 ECharts 前端。当前版本使用小组后端接口，真实资料与显式虚构样本分开查询；网络失败不会替换成模拟成功数据。
 
@@ -8,6 +8,7 @@ Node.js 要求：^22.18.0 或 >=24.12.0。在本仓库 frontend 目录执行：
 
 ```powershell
 npm.cmd ci
+npm.cmd run test:unit
 npm.cmd run type-check
 npm.cmd run build
 npm.cmd run dev
@@ -22,9 +23,13 @@ $env:ICT_BACKEND_ORIGIN = 'http://127.0.0.1:8010'
 npm.cmd run dev
 ```
 
-问答需要后端签发的普通短期用户令牌。开发可设置 ICT_LOCAL_SESSION_FILE 指向本机会话 JSON（access_token、expires_at、is_demo），或使用页面提供的会话配置。会话文件不提交仓库。/__local/session 仅在本地开发启用并校验 Host、Origin；禁止把管理员、Agent 服务或模型密钥放入 VITE_ 变量。
+问答需要后端签发的普通短期用户令牌。开发可设置 ICT_LOCAL_SESSION_FILE 指向本机会话 JSON（access_token、expires_at、is_demo），或在 `/login` 用户授权页填写普通短期用户令牌并由后端验证。会话文件不提交仓库。/__local/session 仅在本地开发启用并校验 Host、Origin；禁止把管理员、Agent 服务或模型密钥放入 VITE_ 变量。
 
 ## 页面
+
+可追溯问答使用带尖角的大话语框，框内助手回答靠左、用户消息靠右；框外显示黑白小猫形象。输入区只保留问题输入框和发送按钮。新建会话保留已由后端保存的对话；可选择旧会话继续追问。历史使用普通用户身份读取 `/agent/sessions` 与 `/agent/sessions/{id}`，真实资料和虚构样本分开显示。选择及回答模式等展示信息缓存在当前浏览器，正文仍由后端保存。历史加载失败显示错误并支持刷新。小猫是页面形象，等待回答时有轻微动画。
+
+2026-10-12 合并版本通过 20 项单元测试、类型检查与生产构建。浏览器使用隔离的合成接口数据验证了新建会话保留历史、切回旧会话、刷新恢复、引用展示、模型认证失败不清除用户授权、用户授权过期后草稿保留与重试，以及桌面/手机布局和搜索框焦点。此次未启动实际后端，以上不等于真实 RAG 或生成模型联调通过。历史能否长期保存取决于后端账户和数据库；更换后端或用户账户会看到相应账户的记录。
 
 | 路径 | 用途 |
 | --- | --- |
@@ -32,6 +37,7 @@ npm.cmd run dev
 | /intelligence | 情报搜索、风险筛选与分页 |
 | /intelligence/{document_id} | 情报详情、八类富化字段、关键原文摘句、来源链接和版本证据 |
 | /graph | 情报分类；七类来源及来源关系、八类富化筛选，已替换原图谱画布 |
+| /login | 验证管理员签发的短期用户令牌，授权后返回问答；尚无账号密码登录 |
 | /qa | 多轮问答、回答模式、来源引用及原文版本追溯 |
 
 运行状态页面已移除，旧 /tasks 地址跳转首页。界面采用黑白风格，保留风险等内容的语义颜色。
@@ -41,6 +47,8 @@ npm.cmd run dev
 富化分为受影响产品与版本、CWE、CVSS、修复信息、技术分析、公开 POC 元数据、关联论文、公开利用状态。字段与 document_id/content_hash 对应，不混入历史版本；缺失显示暂无数据，模型结果保留待审核标记。POC 只展示元数据，不执行。论文展示题目、关键证据句和原文链接，不展示全文。来源关系展示分类、来源、记录、CVE 和原文链接，不声称进行了关系推理。
 
 建议演示：首页展开指标 → 情报详情查看证据 → 情报分类切换来源与富化 → 问答追问 → 点击引用核对原文。
+
+基础对话与安全资料回答分别展示；模型一般解释标记为未经实时来源核验。证据覆盖、工具记录及服务错误仅按实际返回内容显示。失败问题可重新放回输入框或重试，授权跳转保留草稿。
 
 ## 当前验证与限制
 
@@ -56,7 +64,9 @@ npm.cmd run dev
 - /documents：is_demo、page、page_size 等查询参数；确认筛选、总数、document_id、source_id、external_id、CVE、发布日期和风险字段。
 - /documents/{id}：正文、原文 URL、版本 content_hash 与 revisions；引用必须能定位保存版本。
 - /documents/{id}/enrichment：document_id、content_hash、source、external；八类字段的 state/value/evidence_id，以及 extraction_method、review_state、证据 locator/excerpt。
-- /agent/query：query、session_id、is_demo；回答、sources、evidence、回答模式及错误信息。
+- /agent/query：query、session_id、is_demo；回答、sources、evidence、response_kind、retrieval_mode、status、coverage、question_type、requirement_coverage、retrieval_summary、limitations、tool_trace 和错误分类；缺失工作流字段时兼容旧响应。
+- /auth/me：验证短期用户令牌；旧后端不提供该接口时，用受保护的会话列表接口验证。
+- /agent/sessions：page、page_size；会话列表、total、is_demo、provider、turn_count、updated_at。
 - /agent/sessions/{id}：历史消息和引用；普通用户令牌签发、过期与生产登录方式需统一。
 
 富化响应结构示意（字段缺失明确标记，不补造值）：

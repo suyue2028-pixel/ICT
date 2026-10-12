@@ -29,9 +29,15 @@ defineEmits<{ select: [key: OverviewMetricKey] }>()
 </template>
 
 <style scoped>
+
 .metric-card-button { text-align: left; cursor: pointer; color: #000; }
+
 .metric-card-button:hover { outline: 1px solid #000; outline-offset: 2px; }
+
 .metric-card-button.is-selected { outline: 2px solid #000; outline-offset: 2px; }
+
 .metric-card-button:focus-visible { outline: 2px solid #000; outline-offset: 4px; }
+
 .metric-action { display: inline-block; margin-top: 12px; color: #000; font-size: 11px; text-decoration: underline; }
+
 </style>

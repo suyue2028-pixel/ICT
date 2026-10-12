@@ -66,10 +66,10 @@ function changePage(value: number) { page.value = Math.max(1, Math.min(value, pa
 </template>
 
 <style scoped>
-.metric-details { background: #fff; color: #000; border: 1px solid #000; }
-.details-close { border: 1px solid #000; background: #fff; color: #000; border-radius: 18px; padding: 7px 12px; font-size: 12px; flex-shrink: 0; }
+.metric-details { background: var(--panel-background); color: #000; border: 1px solid #000; }
+.details-close { border: 1px solid #000; background: var(--panel-background); color: #000; border-radius: 18px; padding: 7px 12px; font-size: 12px; flex-shrink: 0; }
 .metric-groups { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; }
-.metric-groups button { border: 1px solid #000; background: #fff; color: #000; border-radius: 16px; padding: 7px 12px; font-size: 12px; overflow-wrap: anywhere; max-width: 100%; }
+.metric-groups button { border: 1px solid #000; background: var(--panel-background); color: #000; border-radius: 16px; padding: 7px 12px; font-size: 12px; overflow-wrap: anywhere; max-width: 100%; }
 .metric-groups button.active { background: #000; color: #fff; }
 .metric-detail-note, .metric-result-count { margin: 10px 0; font-size: 12px; color: #000; line-height: 1.7; }
 .details-close:focus-visible, .metric-groups button:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
