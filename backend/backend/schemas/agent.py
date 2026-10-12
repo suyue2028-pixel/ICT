@@ -59,6 +59,24 @@ class AnswerCoverage(StrictModel):
         default_factory=list, max_length=12)
 
 
+class RequirementCoverage(StrictModel):
+    requirement_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    label: str = Field(min_length=1, max_length=120)
+    status: Literal["supported", "partial", "conflicting", "missing"]
+    evidence_ids: list[Annotated[str, Field(pattern=r"^[1-9][0-9]?$", strict=True)]] = Field(
+        default_factory=list, max_length=50)
+    reason: str = Field(default="", max_length=500)
+
+
+class RetrievalSummary(StrictModel):
+    rounds: int = Field(default=0, ge=0, le=4, strict=True)
+    stop_reason: str = Field(min_length=1, max_length=80, pattern=r"^[a-z_]+$")
+    initial_tools: list[Annotated[str, Field(min_length=1, max_length=80, strict=True)]] = Field(
+        default_factory=list, max_length=20)
+    supplemental_tools: list[Annotated[str, Field(min_length=1, max_length=80, strict=True)]] = Field(
+        default_factory=list, max_length=20)
+
+
 class AgentAnswer(StrictModel):
     _rag_headers: dict[str, str] = PrivateAttr(default_factory=dict)
     schema_version: Literal["1"]
@@ -66,6 +84,11 @@ class AgentAnswer(StrictModel):
     answer: str = Field(min_length=1, max_length=12000)
     response_kind: Literal["knowledge", "conversation"] = "knowledge"
     coverage: AnswerCoverage = Field(default_factory=AnswerCoverage)
+    question_type: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"^[a-z_]+$")
+    requirement_coverage: list[RequirementCoverage] = Field(default_factory=list, max_length=40)
+    retrieval_summary: RetrievalSummary | None = None
+    limitations: list[Annotated[str, Field(min_length=1, max_length=500, strict=True)]] = Field(
+        default_factory=list, max_length=20)
     sources: list[AgentSource] = Field(max_length=30)
     cve_ids: list[str] = Field(max_length=100)
     risk_level: Literal["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
@@ -73,7 +96,7 @@ class AgentAnswer(StrictModel):
     tool_calls: list[str] = Field(max_length=30)
     tool_trace: list[ToolTrace] = Field(default_factory=list, max_length=30)
     partial_errors: list[str] = Field(default_factory=list, max_length=20)
-    retrieval_mode: Literal["keyword", "keyword_fallback", "semantic", "hybrid", "structured", "conversation"]
+    retrieval_mode: Literal["keyword", "keyword_fallback", "semantic", "hybrid", "structured", "conversation", "llm_unverified"]
 
     @field_validator("cve_ids")
     @classmethod

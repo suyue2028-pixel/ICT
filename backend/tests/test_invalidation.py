@@ -29,3 +29,14 @@ def test_logical_invalidation_is_idempotent_and_retains_history(db, monkeypatch,
     event = db.get(KnowledgeEvent, first["event_id"])
     # External consumers must acknowledge deletion themselves; local maintenance cannot claim it.
     assert event.operation == "delete" and event.status == expected_status
+
+
+def test_external_index_tombstone_requires_agent_confirmation(db, monkeypatch):
+    settings = get_settings().model_copy(update={"index_provider": "external"})
+    monkeypatch.setattr("backend.services.jobs.get_settings", lambda: settings)
+    _, document = evidence_document(db)
+    result = invalidate_document(document.id, db)
+    assert maintain_index_events(db, None) == {"sent": 0, "reason": "external_index_provider"}
+    event = db.get(KnowledgeEvent, result["event_id"])
+    assert event.operation == "delete" and event.status == "pending"
+    assert document.deleted_at is not None

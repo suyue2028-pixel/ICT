@@ -2,6 +2,7 @@
 from uuid import uuid4
 from datetime import timedelta
 from types import SimpleNamespace
+import json as jsonlib
 
 import httpx
 import pytest
@@ -22,6 +23,19 @@ from backend.api.v1.ai import ask_external, write_enrichment
 from backend.api.v1.documents import document_enrichment
 from backend.services.pipeline import ingest_batch
 from backend.services.jobs import create_task, maintain_jobs, utc_now
+
+
+def platform_settings():
+    return SimpleNamespace(deepseek_api_key=SecretStr("test-only-key"), deepseek_model="deepseek-flash",
+        ai_service_url=None, platform_llm_configured=True, llm_provider="deepseek",
+        platform_llm_model="deepseek-flash", platform_llm_base_url="https://api.deepseek.com",
+        llm_api_key=None, llm_api_key_file=None, dashscope_api_key=None, llm_timeout_seconds=30, llm_max_attempts=2)
+
+
+def platform_transport(monkeypatch, handler):
+    from backend.services.platform_llm import PlatformLLM
+    monkeypatch.setattr("backend.api.v1.ai.PlatformLLM", lambda config:
+        PlatformLLM(config, transport=httpx.MockTransport(handler)))
 
 
 @pytest.fixture
@@ -210,26 +224,25 @@ def test_deepseek_answer_uses_verified_source_citation(db, monkeypatch):
     src = source(db)
     ingest(db, src, [record("deepseek-test", content="AI model has CWE-502 unsafe deserialization")])
     document = db.scalar(select(Document).where(Document.source_id == src.id))
-    monkeypatch.setattr("backend.api.v1.ai.get_settings", lambda: SimpleNamespace(
-        deepseek_api_key=SecretStr("test-only-key"), deepseek_model="deepseek-flash",
-        ai_service_url=None))
+    monkeypatch.setattr("backend.api.v1.ai.get_settings", platform_settings)
     requests = []
 
-    def fake_post(url, json, headers, timeout):
-        requests.append(json)
-        assert url == "https://api.deepseek.com/chat/completions"
-        assert headers["Authorization"] == "Bearer test-only-key"
-        assert json["model"] == "deepseek-flash"
-        assert json["thinking"] == {"type": "disabled"}
-        assert json["response_format"] == {"type": "json_object"}
-        assert timeout == 30
-        assert "CWE-502" in json["messages"][1]["content"]
-        assert "test-only-key" not in str(json)
-        return httpx.Response(200, request=httpx.Request("POST", url), json={
+    def model_response(request):
+        body = jsonlib.loads(request.content)
+        requests.append(body)
+        assert str(request.url) == "https://api.deepseek.com/chat/completions"
+        assert request.headers["Authorization"] == "Bearer test-only-key"
+        assert body["model"] == "deepseek-flash"
+        assert body["thinking"] == {"type": "disabled"}
+        assert body["response_format"] == {"type": "json_object"}
+        assert 29 < request.extensions["timeout"]["read"] <= 30
+        assert "CWE-502" in body["messages"][1]["content"]
+        assert "test-only-key" not in str(body)
+        return httpx.Response(200, json={
             "choices": [{"finish_reason": "stop", "message": {"content":
                 '{"status":"completed","answer":"存在 CWE-502 问题。","citation_indices":[1]}'}}]})
 
-    monkeypatch.setattr("backend.api.v1.ai.httpx.post", fake_post)
+    platform_transport(monkeypatch, model_response)
     answer = ask_external(QuestionRequest(question="CWE-502?"), db, is_demo=True)
     assert answer.status == "completed"
     assert len(answer.citations) == 1
@@ -241,21 +254,19 @@ def test_deepseek_answer_uses_verified_source_citation(db, monkeypatch):
 def test_deepseek_rejects_unverified_selection_and_skips_empty_search(db, monkeypatch):
     src = source(db)
     ingest(db, src, [record("deepseek-invalid", content="AI model has CWE-502 unsafe deserialization")])
-    monkeypatch.setattr("backend.api.v1.ai.get_settings", lambda: SimpleNamespace(
-        deepseek_api_key=SecretStr("test-only-key"), deepseek_model="deepseek-flash",
-        ai_service_url=None))
+    monkeypatch.setattr("backend.api.v1.ai.get_settings", platform_settings)
     calls = []
 
-    def fake_post(url, json, headers, timeout):
-        calls.append(url)
-        return httpx.Response(200, request=httpx.Request("POST", url), json={
+    def model_response(request):
+        calls.append(str(request.url))
+        return httpx.Response(200, json={
             "choices": [{"finish_reason": "stop", "message": {"content":
                 '{"status":"completed","answer":"unsupported","citation_indices":[2]}'}}]})
 
-    monkeypatch.setattr("backend.api.v1.ai.httpx.post", fake_post)
+    platform_transport(monkeypatch, model_response)
     empty = ask_external(QuestionRequest(question="zzzznevermatched"), db, is_demo=True)
     assert empty.status == "insufficient_evidence" and not calls
     with pytest.raises(HTTPException) as error:
         ask_external(QuestionRequest(question="CWE-502?"), db, is_demo=True)
     assert error.value.status_code == 502
-    assert error.value.detail == "deepseek_invalid_response"
+    assert error.value.detail == "platform_model_format_invalid"

@@ -35,7 +35,17 @@ def db():
 def settings():
     return SimpleNamespace(embedding_configured=True, embedding_model="synthetic-test-model",
                            embedding_dimensions=3, deepseek_api_key=SecretStr("test-only-key"),
-                           deepseek_model="deepseek-flash", ai_service_url=None)
+                           deepseek_model="deepseek-flash", ai_service_url=None,
+                           platform_llm_configured=True, llm_provider="deepseek",
+                           platform_llm_model="deepseek-flash", platform_llm_base_url="https://api.deepseek.com",
+                           llm_api_key=None, llm_api_key_file=None, dashscope_api_key=None,
+                           llm_timeout_seconds=30, llm_max_attempts=2)
+
+
+def platform_transport(monkeypatch, handler):
+    from backend.services.platform_llm import PlatformLLM
+    monkeypatch.setattr("backend.api.v1.ai.PlatformLLM", lambda config:
+        PlatformLLM(config, transport=httpx.MockTransport(handler)))
 
 
 def make_document(db, is_demo=True):
@@ -189,15 +199,16 @@ def test_two_turn_deepseek_conversation_preserves_citations_and_scope(db, monkey
     monkeypatch.setattr("backend.api.v1.ai.get_settings", settings)
     seen_messages = []
 
-    def fake_post(url, json, headers, timeout):
-        seen_messages.append(json["messages"])
+    def model_response(request):
+        body = jsonlib.loads(request.content)
+        seen_messages.append(body["messages"])
         content = {"status": "completed", "answer": "资料指出存在 CWE-502 问题。",
                    "citation_indices": [1]}
-        return httpx.Response(200, request=httpx.Request("POST", url), json={
+        return httpx.Response(200, json={
             "choices": [{"finish_reason": "stop", "message": {"content":
                 jsonlib.dumps(content, ensure_ascii=False)}}]})
 
-    monkeypatch.setattr("backend.api.v1.ai.httpx.post", fake_post)
+    platform_transport(monkeypatch, model_response)
     first = ask_external(QuestionRequest(question="CWE-502 是什么？",
         conversation_id=conversation_id), db, is_demo=True)
     second = ask_external(QuestionRequest(question="它有哪些原文证据？",
@@ -251,13 +262,13 @@ def test_offline_ingest_index_semantic_answer_followup_and_revision(db, monkeypa
     assert index_event(str(event.id)) == {"indexed": 1}
     assert search(db, "unsafe deserialization", settings(), is_demo=True)
 
-    def fake_post(url, json, headers, timeout):
-        return httpx.Response(200, request=httpx.Request("POST", url), json={
+    def model_response(request):
+        return httpx.Response(200, json={
             "choices": [{"finish_reason": "stop", "message": {"content": jsonlib.dumps({
                 "status": "completed", "answer": "原文报告 CWE-502 风险。", "citation_indices": [1]
             }, ensure_ascii=False)}}]})
 
-    monkeypatch.setattr("backend.api.v1.ai.httpx.post", fake_post)
+    platform_transport(monkeypatch, model_response)
     conversation_id = create_conversation(ConversationCreate(is_demo=True), db)["id"]
     for question in ("CWE-502 是什么问题？", "它有什么修复建议？"):
         answer = ask_external(QuestionRequest(question=question, conversation_id=conversation_id),

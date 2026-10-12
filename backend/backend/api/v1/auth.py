@@ -5,15 +5,22 @@ from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter, Depends, Response
 from backend.api.dependencies import Database, require_record
-from backend.core.security import require_admin
+from backend.core.security import require_admin, User
 from backend.models import AccessToken
 from backend.schemas.agent import TokenCreate
 from backend.services.jobs import utc_now
 
-router = APIRouter(prefix="/auth", tags=["用户权限"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/auth", tags=["用户权限"])
 
 
-@router.post("/tokens", status_code=201)
+@router.get("/me")
+def current_user(owner: User, response: Response):
+    """Validate the existing user credential; no token issuance or model secret."""
+    response.headers["Cache-Control"] = "no-store"
+    return {"owner_id": owner, "authenticated": True}
+
+
+@router.post("/tokens", status_code=201, dependencies=[Depends(require_admin)])
 def create_token(body: TokenCreate, db: Database, response: Response):
     secret = secrets.token_urlsafe(48)
     row = AccessToken(owner_id=body.owner_id, token_hash=hashlib.sha256(secret.encode()).hexdigest(),
@@ -25,7 +32,7 @@ def create_token(body: TokenCreate, db: Database, response: Response):
             "access_token": secret, "token_type": "Bearer", "note": "One-time display; never share admin key"}
 
 
-@router.delete("/tokens/{token_id}")
+@router.delete("/tokens/{token_id}", dependencies=[Depends(require_admin)])
 def revoke_token(token_id: UUID, db: Database):
     row = require_record(db, AccessToken, token_id)
     row.revoked = True

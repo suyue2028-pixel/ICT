@@ -30,7 +30,7 @@ def call_agent(settings, payload):
             with client.stream("POST", endpoint(settings) + "/v1/query", headers=headers, json=payload) as response:
                 if response.status_code == 429:
                     raise HTTPException(503, "agent_rate_limited")
-                if response.status_code == 503:
+                if response.status_code in {502, 503, 504}:
                     # Forward only public failure codes owned by this protocol.
                     # Never expose arbitrary provider or upstream response text.
                     raw_error = b""
@@ -47,6 +47,15 @@ def call_agent(settings, payload):
                             "model_relevance_failed", "model_verification_failed", "model_generation_failed",
                             "retrieval_failed", "backend_index_unavailable", "backend_index_embedding_signature_mismatch"}:
                         raise HTTPException(503, detail)
+                    from backend.services.platform_llm import ERROR_STATUS
+                    if isinstance(detail, str) and detail in ERROR_STATUS:
+                        raise HTTPException(ERROR_STATUS[detail], detail)
+                    search_errors = {"search_not_configured": 503, "search_auth_failed": 502,
+                        "search_rate_limited": 503, "search_timeout": 504,
+                        "search_source_unavailable": 502, "search_invalid_response": 502,
+                        "search_unsafe_url": 502, "search_response_too_large": 502, "search_busy": 503}
+                    if isinstance(detail, str) and detail in search_errors:
+                        raise HTTPException(search_errors[detail], detail)
                 response.raise_for_status()
                 parts, size = [], 0
                 for part in response.iter_bytes():
@@ -61,7 +70,7 @@ def call_agent(settings, payload):
                     if value in allowed:
                         answer._rag_headers[name] = value
                 count = response.headers.get("X-RAG-LLM-Calls", "")
-                if count in {"0", "1", "2", "3"}:
+                if count.isdigit() and 0 <= int(count) <= 20:
                     answer._rag_headers["X-RAG-LLM-Calls"] = count
                 return answer
     except httpx.TimeoutException:
@@ -94,8 +103,9 @@ def check_health(settings):
 def safe_trace(answer, settings):
     import re
     secrets = []
-    for name in ("admin_api_key", "deepseek_api_key", "embedding_api_key", "postgres_password", "redis_password",
-                 "ai_service_token", "agent_service_token", "agent_tool_token", "agent_write_token"):
+    for name in ("admin_api_key", "deepseek_api_key", "llm_api_key", "dashscope_api_key", "tavily_api_key",
+                 "embedding_api_key", "postgres_password", "redis_password", "ai_service_token",
+                 "agent_service_token", "agent_tool_token", "agent_write_token"):
         value = getattr(settings, name, None)
         if value and value.get_secret_value():
             secrets.append(value.get_secret_value())
@@ -114,17 +124,29 @@ def safe_trace(answer, settings):
 
 def validate_answer(db, answer, is_demo, *, query=None):
     from backend.api.v1.ai import _verify_citation
-    from backend.services.agent_conversation import conversation_kind, safe_conversation_answer
+    from backend.services.agent_conversation import (safe_conversation_answer, safe_general_explanation,
+        concrete_security_facts, UNVERIFIED_EXPLANATION_NOTICE)
     if answer.response_kind == "conversation":
-        if (not query or not conversation_kind(query) or answer.status != "completed"
+        if (not query or concrete_security_facts(query) or answer.status != "completed"
                 or answer.retrieval_mode != "conversation" or answer.sources or answer.evidence
                 or answer.cve_ids or answer.risk_level != "UNKNOWN" or answer.tool_calls
                 or answer.tool_trace or answer.coverage.answered_topics or answer.coverage.missing_topics
+                or answer.requirement_coverage or answer.retrieval_summary or answer.limitations
+                or answer.question_type not in {None, "conversation"}
                 or not safe_conversation_answer(answer.answer)):
             raise HTTPException(502, "agent_invalid_conversation_response")
         return
     if answer.retrieval_mode == "conversation":
         raise HTTPException(502, "agent_response_kind_mismatch")
+    if answer.retrieval_mode == "llm_unverified":
+        if (answer.status != "partial" or answer.question_type != "general_explanation"
+                or answer.sources or answer.evidence or answer.cve_ids or answer.risk_level != "UNKNOWN"
+                or answer.coverage.answered_topics
+                or any(item.status != "missing" or item.evidence_ids for item in answer.requirement_coverage)
+                or UNVERIFIED_EXPLANATION_NOTICE not in answer.limitations
+                or not safe_general_explanation(answer.answer, query)):
+            raise HTTPException(502, "agent_invalid_unverified_explanation")
+        return
     if answer.status == "insufficient_evidence" and answer.coverage.answered_topics:
         raise HTTPException(502, "agent_invalid_answer_coverage")
     if answer.status in {"completed", "partial"} and (not answer.sources or not answer.evidence):
@@ -157,6 +179,19 @@ def validate_answer(db, answer, is_demo, *, query=None):
             locate_quote(revision.payload, evidence.content, evidence.locator)
         except HTTPException:
             raise HTTPException(502, "agent_citation_invalid") from None
+    # Workflow metadata uses the public citation order, never opaque Agent IDs.
+    # A coverage label cannot legitimise fabricated or absent excerpts.
+    requirements = set()
+    for item in answer.requirement_coverage:
+        if item.requirement_id in requirements:
+            raise HTTPException(502, "agent_invalid_requirement_coverage")
+        requirements.add(item.requirement_id)
+        if (len(set(item.evidence_ids)) != len(item.evidence_ids)
+                or any(not 1 <= int(identifier) <= len(answer.evidence) for identifier in item.evidence_ids)
+                or (item.status == "missing" and item.evidence_ids)
+                or (item.status != "missing" and not item.evidence_ids)
+                or (answer.status == "insufficient_evidence" and item.status != "missing")):
+            raise HTTPException(502, "agent_invalid_requirement_coverage")
     for cve in answer.cve_ids:
         linked = db.scalar(select(VulnerabilityAlias.id).join(VulnerabilityDocument,
             VulnerabilityDocument.vulnerability_id == VulnerabilityAlias.vulnerability_id).where(

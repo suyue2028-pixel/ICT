@@ -127,6 +127,128 @@
       "title": "AgentSource",
       "type": "object"
     },
+    "AnswerCoverage": {
+      "additionalProperties": false,
+      "description": "Display-only answer scope; source revision validation remains mandatory.",
+      "properties": {
+        "answered_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Answered Topics",
+          "type": "array"
+        },
+        "missing_topics": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Missing Topics",
+          "type": "array"
+        }
+      },
+      "title": "AnswerCoverage",
+      "type": "object"
+    },
+    "RequirementCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "requirement_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Requirement Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "partial",
+            "conflicting",
+            "missing"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[1-9][0-9]?$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement_id",
+        "label",
+        "status"
+      ],
+      "title": "RequirementCoverage",
+      "type": "object"
+    },
+    "RetrievalSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "rounds": {
+          "default": 0,
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Rounds",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z_]+$",
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "initial_tools": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Initial Tools",
+          "type": "array"
+        },
+        "supplemental_tools": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Supplemental Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "stop_reason"
+      ],
+      "title": "RetrievalSummary",
+      "type": "object"
+    },
     "ToolTrace": {
       "additionalProperties": false,
       "properties": {
@@ -217,6 +339,62 @@
       "title": "Answer",
       "type": "string"
     },
+    "response_kind": {
+      "default": "knowledge",
+      "enum": [
+        "knowledge",
+        "conversation"
+      ],
+      "title": "Response Kind",
+      "type": "string"
+    },
+    "coverage": {
+      "$ref": "#/$defs/AnswerCoverage"
+    },
+    "question_type": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z_]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Question Type"
+    },
+    "requirement_coverage": {
+      "items": {
+        "$ref": "#/$defs/RequirementCoverage"
+      },
+      "maxItems": 40,
+      "title": "Requirement Coverage",
+      "type": "array"
+    },
+    "retrieval_summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetrievalSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "limitations": {
+      "items": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Limitations",
+      "type": "array"
+    },
     "sources": {
       "items": {
         "$ref": "#/$defs/AgentSource"
@@ -282,7 +460,9 @@
         "keyword_fallback",
         "semantic",
         "hybrid",
-        "structured"
+        "structured",
+        "conversation",
+        "llm_unverified"
       ],
       "title": "Retrieval Mode",
       "type": "string"
