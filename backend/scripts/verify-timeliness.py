@@ -79,7 +79,9 @@ def main():
         check("all_attempts_terminal", not pending)
         for row in report["sources"]:
             check("real_source_success_" + row["adapter"], row.get("status") == "succeeded")
-        check("configured_intervals_within_48_hours", all(s["interval_seconds"] <= 172800 for s in snapshot["sources"] if s["enabled"]))
+        check("effective_intervals_within_4_hours_except_daily_cache", all(
+            s["interval_seconds"] <= (86400 if s["adapter"] == "arxiv" else 14400)
+            for s in snapshot["sources"] if s["enabled"]))
         check("arxiv_daily_interval", all(s["interval_seconds"] >= 86400 for s in snapshot["sources"] if s["adapter"] == "arxiv"))
         for basis in ["published", "updated", "discovered", "changed"]:
             data = get(f"/api/v1/documents?recent_hours=48&time_basis={basis}&ai_relevant=true&page_size=100")

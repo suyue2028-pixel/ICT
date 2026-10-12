@@ -6,21 +6,30 @@ from sqlalchemy import select, func
 
 from backend.models import DataSource, Document, KnowledgeEvent, TaskRun
 
+DELIVERY_TARGET_SECONDS = 4 * 60 * 60
+DAILY_CACHE_ADAPTERS = {"arxiv"}
 DEFAULT_INTERVALS = {
     "osv": 3600, "nvd": 3600, "cisco": 3600, "sans": 3600,
     "huggingface": 3600, "trailofbits": 3600, "nvidia": 3600,
-    "crossref": 21600, "arxiv": 86400, "nist": 21600,
-    "govuk": 21600, "china_policy": 21600,
+    "crossref": DELIVERY_TARGET_SECONDS, "arxiv": 86400, "nist": DELIVERY_TARGET_SECONDS,
+    "govuk": DELIVERY_TARGET_SECONDS, "china_policy": DELIVERY_TARGET_SECONDS,
     "nist_drafts": 3600, "govuk_search": 3600,
 }
 TIME_COLUMNS = {"published": Document.published_at, "updated": Document.source_updated_at,
                 "discovered": Document.first_collected_at, "changed": Document.content_changed_at}
 
 
+def interval_bounds(adapter):
+    """Daily API cache policy is an explicit exception to the four-hour goal."""
+    if adapter in DAILY_CACHE_ADAPTERS:
+        return 86400, 86400
+    return 60, DELIVERY_TARGET_SECONDS
+
+
 def effective_interval(source):
-    """Enforce source-specific floor and a 48h ceiling without losing user config."""
-    floor = 86400 if source.adapter == "arxiv" else 60
-    return min(172800, max(floor, source.interval_seconds))
+    """Clamp legacy intervals at execution; retain faster valid schedules."""
+    floor, ceiling = interval_bounds(source.adapter)
+    return min(ceiling, max(floor, source.interval_seconds))
 
 
 def source_stale(source, now, last_success=None):
@@ -34,7 +43,7 @@ def record_failure(source, error_code, now, terminal=False):
     source.consecutive_failures = (source.consecutive_failures or 0) + 1
     source.last_error_code = error_code
     if terminal:
-        delay = min(21600, 300 * 2 ** min(source.consecutive_failures, 6))
+        delay = min(DELIVERY_TARGET_SECONDS, 300 * 2 ** min(source.consecutive_failures, 6))
         source.next_run_at = now + timedelta(seconds=delay)
 
 
@@ -85,6 +94,8 @@ def source_observation(db, source, now):
     return {"source_id": source.id, "adapter": source.adapter, "category": source.category,
         "enabled": source.enabled, "interval_seconds": effective_interval(source),
         "configured_interval_seconds": source.interval_seconds,
+        "four_hour_schedule_applicable": source.adapter not in DAILY_CACHE_ADAPTERS,
+        "schedule_exception": "daily_api_cache" if source.adapter in DAILY_CACHE_ADAPTERS else None,
         "last_attempt_at": source.last_attempt_at, "last_checked_at": source.last_checked_at,
         "last_success_at": source.last_success_at, "last_new_content_at": source.last_new_content_at,
         "next_run_at": source.next_run_at, "status": status, "stale": stale if source.enabled else False,
@@ -138,11 +149,17 @@ def freshness_snapshot(db, now, hours=48, ai_relevant=True):
             if delay >= 0:
                 updates.append(delay)
 
-    def distribution(values):
+    def distribution(values, target_seconds=None):
         ordered = sorted(values)
-        return {"count": len(ordered), "p50": ordered[ceil(len(ordered) * .5) - 1] if ordered else None,
+        result = {"count": len(ordered), "p50": ordered[ceil(len(ordered) * .5) - 1] if ordered else None,
                 "p95": ordered[ceil(len(ordered) * .95) - 1] if ordered else None,
                 "max": max(ordered) if ordered else None}
+        if target_seconds is not None:
+            within = sum(value <= target_seconds for value in ordered)
+            result.update(target_seconds=target_seconds, within_target_count=within,
+                over_target_count=len(ordered) - within,
+                within_target_ratio=within / len(ordered) if ordered else None)
+        return result
 
     indexed = select(KnowledgeEvent.id).where(KnowledgeEvent.document_id == Document.id,
         KnowledgeEvent.content_hash == Document.content_hash, KnowledgeEvent.operation != "delete",
@@ -150,13 +167,17 @@ def freshness_snapshot(db, now, hours=48, ai_relevant=True):
     pending_docs = db.scalar(select(func.count()).select_from(base.where(~indexed).subquery()))
     source_rows = [source_observation(db, s, now) for s in db.scalars(select(DataSource)) if s.adapter != "offline"]
     return {"measured_at": now, "recent": recent_counts(db, now, hours, ai_relevant),
+        "schedule_policy": {"target_seconds": DELIVERY_TARGET_SECONDS,
+            "preserve_faster_schedules": True, "max_failure_backoff_seconds": DELIVERY_TARGET_SECONDS,
+            "exceptions": {"arxiv": {"interval_seconds": 86400, "reason": "daily_api_cache"}},
+            "delivery_target_verified": False},
         "sources": source_rows, "pending_collection_tasks": db.scalar(select(func.count()).select_from(TaskRun)
             .where(TaskRun.kind == "collect", TaskRun.status.in_(("queued", "running")))),
         "unindexed_current_documents": pending_docs,
-        "publish_to_first_collection_seconds": {"recent_publications": distribution(publish_recent),
+        "publish_to_first_collection_seconds": {"recent_publications": distribution(publish_recent, DELIVERY_TARGET_SECONDS),
             "historical_backfill": distribution(publish_backfill), "missing_time": missing,
             "imprecise_time": imprecise, "negative_delay": future},
-        "source_update_to_changed_version_seconds": distribution(updates),
+        "source_update_to_changed_version_seconds": distribution(updates, DELIVERY_TARGET_SECONDS),
         "limitations": ["Historical content/index observation times were not invented",
             "Polling interval is not measured delivery latency; no continuous 48h SLA established",
             "Fixed pages/RSS/search windows cannot guarantee exhaustive publication discovery"]}

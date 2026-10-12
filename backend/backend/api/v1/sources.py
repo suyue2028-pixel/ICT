@@ -87,9 +87,12 @@ def update_source(source_id: UUID, payload: SourcePatch, db: Database):
 
 
 def validate_interval(adapter, seconds):
-    if adapter != "offline" and seconds > 172800:
-        raise HTTPException(422, "source_interval_exceeds_48_hours")
-    if adapter == "arxiv" and seconds < 86400:
+    from backend.services.freshness import interval_bounds
+    floor, ceiling = interval_bounds(adapter)
+    if adapter != "offline" and seconds > ceiling:
+        raise HTTPException(422, "source_interval_exceeds_24_hours" if adapter == "arxiv"
+                            else "source_interval_exceeds_4_hours")
+    if adapter == "arxiv" and seconds < floor:
         raise HTTPException(422, "arxiv_daily_cache_interval_required")
 
 

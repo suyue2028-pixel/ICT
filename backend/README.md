@@ -1,8 +1,10 @@
 # AI 安全知识情报系统 · 后端开发
 
+2026-10-12 四小时时效目标：普通来源的实际调度上限与失败退避上限收紧为 4 小时，已有每小时来源继续保持；arXiv 按官方日级 API 缓存保留 24 小时例外。监控增加真实延迟的 4 小时达标/超时样本统计，未将轮询周期冒充持续 SLA。见 [四小时调度与验证](docs/FOUR_HOUR_FRESHNESS.md)。
+
 本次同步包含富化质量、14适配器采集覆盖/时效、版本化自动关联、Agent回答证据闭环、CI与隔离恢复和演示材料。保留团队可移植配置，原开发机器验收事实与团队新部署配置分开说明。CI位于仓库根`.github/workflows/backend-ci.yml`。
 
-本分支同步到已有后端 PR，CI 在 push/PR 自动触发，结果以 PR Checks 为准。交叉契约测试只读检出 Agent PR 的固定提交 `8bceeb9c1ac653b9a107487412726aa4806fb6dc`，不把 Agent 代码复制到后端或改变队友分支。下文“远端CI尚未触发”等句子属于原机器开发阶段验收快照。团队机器做隔离容器演练请使用 `uv run python scripts/verify-fault-recovery.py --image ict-backend:local`；默认镜像名的脚本为原机器配置。
+本分支同步到已有后端 PR，CI 在 push/PR 自动触发，结果以 PR Checks 为准。交叉契约测试只读检出 Agent PR 的固定提交 `a389e722373ac066fa644f411ebe46009da11d78`，不把 Agent 代码复制到后端或改变队友分支。下文“远端CI尚未触发”等句子属于原机器开发阶段验收快照。团队机器做隔离容器演练请使用 `uv run python scripts/verify-fault-recovery.py --image ict-backend:local`；默认镜像名的脚本为原机器配置。
 
 本次上传副本复验：127项测试通过、0跳过；新验证数据库迁移与模型一致，接口契约无漂移，Redis PING及API就绪通过。测试显式覆盖内部与外部索引的失效确认规则；未调用真实模型，未复制本机`.env`。一条Starlette依赖弃用警告仍待上游兼容升级。远端CI结果以当前PR提交的Checks为准。
 

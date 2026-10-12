@@ -140,9 +140,67 @@ def test_source_staleness_uses_its_actual_schedule_and_backoff_is_bounded():
     assert source_stale(src, NOW)
     for _ in range(10):
         record_failure(src, "source_network_error", NOW, terminal=True)
-    assert src.consecutive_failures == 10 and src.next_run_at <= NOW + timedelta(hours=6)
+    assert src.consecutive_failures == 10 and src.next_run_at == NOW + timedelta(hours=4)
     src.adapter, src.interval_seconds = "nvd", 604800
-    assert effective_interval(src) == 172800
+    assert effective_interval(src) == 14400
+
+
+def test_four_hour_interval_limits_preserve_faster_sources_and_daily_cache():
+    from backend.api.v1.sources import validate_interval
+    from backend.services.freshness import DEFAULT_INTERVALS
+    for adapter, seconds in DEFAULT_INTERVALS.items():
+        validate_interval(adapter, seconds)
+        assert seconds <= (86400 if adapter == "arxiv" else 14400)
+    assert effective_interval(SimpleNamespace(adapter="nvd", interval_seconds=3600)) == 3600
+    validate_interval("nvd", 14400)
+    with pytest.raises(HTTPException, match="source_interval_exceeds_4_hours"):
+        validate_interval("nvd", 14401)
+    with pytest.raises(HTTPException, match="arxiv_daily_cache_interval_required"):
+        validate_interval("arxiv", 14400)
+    validate_interval("arxiv", 86400)
+    assert effective_interval(SimpleNamespace(adapter="arxiv", interval_seconds=172800)) == 86400
+
+
+def test_four_hour_actual_latency_boundary_unknown_time_and_backfill(db):
+    from backend.services.freshness import freshness_snapshot
+    src = row(db)
+    for identifier, published, collected in (
+        ("four-hour-boundary", NOW - timedelta(hours=4), NOW),
+        ("four-hour-exceeded", NOW - timedelta(hours=4, seconds=1), NOW),
+        ("historical-backfill", NOW - timedelta(days=30), NOW),
+        ("unknown-time", None, NOW),
+    ):
+        _, doc = ingest(db, src, synthetic(identifier).model_copy(update={"published_at": published}))
+        doc.first_collected_at = collected
+    db.flush()
+    report = freshness_snapshot(db, NOW)
+    actual = report["publish_to_first_collection_seconds"]
+    assert actual["recent_publications"]["target_seconds"] == 14400
+    assert actual["recent_publications"]["within_target_count"] == 1
+    assert actual["recent_publications"]["over_target_count"] == 1
+    assert actual["recent_publications"]["within_target_ratio"] == .5
+    assert actual["historical_backfill"]["count"] == 1
+    assert actual["missing_time"] == 1
+    assert not report["schedule_policy"]["delivery_target_verified"]
+
+
+def test_four_hour_empty_measurement_does_not_claim_success(db):
+    from backend.services.freshness import freshness_snapshot
+    report = freshness_snapshot(db, NOW)
+    actual = report["publish_to_first_collection_seconds"]["recent_publications"]
+    assert actual["count"] == 0 and actual["within_target_ratio"] is None
+
+
+def test_source_management_rejects_over_four_hours_and_defaults_to_four(db, client):
+    from backend.core.config import get_settings
+    admin = {"X-API-Key": get_settings().admin_api_key.get_secret_value()}
+    payload = {"name": "synthetic-four-hour-" + str(uuid4()), "adapter": "crossref"}
+    rejected = client.post("/api/v1/sources", json={**payload, "interval_seconds": 21600}, headers=admin)
+    assert rejected.status_code == 422
+    added = client.post("/api/v1/sources", json=payload, headers=admin)
+    assert added.status_code == 201 and added.json()["interval_seconds"] == 14400
+    assert client.patch("/api/v1/sources/" + added.json()["id"],
+        json={"interval_seconds": 14401}, headers=admin).status_code == 422
 
 
 def test_restart_overdue_source_schedules_once_and_outbox_publish_failure_retains_task(db, monkeypatch):
