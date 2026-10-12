@@ -148,3 +148,8 @@ API 返回 202 和任务 ID，任务/outbox 一起提交；beat 补发 Redis 消
 富化质量监测在团队副本中使用 `uv run python scripts/enrichment-quality.py summary`；审核和评分见[富化质量说明](docs/ENRICHMENT_QUALITY.md)。普通团队部署由迁移服务增加0008质量表和0009关联依据表。没有独立人工标签时质量分数保持未知。
 
 本机恢复、观察和部署脚本中含原机器路径与容器名的工具只供原机器复验。团队新克隆使用上方通用启动方式。跨仓库契约测试可用 `ICT_AGENT_CONTRACT_FILE` 指向公开的Agent `integration/contracts.py`；CI已固定检出该契约，本次上传复验未跳过此测试。
+
+
+## 公开情报快照（2026-10-12）
+
+已加入带版本/校验清单的公开数据包、只读导出、dry-run/事务导入、幂等映射与知识事件。团队导入与 Agent 同步命令见 [快照使用说明](docs/public-intelligence-snapshots.md)，实际验证见 [快照验证记录](docs/public-snapshot-validation.md)。这是定期快照，不是实时共享数据库；不复制凭据或索引。

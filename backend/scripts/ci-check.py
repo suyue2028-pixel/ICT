@@ -73,7 +73,10 @@ def run():
         assert client.get("/health/ready").status_code == 200
     output = ROOT / "output/ci"
     output.mkdir(parents=True, exist_ok=True)
+    # A fresh workspace-local path avoids shared Windows TEMP ownership issues.
+    test_temp = output / ("pytest-" + uuid4().hex)
     code = subprocess.call([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--tb=short",
+                            "--basetemp=" + str(test_temp),
                             "--junitxml=" + str(output / "pytest.xml")])
     report = {"isolated_database": name, "test_exit_code": code, "schema_drift": drift,
         "migration_checked": True, "redis_ping": True, "api_ready": True,

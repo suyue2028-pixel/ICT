@@ -1,0 +1,83 @@
+{
+  "format": "cit-public-intelligence",
+  "format_version": 1,
+  "snapshot_id": "public-20261012-review1",
+  "generated_at": "2026-10-12T11:31:36.828775Z",
+  "required_migration": "0010_public_snapshots",
+  "exporter_version": "1.0.0",
+  "scope": "known-public-sources-real-data-only",
+  "files": [
+    {
+      "path": "sources-0001.jsonl",
+      "kind": "sources",
+      "records": 13,
+      "bytes": 2604,
+      "sha256": "96a1d6b1e532566090f84ed3c6a243a7b531488874731a4a59a02f983858750b"
+    },
+    {
+      "path": "documents-0001.jsonl",
+      "kind": "documents",
+      "records": 572,
+      "bytes": 8380564,
+      "sha256": "05ee5c48457055641928b6301f112821a8162015688f93368fde81972b17dc00"
+    },
+    {
+      "path": "documents-0002.jsonl",
+      "kind": "documents",
+      "records": 556,
+      "bytes": 8379906,
+      "sha256": "37e85f2e530f198ed290df620ed76a8474d936c2a21eeb7a9f0a75cc8783107e"
+    },
+    {
+      "path": "documents-0003.jsonl",
+      "kind": "documents",
+      "records": 605,
+      "bytes": 8380079,
+      "sha256": "0779e2b5c0fd089a3fcc8824ad243a3f0778abee5e19ccbc220f73317eac837e"
+    },
+    {
+      "path": "documents-0004.jsonl",
+      "kind": "documents",
+      "records": 616,
+      "bytes": 8361090,
+      "sha256": "54389ffcfa72e1dec5fa152b060be4bdf46d9d2a3823e689920b1b69f1159d45"
+    },
+    {
+      "path": "documents-0005.jsonl",
+      "kind": "documents",
+      "records": 52,
+      "bytes": 651047,
+      "sha256": "3faf971787a789be0a4369b59ad1a7379ffca92adfc11acb67f82efe673ada1c"
+    },
+    {
+      "path": "vulnerabilities-0001.jsonl",
+      "kind": "vulnerabilities",
+      "records": 1070,
+      "bytes": 277266,
+      "sha256": "5f10c711157cbe75ea6194b67ad02ee58935c3b76d888110718a929f61c7ce7f"
+    }
+  ],
+  "counts": {
+    "sources": 13,
+    "documents": 2401,
+    "vulnerabilities": 1070,
+    "revisions": 2527,
+    "evidence": 5256,
+    "associations": 2,
+    "aliases": 3288,
+    "links": 1814
+  },
+  "exclusions": {
+    "suspected_sensitive_document": 4,
+    "demo": 6
+  },
+  "limitations": [
+    "Periodic public snapshot, not a live shared database; hashes are integrity checks, not signatures.",
+    "Public availability is not a blanket redistribution licence; retain publisher notices, use for team research and check source terms before broader redistribution.",
+    "Original payload/hash/key order retained; unknown provider fields or suspected secrets reject the whole document.",
+    "No users, conversations, tasks, outbox, credentials, model calls, embeddings or index completion claims.",
+    "Source timestamps/first discovery belong to the exporting installation. Import time is stored separately.",
+    "Only strictly later source_updated_at promotes a different current version; ambiguous ordering remains historical.",
+    "Aliases/links are reconstructed by existing conservative ingestion rules; local entity UUIDs may differ."
+  ]
+}

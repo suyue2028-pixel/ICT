@@ -34,7 +34,7 @@ jobs:
       - name: Read pinned teammate Agent transport contract
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: 8bceeb9c1ac653b9a107487412726aa4806fb6dc
+          ref: a389e722373ac066fa644f411ebe46009da11d78
           path: .ci/agent-contract
           sparse-checkout: packages/rag_agent/src/rag_agent/integration
           persist-credentials: false

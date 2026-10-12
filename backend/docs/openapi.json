@@ -2207,6 +2207,31 @@
         }
       }
     },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "用户权限"
+        ],
+        "summary": "Current User",
+        "description": "Validate the existing user credential; no token issuance or model secret.",
+        "operationId": "current_user_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/tokens": {
       "post": {
         "tags": [
@@ -3661,6 +3686,117 @@
           }
         }
       }
+    },
+    "/api/v1/internal/intelligence/lookup": {
+      "post": {
+        "summary": "Intelligence Lookup",
+        "operationId": "intelligence_lookup_api_v1_internal_intelligence_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/llm/capabilities": {
+      "get": {
+        "tags": [
+          "平台模型内部调用"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_v1_internal_llm_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/llm/complete": {
+      "post": {
+        "tags": [
+          "平台模型内部调用"
+        ],
+        "summary": "Complete",
+        "operationId": "complete_api_v1_internal_llm_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3906,6 +4042,60 @@
             "minLength": 1,
             "title": "Answer"
           },
+          "response_kind": {
+            "type": "string",
+            "enum": [
+              "knowledge",
+              "conversation"
+            ],
+            "title": "Response Kind",
+            "default": "knowledge"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AnswerCoverage"
+          },
+          "question_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^[a-z_]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Type"
+          },
+          "requirement_coverage": {
+            "items": {
+              "$ref": "#/components/schemas/RequirementCoverage"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Requirement Coverage"
+          },
+          "retrieval_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrievalSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitations": {
+            "items": {
+              "type": "string",
+              "maxLength": 500,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Limitations"
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/AgentSource"
@@ -3972,7 +4162,9 @@
               "keyword_fallback",
               "semantic",
               "hybrid",
-              "structured"
+              "structured",
+              "conversation",
+              "llm_unverified"
             ],
             "title": "Retrieval Mode"
           },
@@ -4096,6 +4288,34 @@
           "source_name"
         ],
         "title": "AgentSource"
+      },
+      "AnswerCoverage": {
+        "properties": {
+          "answered_topics": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Answered Topics"
+          },
+          "missing_topics": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Missing Topics"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AnswerCoverage",
+        "description": "Display-only answer scope; source revision validation remains mandatory."
       },
       "AnswerQuote": {
         "properties": {
@@ -4363,6 +4583,112 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ClaimRequest"
+      },
+      "CompletionRequest": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "classify",
+              "general_explain",
+              "plan",
+              "rewrite",
+              "assess",
+              "synthesize",
+              "verify",
+              "converse",
+              "legacy_answer"
+            ],
+            "title": "Purpose"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "max_attempts": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "default": 1
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "default": 30
+          },
+          "max_answer_tokens": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Max Answer Tokens",
+            "default": 1200
+          },
+          "required_capabilities": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "json_object",
+                "server_tool_workflow",
+                "native_tool_calls"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Required Capabilities"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "purpose",
+          "payload"
+        ],
+        "title": "CompletionRequest"
+      },
+      "CompletionResponse": {
+        "properties": {
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          },
+          "attempts": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Attempts"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TokenUsage"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek",
+              "qwen"
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "result",
+          "attempts",
+          "provider",
+          "model"
+        ],
+        "title": "CompletionResponse"
       },
       "ConversationCreate": {
         "properties": {
@@ -4928,6 +5254,110 @@
         ],
         "title": "KnowledgeAck"
       },
+      "LookupRequest": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "enum": [
+              "nvd_lookup",
+              "kev_lookup",
+              "osv_lookup",
+              "knowledge_lookup",
+              "web_search"
+            ],
+            "title": "Tool"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier"
+          },
+          "ecosystem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PyPI",
+                  "npm",
+                  "Go",
+                  "Maven",
+                  "crates.io"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecosystem"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "agency",
+                  "injection",
+                  "poisoning"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "title": "LookupRequest"
+      },
       "ObservationRequest": {
         "properties": {
           "hours": {
@@ -5397,6 +5827,100 @@
         ],
         "title": "QuotePosition"
       },
+      "RequirementCoverage": {
+        "properties": {
+          "requirement_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Requirement Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "partial",
+              "conflicting",
+              "missing"
+            ],
+            "title": "Status"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]?$"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Evidence Ids"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requirement_id",
+          "label",
+          "status"
+        ],
+        "title": "RequirementCoverage"
+      },
+      "RetrievalSummary": {
+        "properties": {
+          "rounds": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 0.0,
+            "title": "Rounds",
+            "default": 0
+          },
+          "stop_reason": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z_]+$",
+            "title": "Stop Reason"
+          },
+          "initial_tools": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Initial Tools"
+          },
+          "supplemental_tools": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Supplemental Tools"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stop_reason"
+        ],
+        "title": "RetrievalSummary"
+      },
       "SemanticHitRead": {
         "properties": {
           "citation": {
@@ -5785,6 +6309,52 @@
           "owner_id"
         ],
         "title": "TokenCreate"
+      },
+      "TokenUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TokenUsage"
       },
       "ToolCveDetail": {
         "properties": {
@@ -6953,7 +7523,7 @@
       "APIKeyHeader": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-API-Key"
+        "name": "X-Agent-Token"
       },
       "HTTPBearer": {
         "type": "http",

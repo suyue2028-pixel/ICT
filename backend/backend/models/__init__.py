@@ -4,3 +4,4 @@ from backend.models.entities import (  # noqa: F401
     Outbox, TaskRun, TaskStep, VerificationProbe, Vulnerability, VulnerabilityAlias,
     VulnerabilityDocument, RuntimeObservation, RuntimeSample, EnrichmentQualityBatch, EnrichmentQualityReview,
 )
+from backend.models.snapshot import SnapshotImport, SnapshotMember, SnapshotSource  # noqa: F401

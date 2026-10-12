@@ -6,7 +6,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_DIRS = ("backend", "migrations", "tests", "scripts", "docs", ".github", ".vscode")
+PUBLIC_DIRS = ("backend", "migrations", "tests", "scripts", "docs", "datasets", ".github", ".vscode")
 PATTERNS = [re.compile(rb"sk-[A-Za-z0-9_-]{24,}"),
             re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
             re.compile(rb"gh[pousr]_[A-Za-z0-9]{30,}")]
@@ -26,8 +26,8 @@ def main():
     sys.path.insert(0, str(ROOT))
     from backend.core.config import get_settings
     settings = get_settings()
-    secrets = [getattr(settings, name) for name in ("postgres_password", "redis_password", "admin_api_key",
-        "deepseek_api_key", "agent_tool_token", "agent_write_token", "agent_service_token", "embedding_api_key")]
+    secrets = [getattr(settings, name) for name in type(settings).model_fields
+               if hasattr(getattr(settings, name), "get_secret_value")]
     values = [s.get_secret_value().encode() for s in secrets if s and len(s.get_secret_value()) >= 16
               and not s.get_secret_value().startswith("ci-only-")]
     findings = set()
