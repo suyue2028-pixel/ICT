@@ -29,7 +29,7 @@ function refreshHistory() { history.clear(); void history.loadMore() }
       :composer-disabled="!userToken || !ready || restoring" @submit="submit" />
       <div v-if="!userToken" class="session-notice" role="status">
         <p>{{ sessionState === 'expired' ? '用户授权已过期，已输入的问题会保留。' : '尚未获得有效的用户授权，可先输入问题。' }}</p>
-        <router-link :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ sessionState === 'expired' ? '重新授权' : '前往用户授权' }} ↗</router-link>
+        <router-link :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ sessionState === 'expired' ? '重新登录' : '前往登录' }} ↗</router-link>
       </div>
       <div v-if="failedQuestion" class="failed-query" role="status"><p>上次未完成的问题：{{ failedQuestion }}</p>
         <button class="ghost-button" type="button" :disabled="sending || restoring || !ready || !userToken" @click="submit(failedQuestion)">重试此问题</button>

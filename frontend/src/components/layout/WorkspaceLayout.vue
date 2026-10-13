@@ -31,7 +31,7 @@ const { feedback } = useSidebarSwipeNavigation(sidebar)
       </div>
       <select class="native-select" aria-label="资料范围" :value="String(store.isDemo)" :disabled="store.loading" @change="store.setScope(($event.target as HTMLSelectElement).value === 'true')"><option value="false">真实资料</option><option value="true">虚构样本</option></select>
       <button type="button" class="demo-pill" :disabled="store.loading" @click="store.loadDemo">刷新资料</button>
-      <router-link class="demo-pill" :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ userToken ? '用户已授权' : sessionState === 'expired' ? '重新授权' : '用户授权' }}</router-link>
+      <router-link class="demo-pill" :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ userToken ? '已登录' : sessionState === 'expired' ? '重新登录' : '登录' }}</router-link>
       <WorkspaceNavigation mode="tabs" />
     </header>
     <aside ref="sidebar" class="sidebar" aria-label="工作台导航">

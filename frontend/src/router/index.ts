@@ -20,7 +20,7 @@ export default createRouter({
       meta: { title: '情报分类' },
     },
     { path: '/qa', component: () => import('@/views/QaView.vue'), meta: { title: '可追溯问答' } },
-    { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { title: '用户授权' } },
+    { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { title: '登录', layout: 'auth' } },
     { path: '/tasks', redirect: '/' },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
