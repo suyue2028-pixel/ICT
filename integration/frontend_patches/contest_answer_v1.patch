@@ -1,0 +1,267 @@
+diff --git a/frontend/src/components/chat/ChatConversation.vue b/frontend/src/components/chat/ChatConversation.vue
+--- a/frontend/src/components/chat/ChatConversation.vue
++++ b/frontend/src/components/chat/ChatConversation.vue
+@@ -3,7 +3,8 @@
+ import type { ChatMessage } from '@/types'
+ import AnswerContent from './AnswerContent.vue'
+ import { coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel } from '@/utils/answerWorkflow'
+-import { isUnverifiedMessage, messageGenerationLabel, messageHeading, showSecurityEvidence, toolLabel, warningText } from '@/utils/chatPresentation'
++import { isUnverifiedMessage, messageGenerationLabel, messageHeading, showSecurityEvidence, toolLabel } from '@/utils/chatPresentation'
++import { answerGapSummary, answerLimitations, displayedAnswer, UNVERIFIED_NOTICE } from '@/utils/contestAnswerPresentation'
+ 
+ const props = defineProps<{ messages: ChatMessage[]; sending: boolean }>()
+ const feed = useTemplateRef<HTMLElement>('feed')
+@@ -42,21 +43,32 @@
+           ><time>{{ message.time }}</time>
+         </div>
+         <div v-if="messageGenerationLabel(message)" class="simulated-label small">{{ messageGenerationLabel(message) }}</div>
+-        <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" :plain="message.responseKind === 'conversation' || isUnverifiedMessage(message)" /><template v-else>{{ message.content }}</template></div>
++        <p v-if="isUnverifiedMessage(message)" class="unverified-notice">{{ UNVERIFIED_NOTICE }}</p>
++        <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="displayedAnswer(message)" :plain="message.responseKind === 'conversation' || isUnverifiedMessage(message)" /><template v-else>{{ message.content }}</template></div>
+         <router-link v-if="message.failureKind === 'user_auth'" :to="{ path: '/login', query: { returnTo: '/qa' } }" class="retry-authorization">重新授权，保留问题后重试 ↗</router-link>
+-        <div v-if="showSecurityEvidence(message) && message.workflow?.requirement_coverage.length" class="citation-box requirement-coverage">
+-          <strong>问题范围与证据覆盖</strong>
++        <nav v-if="showSecurityEvidence(message) && (message.citations?.length || message.evidence?.length)" class="answer-sources" aria-label="回答来源">
++          <strong>来源</strong>
++          <router-link
++            v-for="citation in message.citations"
++            :key="citation.intelligenceId + (citation.contentHash || '')"
++            :to="{ path: `/intelligence/${citation.intelligenceId}`, query: citation.contentHash ? { content_hash: citation.contentHash } : {} }"
++          >{{ citation.label }} ↗</router-link>
++          <button v-if="message.evidence?.length" type="button" @click="revealEvidence(message.id, '1')">查看原文证据（{{ message.evidence.length }}）</button>
++        </nav>
++        <p v-if="answerGapSummary(message)" class="answer-gap-summary">{{ answerGapSummary(message) }}</p>
++        <details v-if="showSecurityEvidence(message) && message.workflow?.requirement_coverage.length" class="citation-box requirement-coverage">
++          <summary>问题范围与证据覆盖（{{ message.workflow.requirement_coverage.length }}）</summary>
+           <ul><li v-for="requirement in message.workflow.requirement_coverage" :key="requirement.requirement_id">
+             <strong>{{ requirement.label }}</strong> · {{ coverageStatusLabel[requirement.status] }}
+             <p v-if="requirement.reason">{{ requirement.reason }}</p>
+             <a v-for="id in requirement.evidence_ids" :key="id" :href="`#evidence-${message.id}-${id}`" @click.prevent="revealEvidence(message.id, id)">证据 {{ id }} ↗</a>
+           </li></ul>
+-        </div>
+-        <div v-else-if="showSecurityEvidence(message) && (message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length)" class="citation-box">
++        </details>
++        <details v-else-if="showSecurityEvidence(message) && (message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length)" class="citation-box requirement-coverage">
++          <summary>问题范围与证据覆盖</summary>
+           <div v-if="message.coverage?.answered_topics?.length"><strong>已有证据支持</strong><ul><li v-for="topic in message.coverage?.answered_topics || []" :key="topic">{{ topic }}</li></ul></div>
+           <div v-if="message.coverage?.missing_topics?.length"><strong>尚未核实的范围</strong><ul><li v-for="topic in message.coverage?.missing_topics || []" :key="topic">{{ topic }}</li></ul></div>
+-        </div>
+-        <p v-if="showSecurityEvidence(message) && message.status === 'partial' && !message.coverage?.missing_topics?.length" class="muted">回答尚不完整，请结合原文证据和提示阅读。</p>
++        </details>
+         <details v-if="showSecurityEvidence(message) && message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :id="`evidence-${message.id}-${index + 1}`" :key="index"><strong>证据 {{ index + 1 }}</strong><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
+         <details v-if="message.responseKind !== 'conversation' && (message.workflow || message.toolTrace?.length)" class="citation-box execution-record">
+           <summary>检索与执行记录{{ message.toolTrace?.length ? `（${message.toolTrace.length}）` : '' }}</summary>
+@@ -75,25 +87,20 @@
+           </li></ol>
+           <p v-if="message.requestId" class="trace-reference">请求编号：{{ message.requestId }}</p>
+         </details>
+-        <div v-if="message.responseKind !== 'conversation' && message.workflow?.limitations.length" class="citation-box"><strong>资料与运行限制</strong><ul><li v-for="limitation in message.workflow.limitations" :key="limitation">{{ limitation }}</li></ul></div>
+-        <p v-if="warningText(message.warnings || [])" class="muted">{{ warningText(message.warnings || []) }}</p>
+-        <div v-if="showSecurityEvidence(message) && message.citations?.length" class="citation-box">
+-          <span>引用的来源资料</span
+-          ><router-link
+-            v-for="citation in message.citations"
+-            :key="citation.intelligenceId + (citation.contentHash || '')"
+-            :to="{ path: `/intelligence/${citation.intelligenceId}`, query: citation.contentHash ? { content_hash: citation.contentHash } : {} }"
+-            >{{ citation.label }} ↗</router-link
+-          >
+-        </div>
+-        <div
+-          v-else-if="message.role === 'assistant' && message.id !== 'welcome' && showSecurityEvidence(message) && message.status !== 'request_failed'"
+-          class="citation-empty"
+-        >
+-          没有可核验的引用证据
+-        </div>
++        <details v-if="answerLimitations(message).length" class="citation-box answer-limitations"><summary>资料与运行限制（{{ answerLimitations(message).length }}）</summary><ul><li v-for="limitation in answerLimitations(message)" :key="limitation">{{ limitation }}</li></ul></details>
+       </div>
+     </article>
+     <div v-if="sending" class="thinking" role="status">请求处理中，正在等待服务端回答与执行记录…</div>
+   </div>
+ </template>
++
++<style scoped>
++.answer-sources { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-top: 12px; font-size: 12px; text-align: left; }
++.answer-sources strong { font-size: 12px; }
++.answer-sources a, .answer-sources button { color: #000; font: inherit; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
++.answer-sources button { border: 0; padding: 0; background: transparent; cursor: pointer; }
++.answer-gap-summary { margin: 12px 0 0; font-size: 12px; line-height: 1.7; text-align: left; }
++.unverified-notice { margin: 10px 0 12px; border-left: 3px solid #000; padding: 4px 10px; color: #000; font-size: 12px; font-weight: 600; line-height: 1.7; }
++.citation-box summary { cursor: pointer; font-size: 12px; }
++.citation-box[open] summary { margin-bottom: 12px; }
++</style>
+diff --git a/frontend/src/utils/contestAnswerPresentation.ts b/frontend/src/utils/contestAnswerPresentation.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/utils/contestAnswerPresentation.ts
+@@ -0,0 +1,53 @@
++import type { ChatMessage } from '../types/index'
++import { isUnverifiedMessage, showSecurityEvidence, warningCode, warningText } from './chatPresentation.ts'
++
++export const UNVERIFIED_NOTICE = '模型通用解释；未经过来源核验。'
++const unique = (values: string[]) => [...new Set(values.map(value => value.trim()).filter(Boolean))]
++const comparable = (value: string) => value.replace(/[\s，。；：,.!:;]+/g, '')
++
++/** Display-only cleanup. The response and stored history retain their original text. */
++export function displayedAnswer(message: ChatMessage): string {
++  if (!isUnverifiedMessage(message)) return message.content
++  return message.content.replaceAll(UNVERIFIED_NOTICE, '').trim()
++}
++
++export function answerLimitations(message: ChatMessage): string[] {
++  if (message.role !== 'assistant' || message.responseKind === 'conversation') return []
++  const notes = unique([
++    ...(message.workflow?.limitations || []),
++    ...(message.warnings || []).filter(note => !isUnverifiedMessage(message) || warningCode(note) !== 'llm_unverified').map(note => warningText([note])),
++  ])
++  const body = comparable(message.content)
++  return notes.filter(note => {
++    if (isUnverifiedMessage(message) && comparable(note) === comparable(UNVERIFIED_NOTICE)) return false
++    return !body.includes(comparable(note))
++  })
++}
++
++/** One compact summary; the returned details remain available below it. */
++export function answerGapSummary(message: ChatMessage): string {
++  if (message.role !== 'assistant' || message.id === 'welcome' || message.status === 'request_failed'
++    || !showSecurityEvidence(message)) return ''
++  const operationalWarnings = (message.warnings || []).filter(note => {
++    const code = warningCode(note)
++    return /^(?:search_|platform_model_|model_)/.test(code)
++      || ['local_retrieval_failed', 'retrieval_failed', 'relevance_check_failed', 'claim_support_check_failed'].includes(code)
++  })
++  if (operationalWarnings.length) {
++    const extra = operationalWarnings.length > 1 ? '；其他运行问题见下方详情' : ''
++    return `运行提示：${warningText([operationalWarnings[0]!])}${extra}。`
++  }
++  // The Agent already supplies a concise evidence boundary in these answers.
++  // Execution failures remain distinct and are surfaced above this check.
++  if (/【资料(?:边界|缺口)】/.test(message.content)) return ''
++  const unresolved = unique(message.workflow?.requirement_coverage
++    .filter(row => row.status !== 'supported').map(row => row.label) || [])
++  const missing = message.workflow?.requirement_coverage.length ? unresolved : unique(message.coverage?.missing_topics || [])
++  if (missing.length) {
++    const topics = missing.slice(0, 2).join('、')
++    return `待核实：${topics}${missing.length > 2 ? `等 ${missing.length} 项` : ''}。详见下方证据覆盖。`
++  }
++  if (message.status === 'partial') return '现有证据仅支持部分结论，详情可在下方核对。'
++  if (message.status === 'insufficient_evidence' && !message.evidence?.length) return '本次未取得可核验来源，详情可在下方查看。'
++  return answerLimitations(message).length ? '本次回答存在资料或运行限制，详情可在下方查看。' : ''
++}
+diff --git a/frontend/tests/semantic-rendering.test.mjs b/frontend/tests/semantic-rendering.test.mjs
+--- a/frontend/tests/semantic-rendering.test.mjs
++++ b/frontend/tests/semantic-rendering.test.mjs
+@@ -9,6 +9,7 @@
+ import { normalizeToolTrace, returnedWorkflow, coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel } from '../src/utils/answerWorkflow.ts'
+ import { generationModeLabel, isUnverifiedMessage, messageGenerationLabel, messageHeading, showSecurityEvidence, toolLabel, warningText, UNVERIFIED_EXPLANATION_LABEL } from '../src/utils/chatPresentation.ts'
+ import { classifyFailure, shouldInvalidateCredential } from '../src/utils/requestFailure.ts'
++import { answerGapSummary, answerLimitations, displayedAnswer, UNVERIFIED_NOTICE } from '../src/utils/contestAnswerPresentation.ts'
+ 
+ const fixtures = JSON.parse(readFileSync(new URL('./fixtures/semantic_responses.json', import.meta.url), 'utf8'))
+ assert.equal(fixtures.synthetic, true)
+@@ -21,7 +22,8 @@
+ async function html(message) {
+   const app = Vue.createSSRApp({ render: conversationRender, setup: () => ({ messages: [message], sending: false,
+     messageHeading, warningText, coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel,
+-    revealEvidence: () => {}, isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel }) })
++    revealEvidence: () => {}, isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel,
++    answerGapSummary, answerLimitations, displayedAnswer, UNVERIFIED_NOTICE }) })
+   app.component('AnswerContent', { props: ['content', 'plain'], render: contentRender,
+     setup: props => ({ blocks: Vue.computed(() => answerBlocks(props.content, props.plain)) }) })
+   app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', {
+@@ -112,3 +114,75 @@
+   assert.match(output, /synthetic-returned-document/)
+   assert.doesNotMatch(output, /引用的来源资料|核对原文证据|独立抓取|全文/)
+ })
++test('professional answers put readable content and compact sources before collapsed audit details', async () => {
++  const output = await html({ id: 'contest-professional', role: 'assistant', time: '', content: '先给出本次有证据的结论。',
++    responseKind: 'knowledge', retrievalMode: 'hybrid', status: 'partial', warnings: ['coverage_incomplete'],
++    citations: [{ intelligenceId: 'real-response-id', label: '返回的资料标题', contentHash: 'revision-from-response' }],
++    evidence: [{ document_id: 'real-response-id', content_hash: 'revision-from-response', content: '返回的原文片段', source: 'https://example.org/fixture', locator: 'line:1' }],
++    workflow: { question_type: 'security_knowledge', requirement_coverage: [
++      { requirement_id: 'mechanism', label: '攻击机制', status: 'supported', evidence_ids: ['1'], reason: '有对应原文。' },
++      { requirement_id: 'defense', label: '防护边界', status: 'missing', evidence_ids: [], reason: '尚未取得对应资料。' },
++    ], retrieval_summary: { rounds: 1, stop_reason: 'no_new_evidence', initial_tools: ['retrieve_documents'], supplemental_tools: [] },
++    limitations: ['现有证据仅支持问题的一部分', '现有证据仅支持问题的一部分'] },
++    toolTrace: [{ tool: 'retrieve_documents', status: 'completed', duration_ms: 3, document_ids: ['real-response-id'] }] })
++  assert.ok(output.indexOf('先给出本次有证据的结论') < output.indexOf('class="answer-sources"'))
++  assert.ok(output.indexOf('class="answer-sources"') < output.indexOf('待核实：防护边界'))
++  assert.ok(output.indexOf('待核实：防护边界') < output.indexOf('问题范围与证据覆盖'))
++  assert.match(output, /\/intelligence\/real-response-id\?content_hash=revision-from-response/)
++  assert.match(output, /查看原文证据（1）/)
++  assert.match(output, /id="evidence-contest-professional-1"/)
++  assert.match(output, /href="#evidence-contest-professional-1"/)
++  assert.equal((output.match(/现有证据仅支持问题的一部分/g) || []).length, 1)
++  assert.equal((output.match(/<details\b/g) || []).length, 4)
++  assert.doesNotMatch(output, /<details[^>]*\bopen(?:\s|=|>)/)
++})
++test('unverified explanation retains exactly one fixed notice and folds operational limitations', async () => {
++  const output = await html({ id: 'contest-unverified', role: 'assistant', time: '',
++    content: `${UNVERIFIED_NOTICE}\n这是一段通用概念解释。\n${UNVERIFIED_NOTICE}`,
++    responseKind: 'knowledge', retrievalMode: 'llm_unverified', status: 'partial', evidence: [], citations: [],
++    warnings: ['llm_unverified', 'search_not_configured'], workflow: {
++      question_type: 'general_explanation', requirement_coverage: [],
++      retrieval_summary: { rounds: 1, stop_reason: 'general_explanation', initial_tools: [], supplemental_tools: [] },
++      limitations: [UNVERIFIED_NOTICE, UNVERIFIED_NOTICE],
++    } })
++  assert.equal((output.match(/模型通用解释；未经过来源核验。/g) || []).length, 1)
++  assert.match(output, /class="unverified-notice"/)
++  assert.ok(output.indexOf('class="unverified-notice"') < output.indexOf('这是一段通用概念解释'))
++  assert.doesNotMatch(output, /class="answer-sources"|问题范围与证据覆盖|待核实：|没有可核验/)
++  assert.match(output, /搜索服务尚未配置/)
++  assert.doesNotMatch(output, /<details[^>]*\bopen(?:\s|=|>)/)
++})
++test('presentation de-duplicates exact limitations already present in the answer without changing stored content', () => {
++  const original = { id: 'preserved', role: 'assistant', content: `${UNVERIFIED_NOTICE}\n概念解释。`, time: '',
++    responseKind: 'knowledge', retrievalMode: 'llm_unverified', warnings: [],
++    workflow: { limitations: [UNVERIFIED_NOTICE], requirement_coverage: [] } }
++  assert.equal(displayedAnswer(original), '概念解释。')
++  assert.equal(original.content, `${UNVERIFIED_NOTICE}\n概念解释。`)
++  assert.deepEqual(answerLimitations(original), [])
++  const verified = { ...original, retrievalMode: 'hybrid', content: '来源没有记录部分结构化字段。', warnings: ['source_fields_missing'] }
++  assert.deepEqual(answerLimitations(verified), [UNVERIFIED_NOTICE])
++  assert.equal(displayedAnswer(verified), verified.content)
++})
++test('gap summary reflects only returned unresolved scope and never creates coverage for daily replies', () => {
++  const daily = { id: 'daily', role: 'assistant', time: '', content: '你好。', responseKind: 'conversation',
++    status: 'completed', workflow: { requirement_coverage: [{ label: 'fixture', status: 'missing' }] } }
++  assert.equal(answerGapSummary(daily), '')
++  const security = { ...daily, responseKind: 'knowledge', status: 'partial', workflow: {
++    requirement_coverage: ['影响', '评分', '修复'].map(label => ({ label, status: 'missing' })),
++  } }
++  assert.equal(answerGapSummary(security), '待核实：影响、评分等 3 项。详见下方证据覆盖。')
++})
++test('Agent evidence boundary suppresses a duplicate gap summary while operational failures remain visible', () => {
++  const base = { id: 'agent-boundary', role: 'assistant', time: '',
++    content: '结论。\n【资料边界】尚未完整核实：受影响版本。', responseKind: 'knowledge', retrievalMode: 'hybrid',
++    status: 'partial', warnings: ['coverage_incomplete'],
++    workflow: { requirement_coverage: [{ label: '受影响版本', status: 'missing' }] } }
++  assert.equal(answerGapSummary(base), '')
++  assert.equal(answerGapSummary({ ...base, content: '【资料缺口】尚未完整核实：受影响版本。' }), '')
++  for (const code of ['search_timeout', 'model_generation_failed', 'local_retrieval_failed']) {
++    const summary = answerGapSummary({ ...base, warnings: [code] })
++    assert.match(summary, /^运行提示：/)
++    assert.doesNotMatch(summary, /待核实：受影响版本/)
++    assert.doesNotMatch(summary, /部分信息未完整返回/)
++  }
++})
+diff --git a/frontend/tests/session-workflow.test.mjs b/frontend/tests/session-workflow.test.mjs
+--- a/frontend/tests/session-workflow.test.mjs
++++ b/frontend/tests/session-workflow.test.mjs
+@@ -9,6 +9,7 @@
+ import * as Vue from 'vue'
+ import { renderToString } from '@vue/server-renderer'
+ import { isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel } from '../src/utils/chatPresentation.ts'
++import { answerGapSummary, answerLimitations, displayedAnswer, UNVERIFIED_NOTICE } from '../src/utils/contestAnswerPresentation.ts'
+ 
+ test('only explicit user authorization errors invalidate a user credential', () => {
+   for (const code of ['user_token_required', 'invalid_user_token', 'user_session_expired', 'user_session_revoked']) {
+@@ -106,7 +107,8 @@
+     const app = Vue.createSSRApp({ render, setup: () => ({ messages: [message], sending: false,
+       messageHeading: () => '资料回答', warningText: () => '', coverageStatusLabel: { supported: '证据支持' },
+       questionTypeLabel: () => '安全知识问题', stopReasonLabel: () => '已结束', traceStatusLabel: {}, revealEvidence: () => {},
+-      isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel }) })
++      isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel,
++      answerGapSummary, answerLimitations, displayedAnswer, UNVERIFIED_NOTICE }) })
+     app.component('AnswerContent', { props: ['content'], setup: props => () => Vue.h('p', props.content) })
+     app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', {
+       href: props.to.path + (props.to.query ? `?${new URLSearchParams(props.to.query)}` : ''),

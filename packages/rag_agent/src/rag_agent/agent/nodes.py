@@ -13,8 +13,9 @@ from .state import BudgetExceeded
 from .conversation import conversation_kind
 from .coverage import requested_topics, parse_relevance, validate_claim_topics, final_coverage
 from .presentation import (answer_requirements, assertion_payload, render_assertion,
-                           render_claim, render_missing_fields)
-from .workflow import requirements, freshness_required, evaluate, next_tools, deduplicate, REGISTERED, package_entities
+                           render_claim, render_missing_fields, render_claim_lines,
+                           render_assertion_lines, render_boundary_summary)
+from .workflow import requirements, freshness_required, evaluate, next_tools, deduplicate, REGISTERED, package_entities, semantic_subqueries
 from ..schemas import RetrievalSummary
 from ..providers.llm import TypedProviderError
 
@@ -230,6 +231,8 @@ class Nodes:
         else:
             compare = bool(re.search(r"比较|对比|关联|compare", question, re.I))
             plan = Plan(route="compare" if compare else "hybrid", subqueries=[question], expand_relations=compare)
+            if compare and classified:
+                plan.subqueries=semantic_subqueries(question,classified.information_needs)
             # In live mode, reserve the three calls for relevance, generation,
             # and support verification. Routing here is deterministic.
             ambiguous = not re.search(r'安全|漏洞|风险|注入|投毒|CVE|agent|RAG|security|risk|vulnerab', question, re.I) and len(question)>8
@@ -292,18 +295,18 @@ class Nodes:
                     if group:
                         ev = group.pop(0)
                         if ev.evidence_id not in seen:
-                            evidence.append(ev)
+                            evidence=deduplicate([*evidence,ev],state['snapshot'])
                             seen.add(ev.evidence_id)
                         if len(evidence) == 8:
                             break
         state["evidence"] = deduplicate(evidence+previous,state['snapshot'])
         if evidence and state["plan"].expand_relations:
-            related = await self.tools.call("related_evidence", {"evidence_ids": [e.evidence_id for e in evidence]}, state)
+            selected=state['evidence']
+            related = await self.tools.call("related_evidence", {"evidence_ids": [e.evidence_id for e in selected]}, state)
             # Make room for a second document when possible; never displace exact target coverage.
-            if related and len(evidence) >= 8 and not state["identifiers"]:
-                evidence = evidence[:6]
-            unique = {e.evidence_id: e for e in evidence + related}
-            state["evidence"] = list(unique.values())[:8]
+            if related and len(selected) >= 8 and not state["identifiers"]:
+                selected = selected[:6]
+            state['evidence']=deduplicate(selected+related,state['snapshot'])
             if related:
                 state["warnings"].append("关联仅沿共同编号/明确产品关系扩展一跳，不代表已确认攻击链")
         if state["evidence"]:
@@ -651,17 +654,16 @@ class Nodes:
                 self.fallback(state)
                 draft = state["draft"]
         if not draft or not draft.claims:
-            searched = "已检索当前资料" + ("并尝试一次查询扩展" if state["retry_count"] else "")
-            answer = state["clarification"] or f"{searched}，仍未找到能直接支持该问题的来源证据。可以提供具体产品或漏洞编号缩小范围，或补充相关规范与案例。"
-            if state["missing_fields"]:
-                answer += " 未确认事项：" + "；".join(render_missing_fields(state["missing_fields"]))
+            target='、'.join(state['identifiers'][:3]) if state['identifiers'] else '该问题'
+            answer=state['clarification'] or f'现有资料尚不足以回答{target}。请补充对应的原始资料，或明确需要核查的范围。'
             status = "error" if state.get("llm_error") else "insufficient_evidence"
             if state.get("llm_error"):
                 answer = "模型服务未能完成证据相关性判断或答案核验，请稍后重试。此次失败不代表知识库没有相关资料。"
             claims, sources = [], []
             coverage = final_coverage(topics, [], assignments, verified=False)
-            if coverage["missing_topics"] and status != "error":
-                answer += " 尚未核实的范围：" + "；".join(coverage["missing_topics"]) + "。"
+            if status!='error' and not state['clarification']:
+                boundary=render_boundary_summary(state.get('requirement_coverage',[]),[],state['missing_fields'])
+                if boundary:answer+='\n'+boundary
         else:
             claims = draft.claims
             coverage = final_coverage(topics, claims, assignments, verified=claims_verified and state["output_mode"] == "live")
@@ -671,21 +673,16 @@ class Nodes:
                 cited_ids = {i for claim in claims for i in claim.evidence_ids}
                 cited_docs = {e.document_id for e in selected if e.evidence_id in cited_ids}
                 state["assertions"] = [a for a in state["assertions"] if a.document_id in cited_docs]
-            lines = [f"{render_claim(c)} [{','.join(c.evidence_ids)}]" for c in claims]
+            lines = render_claim_lines(claims)
             requested = set(answer_requirements(state["resolved_question"], state["identifiers"])["requested_fields"])
             rendered = [a for a in state["assertions"] if state["output_mode"] == "extractive" or a.field in requested]
-            for a in rendered[:6]:
-                lines.append(f"{render_assertion(a)} [{','.join(a.evidence_ids)}]")
-            if re.search(r"比较|对比|关联|compare", state["resolved_question"], re.I):
-                lines.append("以上为多文档证据对照；当前结果不构成已验证的攻击链或多跳推理结论。")
+            lines.extend(render_assertion_lines(rendered,claims))
+            if re.search(r'攻击链|多跳|attack\s+chain|multi.hop',state['resolved_question'],re.I):
+                state.setdefault('limitations',[]).append('当前关联分析基于所引资料及成立条件，尚未验证完整攻击链。')
             if state["conflicts"]:
-                lines.append("多个来源的字段存在差异，已分别保留断言；尚未判定哪个来源正确。")
-            if state["missing_fields"]:
-                lines.append("未确认事项：" + "；".join(render_missing_fields(state["missing_fields"])))
+                state.setdefault('limitations',[]).append('多个来源的同一字段存在差异，已分别保留，尚未裁决。')
             if coverage["missing_topics"]:
                 state["warnings"].append("coverage_incomplete")
-                lines.insert(0, "现有资料仅支持以下局部分析，不能视为完整的风险分类。")
-                lines.append("尚未核实的范围：" + "；".join(coverage["missing_topics"]) + "。可补充相应规范或案例后继续分析。")
             if state["output_mode"] == "extractive":
                 note = ("以下仅为检索候选摘录，尚未核实与本次问题的相关性，不能据此得出专业结论。"
                         if "relevance_check_unavailable" in state["warnings"] else
@@ -701,7 +698,7 @@ class Nodes:
             *[row.label+'：'+row.reason for row in final_requirements if row.status!='supported']]))[:20]
         if sources and limitations:
             status='partial'
-            answer+='\n证据边界：'+'；'.join(limitations)
+            answer+='\n'+render_boundary_summary(final_requirements,limitations,state['missing_fields'])
         events=state['budget'].events
         initial=[];supplemental=[]
         for event in events:

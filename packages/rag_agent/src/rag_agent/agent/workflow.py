@@ -90,6 +90,24 @@ def deduplicate(evidence, snapshot, limit=8):
     return result
 
 
+def semantic_subqueries(question, information_needs):
+    """Reuse classified needs for bounded local retrieval, never new entities.
+
+    The full question remains a fallback. Classifier text cannot introduce a
+    CVE identifier or a URL into this natural-language retrieval plan.
+    """
+    queries=[]
+    for need in information_needs:
+        query=need.strip()
+        if not query or re.search(r'CVE[-－]|https?://',query,re.I):
+            continue
+        if query not in queries and query!=question:
+            queries.append(query)
+        if len(queries)==2:
+            break
+    return [*queries,question]
+
+
 def evaluate(state, *, final=False, verified=False, claims=None, sources=None):
     """No confidence percentages. Candidate coverage cannot claim final support."""
     rows=[]

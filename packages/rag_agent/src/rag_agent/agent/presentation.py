@@ -8,6 +8,7 @@ identities remain with the caller; presentation must not replace them.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import re
 from typing import Any
 
@@ -24,6 +25,7 @@ def answer_requirements(question: str, identifiers: list[str]) -> dict[str, Any]
         "risk": r"风险|威胁|危害|严重|评分|利用|攻击|cvss|exploit|risk",
         "definition": r"什么是|是什么|解释|原理|机制|如何发生|what\s+is|explain|mechanism",
         "overview": r"有哪些|哪几类|分类|概览|综述|概况|overview|categories",
+        "relation": r"关联|攻击链|多跳|跨文档|结合.*资料|attack\s+chain|multi.hop",
     }
     facets = [name for name, pattern in patterns.items()
               if re.search(pattern, question, re.I)]
@@ -40,6 +42,8 @@ def answer_requirements(question: str, identifiers: list[str]) -> dict[str, Any]
                        "有来源支持时给出具体应用场景或例子"],
         "overview": ["按资料支持的风险或主题分类", "每类解释发生方式和后果",
                      "说明资料覆盖范围，不把局部资料冒充完整分类"],
+        "relation": ["明确关联的对象、组件及成立条件，并同时引用关系两端的依据",
+                     "区分资料明确记载的关联与条件性推断；共享关键词不能证明攻击链"],
     }
     selected = facets or [query_type]
     required_points = list(dict.fromkeys(point for facet in selected for point in points[facet]))
@@ -57,6 +61,7 @@ def answer_requirements(question: str, identifiers: list[str]) -> dict[str, Any]
         "target_identifiers": list(dict.fromkeys(identifiers)),
         "required_points": required_points,
         "requested_fields": list(dict.fromkeys(requested_fields)),
+        "output_profile": output_profile(question, identifiers, selected),
         "answer_style": [
             "直接回答当前问题；按需要说明结论、机制、条件、影响或动作，避免无关字段堆叠",
             "每条结论写清具体对象及行为，避免只写加强防护、完善机制、提高意识等空泛建议",
@@ -70,6 +75,65 @@ def answer_requirements(question: str, identifiers: list[str]) -> dict[str, Any]
             "来源采集时间不等于官方更新时间，无法满足最新要求时明确时效限制",
         ],
     }
+
+
+def output_profile(question: str, identifiers: list[str], facets: list[str]) -> dict[str, Any]:
+    """Match depth to the question; these bounds never authorize new facts."""
+    brief=bool(re.search(r'一句话|只要结论|简短|简要|brief|one sentence',question,re.I))
+    detailed=not brief and bool(len(identifiers)>1 or re.search(
+        r'详细|深入|完整分析|逐步|攻击链|多跳|跨文档|deep|detailed|step.by.step',question,re.I))
+    labels={'definition':['核心结论','机制与条件'],'risk':['核心结论','触发条件与影响'],
+        'remediation':['处置建议','适用条件'],'affected':['影响范围','适用条件'],
+        'comparison':['比较结论','逐对象对照'],'overview':['主题要点'],
+        'relation':['关联依据','成立条件']}
+    sections=list(dict.fromkeys(label for facet in facets for label in labels.get(facet,[])))
+    one=bool(re.search(r'一句话|只要结论|one sentence',question,re.I))
+    return {'detail_level':'detailed' if detailed else 'concise',
+        'max_claims':1 if one else 2 if brief else 8 if detailed else 4,
+        'max_claim_chars':240 if detailed else 160,
+        'sections':['核心结论'] if one else sections,
+        'show_source_links':True,
+        'explain_relation':'relation' in facets or 'comparison' in facets}
+
+
+def render_claim_lines(claims: list[Claim]) -> list[str]:
+    """Merge identical display sentences, retaining every original citation."""
+    grouped={}
+    for claim in claims:
+        text=render_claim(claim)
+        key=(claim.kind,' '.join(text.split()))
+        if key not in grouped:grouped[key]=(text,[])
+        ids=grouped[key][1]
+        ids.extend(i for i in claim.evidence_ids if i not in ids)
+    return [text+' ['+','.join(ids)+']' for text,ids in grouped.values()]
+
+
+def render_assertion_lines(assertions: list[Assertion], claims: list[Claim], limit=6) -> list[str]:
+    """Display exact duplicate source facts once; source/score differences stay."""
+    grouped={}
+    for item in assertions:
+        text=render_assertion(item)
+        if any(c.kind=='fact' and text in c.text and set(item.evidence_ids).issubset(c.evidence_ids) for c in claims):
+            continue
+        key=(item.entity_id,item.field,json.dumps(item.value,ensure_ascii=False,sort_keys=True),
+             item.origin,item.verification)
+        if key not in grouped:grouped[key]=(text,[])
+        ids=grouped[key][1]
+        ids.extend(i for i in item.evidence_ids if i not in ids)
+    rows=list(grouped.values())
+    lines=[text+' ['+','.join(ids)+']' for text,ids in rows[:limit]]
+    if len(rows)>limit:lines.append('其他来源字段保留在原文证据中，可展开核对。')
+    return lines
+
+
+def render_boundary_summary(coverage, limitations, missing_fields) -> str:
+    """One short public notice; full reasons remain in structured metadata."""
+    labels=list(dict.fromkeys(row.label for row in coverage if row.status!='supported'))
+    if not labels:labels=render_missing_fields(missing_fields)
+    if labels:
+        suffix='；其他限制见证据核对' if len(labels)>3 else ''
+        return '【资料边界】尚未完整核实：'+'；'.join(labels[:3])+suffix+'。'
+    return '【资料边界】存在资料或运行限制，详见证据核对。' if limitations else ''
 
 
 def _scalar(value: Any) -> str:
@@ -175,7 +239,7 @@ def _mitigation(value: Any) -> str:
         references = value.get("references")
         if isinstance(references, list) and references:
             note = (f"来源提供 {len(references)} 条处置参考记录；"
-                    "链接内容与具体修复版本尚需进一步核实")
+                    "参考链接正文尚未核查，不能仅凭链接确认具体处置措施")
             return (text + "；" if text else "") + note
         return text
     if isinstance(value, list):

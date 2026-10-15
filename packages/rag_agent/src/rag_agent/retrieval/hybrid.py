@@ -18,6 +18,10 @@ CONCEPTS = {
     "供应链": ("supply chain",),
     "越权": ("privilege escalation", "unauthorized", "authorization bypass"),
     "数据泄露": ("data leakage", "information disclosure", "信息泄露"),
+    "过度代理": ("excessive agency", "过度代理", "过度自主权"),
+    "文件访问": ("file access", "file system", "file management", "filesystem", "arbitrary file",
+               "path traversal", "directory traversal", "sandbox escape", "文件访问", "路径穿越",
+               "目录遍历", "沙箱逃逸"),
 }
 
 # These retrieve possible supporting cases, not interchangeable audit claims.
@@ -152,7 +156,7 @@ class HybridRetriever:
         for ranking in (lexical, dense):
             for rank, i in enumerate(ranking, 1):
                 rrf[i] = rrf.get(i, 0) + 1 / (60 + rank)
-        winners, per_document = [], {}
+        winners, per_document, seen_sources = [], {}, set()
         # Soft boosts affect rank only. Candidate relevance and claim support
         # remain decisions of the Agent's assessment and verification stages.
         def rank_key(i):
@@ -161,10 +165,20 @@ class HybridRetriever:
             return boosted, float(cosine[i]), -i
 
         for i in sorted(rrf, key=rank_key, reverse=True):
-            doc_id = snapshot.chunks[indices[i]]["document_id"]
+            chunk = snapshot.chunks[indices[i]]
+            doc_id = chunk["document_id"]
+            evidence = snapshot.evidence[chunk["chunk_id"]]
+            source_key = (snapshot.documents[doc_id].source_url.rstrip('/'),
+                          ' '.join(evidence.excerpt.split()))
+            # Mirrored records can have distinct backend document IDs while
+            # quoting the same source. Deduplicate before the bounded cutoff
+            # so another ranked candidate can fill the vacated slot.
+            if source_key in seen_sources:
+                continue
             if per_document.get(doc_id, 0) >= 2:
                 continue
             winners.append(i)
+            seen_sources.add(source_key)
             per_document[doc_id] = per_document.get(doc_id, 0) + 1
             if len(winners) == limit:
                 break
