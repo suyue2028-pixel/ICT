@@ -42,7 +42,9 @@ def claim_events(body: ClaimRequest, db: Database):
     items = []
     for event in events:
         doc = db.get(Document, event.document_id)
-        if doc.content_hash != event.content_hash or (doc.deleted_at is not None and event.operation != "delete"):
+        if (doc.content_hash != event.content_hash or
+                (doc.deleted_at is not None and event.operation != "delete") or
+                (event.operation == "delete" and doc.deleted_at is None and doc.ai_relevant)):
             event.status, event.detail = "superseded", {"reason": "document_version_changed"}
             continue
         event.status, event.lease_token, event.lease_until = "indexing", uuid4(), now + timedelta(minutes=15)

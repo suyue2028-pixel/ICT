@@ -871,6 +871,63 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/enrich": {
+      "post": {
+        "tags": [
+          "原始文档"
+        ],
+        "summary": "Enrich Document",
+        "description": "异步核验现有资料的8类富化；缺失/不适用明确记录，不生成无证据值。",
+        "operationId": "enrich_document_api_v1_documents__document_id__enrich_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/intelligence": {
       "get": {
         "tags": [
@@ -3080,7 +3137,7 @@
           "运行监控"
         ],
         "summary": "Coverage",
-        "description": "真实来源范围、目录收录进度、任务状态和实测6小时内入库比例；非全网召回率。",
+        "description": "真实来源范围、目录收录进度、任务状态和实测4小时内入库比例；非全网召回率。",
         "operationId": "coverage_api_v1_ops_coverage_get",
         "security": [
           {
@@ -3098,6 +3155,53 @@
               "minimum": 1,
               "default": 48,
               "title": "Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/enrichment": {
+      "get": {
+        "tags": [
+          "运行监控"
+        ],
+        "summary": "Enrichment Progress",
+        "description": "八类逐条处理进度；有证据、待审、未找到和不适用分别计数，非准确率。",
+        "operationId": "enrichment_progress_api_v1_ops_enrichment_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "is_demo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Demo"
             }
           }
         ],
@@ -3153,7 +3257,7 @@
           "富化质量审核"
         ],
         "summary": "Quality Summary",
-        "description": "覆盖率、结构/出处问题和最近同范围人工评测；自动校验不等于准确率。",
+        "description": "分批扫描全部符合条件的当前文档；覆盖率、结构/出处问题不等于人工准确率。",
         "operationId": "quality_summary_api_v1_ops_enrichment_quality_get",
         "security": [
           {
@@ -3227,6 +3331,18 @@
               "default": "source_reported",
               "title": "Prediction Method"
             }
+          },
+          {
+            "name": "batch_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Batch Size"
+            }
           }
         ],
         "responses": {
@@ -3257,6 +3373,7 @@
           "富化质量审核"
         ],
         "summary": "Quality Issues",
+        "description": "扫描完整范围后按错误码/级别分页，内存仅保留本页问题。",
         "operationId": "quality_issues_api_v1_ops_enrichment_quality_issues_get",
         "security": [
           {
@@ -3389,6 +3506,18 @@
               "minimum": 1,
               "default": 20,
               "title": "Page Size"
+            }
+          },
+          {
+            "name": "batch_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Batch Size"
             }
           }
         ],

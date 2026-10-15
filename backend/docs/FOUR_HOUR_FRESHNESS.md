@@ -26,6 +26,8 @@ uv run python scripts/verify-four-hour-runtime.py --compose-project ict-backend
 
 ## 查看最近四小时与实际延迟
 
+2026-10-12追加统一：`/ops/coverage`原来的6小时默认值已改为复用`freshness.DELIVERY_TARGET_SECONDS`（14,400秒），含全局/每来源发布延迟、更新延迟、历史到达观察和排队等待。Swagger与新观察样本使用相同口径，旧数据库观察样本不改写。富化实时监测同时升级为完整分批扫描，详见[富化质量监测](ENRICHMENT_QUALITY.md)。
+
 原有最近 48 小时接口继续兼容。查看最近 4 小时可使用：
 
 ```text

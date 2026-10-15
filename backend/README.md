@@ -155,3 +155,12 @@ API 返回 202 和任务 ID，任务/outbox 一起提交；beat 补发 Redis 消
 ## 公开情报快照（2026-10-12）
 
 已加入带版本/校验清单的公开数据包、只读导出、dry-run/事务导入、幂等映射与知识事件。团队导入与 Agent 同步命令见 [快照使用说明](docs/public-intelligence-snapshots.md)，实际验证见 [快照验证记录](docs/public-snapshot-validation.md)。这是定期快照，不是实时共享数据库；不复制凭据或索引。
+
+
+## 八类证据富化升级（2026-10-15）
+
+在已有八个栏目中补齐按文档版本的异步处理、状态、原文证据和全库进度；法规等不适用的维度明确标注，不制造漏洞事实。产品版本/CWE/CVSS/修复信息优先复用来源，主题相关论文仍待审核。详见[八类富化说明与实测](docs/EIGHT_ENRICHMENT.md)。
+
+部署需执行新增0011迁移（Compose迁移服务会处理），然后启动原有api/worker/唯一beat。`uv run python scripts/enrich-all.py --queue`可补处理已有数据；`uv run python scripts/verify-eight-enrichment.py --compose-project ict-backend`只读核验。原开发机需传`cit-backend-development`。GitHub代码更新不自动共享本机数据库，凭据、索引、备份和运行输出不上传。
+
+四小时口径统一、全量富化质量扫描及误关联修复见[监测验证](docs/FRESHNESS_QUALITY_VALIDATION_20261012.md)、[来源准确性审计](docs/DATA_ACCURACY_AUDIT_20261012.md)、[相关性修复](docs/RELEVANCE_REPAIR_20261013.md)。独立人工准确率/召回率和持续SLA仍待验收。

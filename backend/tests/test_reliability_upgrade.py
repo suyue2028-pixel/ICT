@@ -126,6 +126,10 @@ def test_observation_idempotent_samples_and_restart_gap(db):
     assert capture_samples(db, now + timedelta(seconds=10), {"api": True}) == 0
     assert capture_samples(db, now + timedelta(seconds=300), {"api": True, "agent": False}) == 1
     rows = list(db.scalars(select(RuntimeSample).where(RuntimeSample.observation_id == run.id).order_by(RuntimeSample.measured_at)))
+    quality = rows[0].detail["enrichment_quality"]
+    assert quality["scan_complete"] and quality["scanned_documents"] == quality["total_documents"]
+    assert quality["scan_version"] == "enrichment-quality-scan-v2"
+    assert rows[0].detail["source_coverage"]["delivery"]["recent_publication_to_first_collection"]["target_seconds"] == 14400
     report = observation_summary(run, rows, now + timedelta(seconds=305))
     assert report["status"] == "observing" and report["gap_seconds"] == 300 and report["component_failure_samples"] == 1
     final = observation_summary(run, rows, now + timedelta(hours=49))

@@ -41,13 +41,13 @@ def create_task(db: Session, source: DataSource, idempotency_key: str | None = N
                 raise HTTPException(409, "idempotency_key_conflict")
             return previous
     active = db.scalar(select(TaskRun).where(
-        TaskRun.source_id == source.id, TaskRun.status.in_(("queued", "running"))
+        TaskRun.source_id == source.id, TaskRun.kind.in_(("collect", "offline_demo")), TaskRun.status.in_(("queued", "running"))
     ))
     if active:
         return active
     if enforce_rate_limit and source.adapter != "offline":
         last_success = db.scalar(select(TaskRun.finished_at).where(
-            TaskRun.source_id == source.id, TaskRun.status == "succeeded",
+            TaskRun.source_id == source.id, TaskRun.kind == "collect", TaskRun.status == "succeeded",
             TaskRun.finished_at.is_not(None)).order_by(TaskRun.finished_at.desc()).limit(1))
         if last_success and last_success > utc_now() - timedelta(seconds=60):
             raise HTTPException(429, "source_rate_limited")
@@ -72,7 +72,8 @@ def maintain_jobs(db: Session, celery_app) -> dict:
         task.lease_token, task.lease_until = None, None
         if task.attempts >= 3:
             task.status, task.error_code, task.finished_at = "failed", "worker_lease_expired", now
-            record_failure(db.get(DataSource, task.source_id), task.error_code, now, terminal=True)
+            if task.kind in {"collect", "offline_demo"}:
+                record_failure(db.get(DataSource, task.source_id), task.error_code, now, terminal=True)
         else:
             task.status = "queued"
             outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id).with_for_update())
@@ -90,21 +91,25 @@ def maintain_jobs(db: Session, celery_app) -> dict:
         TaskRun.status == "queued",
         or_(Outbox.available_at.is_(None), Outbox.available_at <= now),
         or_(Outbox.sent_at.is_(None), Outbox.sent_at < now - timedelta(seconds=60)),
-    ).limit(20).with_for_update(of=Outbox, skip_locked=True)).all()
+    ).limit(50).with_for_update(of=Outbox, skip_locked=True)).all()
     sent = 0
     for event in pending:
         event.attempts += 1
         try:
             # TaskRun is the result store; subscribing to Redis results here can
             # block the outbox transaction through the backend's reconnect loop.
-            celery_app.send_task("backend.collect", args=[str(event.task_id)], retry=False, ignore_result=True)
+            kind = db.get(TaskRun, event.task_id).kind
+            celery_app.send_task("backend.enrich" if kind == "enrich" else "backend.collect",
+                                 args=[str(event.task_id)], retry=False, ignore_result=True)
         except Exception:
             # 不记录可能包含连接凭据的异常原文；失败消息保留在 outbox，等待下次发送。
             event.available_at = now + timedelta(seconds=min(event.attempts * 5, 60))
         else:
             event.sent_at, event.available_at = now, None
             sent += 1
-    return {"sent": sent, "recovered": len(expired),
+    from backend.services.eight_enrichment import enqueue_missing
+    enrichment_queued = enqueue_missing(db, limit=10)
+    return {"sent": sent, "recovered": len(expired), "enrichment_queued": enrichment_queued,
             "index": maintain_index_events(db, celery_app)}
 
 
@@ -118,9 +123,12 @@ def maintain_index_events(db: Session, celery_app) -> dict:
         KnowledgeEvent.status == "pending").with_for_update(skip_locked=True).limit(20)).all()
     for deletion in deletions:
         document = db.get(Document, deletion.document_id)
-        if document is not None and document.deleted_at is not None:
+        if (document is not None and document.content_hash == deletion.content_hash and
+                (document.deleted_at is not None or not document.ai_relevant)):
             deletion.status = "invalidated"
             deletion.detail = {"method": "logical_invalidation", "vectors_retained_for_history": True}
+        else:
+            deletion.status, deletion.detail = "superseded", {"reason": "retrieval_scope_changed"}
     if not settings.embedding_configured:
         return {"sent": 0, "reason": "embedding_not_configured"}
     try:
@@ -141,6 +149,7 @@ def maintain_index_events(db: Session, celery_app) -> dict:
             event.available_at = now
     pending = db.scalars(select(KnowledgeEvent).where(
         KnowledgeEvent.status.in_(("pending", "queued")),
+        KnowledgeEvent.operation != "delete",
         or_(KnowledgeEvent.available_at.is_(None), KnowledgeEvent.available_at <= now),
         or_(KnowledgeEvent.status == "pending", KnowledgeEvent.last_sent_at.is_(None),
             KnowledgeEvent.last_sent_at < now - timedelta(seconds=60)),
@@ -148,7 +157,7 @@ def maintain_index_events(db: Session, celery_app) -> dict:
     sent = 0
     for event in pending:
         document = db.get(Document, event.document_id)
-        if document is None or document.deleted_at is not None or document.content_hash != event.content_hash:
+        if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != event.content_hash:
             event.status = "superseded"
             event.detail = {"reason": "document_version_changed"}
             continue

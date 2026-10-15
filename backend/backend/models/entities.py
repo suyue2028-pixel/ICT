@@ -139,7 +139,7 @@ class TaskRun(IdentityMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("status IN ('queued','running','succeeded','failed')", name="status"),
         Index("uq_active_source", "source_id", unique=True,
-              postgresql_where=text("status IN ('queued', 'running')")),
+              postgresql_where=text("status IN ('queued','running') AND kind IN ('collect','offline_demo')")),
     )
     source_id: Mapped[UUID] = mapped_column(ForeignKey("data_sources.id"), index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)

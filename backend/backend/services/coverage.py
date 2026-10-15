@@ -5,7 +5,7 @@ from math import ceil
 from sqlalchemy import select
 from backend.models import DataSource, Document, TaskRun
 from backend.collectors.registry import SOURCE_DEFINITIONS
-from backend.services.freshness import source_observation
+from backend.services.freshness import DELIVERY_TARGET_SECONDS, source_observation
 
 SCOPES = {
     "osv": "configured PyPI package inventory; package pagination",
@@ -25,7 +25,7 @@ SCOPES = {
 }
 
 
-def latency(values, target=21600):
+def latency(values, target=DELIVERY_TARGET_SECONDS):
     ordered = sorted(values)
     return {"count": len(ordered), "p50_seconds": ordered[ceil(len(ordered) * .5) - 1] if ordered else None,
         "p95_seconds": ordered[ceil(len(ordered) * .95) - 1] if ordered else None,
@@ -92,7 +92,7 @@ def coverage_snapshot(db, now, hours=48):
                 "not_stored": len(ids - stored), "not_stored_preview": sorted(ids - stored)[:20],
                 "observed_catalogue_capture_ratio": len(stored) / len(ids) if ids else None,
                 "is_independent_recall": False}
-        tasks = list(db.scalars(select(TaskRun).where(TaskRun.source_id == source.id,
+        tasks = list(db.scalars(select(TaskRun).where(TaskRun.source_id == source.id, TaskRun.kind == "collect",
             TaskRun.created_at >= now - timedelta(hours=hours))))
         waits = [(task.started_at - task.created_at).total_seconds() for task in tasks
                  if task.started_at and task.started_at >= task.created_at]

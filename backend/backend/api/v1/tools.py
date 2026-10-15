@@ -101,7 +101,7 @@ def search_documents(db, request, keyword, is_demo, category, adapter, page, pag
     rows = db.scalars(statement.order_by(Document.first_collected_at.desc(), Document.id)
         .offset((page - 1) * page_size).limit(page_size)).all()
     checked = dict(db.execute(select(TaskRun.source_id, func.max(TaskRun.finished_at)).where(
-        TaskRun.source_id.in_({d.source_id for d in rows}), TaskRun.status == "succeeded")
+        TaskRun.source_id.in_({d.source_id for d in rows}), TaskRun.kind == "collect", TaskRun.status == "succeeded")
         .group_by(TaskRun.source_id)).all())
     return envelope(request, {"items": [{**document_json(db, d), "excerpt": d.content[:2000],
         "cache": {"last_checked_at": checked.get(d.source_id), "version_updated_at": d.content_changed_at or d.first_collected_at,

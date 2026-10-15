@@ -64,12 +64,16 @@ def invalidate_document(document_id: UUID, db: Database):
         raise HTTPException(404, "record_not_found")
     event = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.document_id == document.id,
         KnowledgeEvent.content_hash == document.content_hash, KnowledgeEvent.operation == "delete"))
+    already_deleted = document.deleted_at is not None
+    document.deleted_at = document.deleted_at or utc_now()
     if event is None:
-        document.deleted_at = utc_now()
         event = KnowledgeEvent(document_id=document.id, content_hash=document.content_hash,
             operation="delete", status="pending", detail={"reason": "logical_invalidation", "is_demo": document.is_demo})
         db.add(event)
         db.flush()
+    elif not already_deleted and event.status not in {"pending", "queued", "indexing"}:
+        from backend.services.reclassification import reset_event
+        reset_event(event, {"reason": "logical_invalidation", "is_demo": document.is_demo})
     db.commit()
     return {"document_id": document.id, "event_id": event.id, "status": event.status, "deleted_at": document.deleted_at}
 
@@ -121,6 +125,25 @@ def document_enrichment(document_id: UUID, db: Database):
                                  "state": row.state, "value": row.value,
                                  "evidence_id": row.id} for row in external_rows]
                                if external_rows else [{"state": "unprocessed"}])
+    from backend.services.eight_enrichment import summary_dimensions
+    from backend.models import TaskRun
+    latest = db.scalar(select(TaskRun).where(TaskRun.kind == "enrich",
+        TaskRun.result["document_id"].as_string() == str(document.id),
+        TaskRun.result["content_hash"].as_string() == document.content_hash).order_by(TaskRun.created_at.desc()).limit(1))
     return {"document_id": document.id, "content_hash": document.content_hash,
             "source": source, "external": external,
+            "summary": summary_dimensions(rows, latest),
             "normalized": structured_enrichment(document, rows)}
+
+
+@router.post("/{document_id}/enrich", status_code=202, dependencies=[Depends(require_admin)])
+def enrich_document(document_id: UUID, db: Database, force: bool = False):
+    """异步核验现有资料的8类富化；缺失/不适用明确记录，不生成无证据值。"""
+    from backend.services.eight_enrichment import create_enrichment_task
+    from fastapi.responses import JSONResponse
+    task, created = create_enrichment_task(db, require_record(db, Document, document_id), force=force)
+    db.commit()
+    if task is None:
+        return JSONResponse(status_code=200, content={"document_id": str(document_id), "status": "already_processed"})
+    return {"id": task.id, "task_id": task.id, "status": task.status, "kind": task.kind,
+            "created": created, "document_id": document_id}

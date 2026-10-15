@@ -43,6 +43,11 @@ def retry_task(task_id: UUID, db: Database):
     previous = require_record(db, TaskRun, task_id)
     if previous.status != "failed":
         raise HTTPException(409, "only_failed_task_can_retry")
-    task = create_task(db, require_record(db, DataSource, previous.source_id))
+    if previous.kind == "enrich":
+        from backend.models import Document
+        from backend.services.eight_enrichment import create_enrichment_task
+        task, _ = create_enrichment_task(db, require_record(db, Document, UUID(previous.result["document_id"])), force=True)
+    else:
+        task = create_task(db, require_record(db, DataSource, previous.source_id))
     db.commit()
     return task

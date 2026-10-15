@@ -80,7 +80,8 @@ def acknowledge_event(event_id: UUID, body: KnowledgeAck, db: Database):
     if event.operation == "delete" and body.status != "failed":
         if body.status != "invalidated" or getattr(settings, "index_provider", "internal") != "external":
             raise HTTPException(422, "delete_event_requires_external_invalidation")
-        if document is None or document.deleted_at is None:
+        if (document is None or document.content_hash != event.content_hash or
+                document.deleted_at is None and document.ai_relevant):
             raise HTTPException(409, "document_not_invalidated")
         from backend.services.agent_gateway import verify_external_index
         verify_external_index(settings, event, document.is_demo, body.detail.get("index_id"))
@@ -95,7 +96,7 @@ def acknowledge_event(event_id: UUID, body: KnowledgeAck, db: Database):
     if body.status == "indexed" and not body.detail.get("index_id"):
         raise HTTPException(422, "index_id_required")
     if body.status == "indexed":
-        if document is None or document.deleted_at is not None or document.content_hash != event.content_hash:
+        if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != event.content_hash:
             raise HTTPException(409, "document_revision_changed")
         if getattr(settings, "index_provider", "internal") == "external":
             from backend.services.agent_gateway import verify_external_index
@@ -161,7 +162,8 @@ def replay_event(event_id: UUID, db: Database):
     event = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.id == event_id)
         .with_for_update().execution_options(populate_existing=True))
     if document is None or document.content_hash != event.content_hash or (
-            document.deleted_at is not None and event.operation != "delete"):
+            (document.deleted_at is not None or not document.ai_relevant) and event.operation != "delete") or (
+            event.operation == "delete" and document.deleted_at is None and document.ai_relevant):
         raise HTTPException(409, "event_not_current")
     if event.status in {"queued", "indexing"}:
         raise HTTPException(409, "event_processing")
@@ -174,6 +176,8 @@ def replay_event(event_id: UUID, db: Database):
 
 @router.post("/internal/enrichments", status_code=201, dependencies=[Depends(require_internal_write)])
 def write_enrichment(body: EnrichmentWrite, db: Database):
+    if body.provider == "backend-evidence-v1":
+        raise HTTPException(422, "reserved_enrichment_provider")
     document = db.scalar(select(Document).where(Document.id == body.document_id).with_for_update())
     if document is None:
         raise HTTPException(404, "record_not_found")

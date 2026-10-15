@@ -30,7 +30,19 @@ cd 'D:\cit\后端开发'
 | POST /batches/{id}/reviews | 追加一份文档审核；相同请求幂等；修改已保存标签409 |
 | GET /batches/{id}/report | 分维度TP/FP/FN和审核覆盖率；默认仅计当前有效预测 |
 
-实时扫描最多1000条，批次候选最多5000条，响应明确报告扫描是否完整。超过范围时应分来源评估，不能把部分扫描当全库。覆盖率分母是本次所选文档，不表示该字段对每种文档都适用；因此建议漏洞、公告分别观察。
+2026-10-12：实时监测改为完整扫描符合筛选条件的当前文档，不再截断前1000条。PostgreSQL在单条流式查询的同一快照内读取文档、当前版本证据与总数，默认每批拉取200行，`batch_size`可设1—500；它控制数据库拉取大小，不限制扫描文档总数。没有证据的文档仍计入分母，旧版本证据不计入当前覆盖率。
+
+响应保留原字段，并增加`scan_version=enrichment-quality-scan-v2`、`scan_batch_size`、`scan_consistency=single_statement_snapshot`；完整扫描的`scan_limit=null`、`scanned_documents=total_documents`、`scan_complete=true`。摘要不保留逐条问题；问题接口扫描完整范围，按severity/code过滤后计算总数，只保留所请求页面，分页顺序为文档ID、证据ID、检查项。每次请求是独立快照，持续采集中不同请求之间的数量可能变化。
+
+人工审核批次候选仍最多5000条，这是抽样限制，不是实时监测限制。覆盖率分母是本次所选文档，不表示该字段对每种文档都适用；建议漏洞、公告分别观察。全量结构检查完成不等于人工准确率或召回率已验证。
+
+只读复验（零模型调用，不创建人工审核记录）：
+
+```powershell
+& 'D:\cit\.venv\Scripts\python.exe' scripts\verify-freshness-quality.py
+```
+
+结果保存在本地忽略目录`output/enrichment-quality/freshness-quality-after-*.json`。其中实际文档总数动态读取，不将1447写成固定上限。
 
 ## 自动检查的边界
 

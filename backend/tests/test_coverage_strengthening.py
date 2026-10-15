@@ -144,16 +144,36 @@ def test_policy_empty_page_cannot_advance_cursor(monkeypatch):
     assert cursor == {"from": NOW.isoformat()}
 
 
-def test_delivery_separates_backfill_imprecise_future_and_six_hour_boundary():
+def test_delivery_separates_backfill_imprecise_future_and_four_hour_boundary():
     def doc(hours, first=0, metadata=None):
         return dict(published_at=NOW - timedelta(hours=hours), first_collected_at=NOW - timedelta(hours=first),
             metadata_json=metadata or {}, content_changed_at=None, source_updated_at=None)
-    result = delivery_metrics([doc(6), doc(7), doc(100), doc(1, metadata={"date_precision": 3}), doc(-1)], NOW, 48)
+    result = delivery_metrics([doc(4), doc(5), doc(100), doc(1, metadata={"date_precision": 3}), doc(-1)], NOW, 48)
     measured = result["recent_publication_to_first_collection"]
     assert measured["count"] == 2 and measured["within_target"] == 1 and measured["over_target"] == 1
+    assert measured["target_seconds"] == 14400
     assert result["historical_first_seen_in_window"]["count"] == 1
     assert result["imprecise_publication_time"] == 1 and result["negative_publication_delay"] == 1
     assert latency([])["observed_within_target_ratio"] is None
+
+
+def test_four_hour_target_shared_for_publications_updates_and_coverage_api(db, client):
+    from backend.services.freshness import DELIVERY_TARGET_SECONDS, freshness_snapshot
+    result = latency([14399, 14400, 14401, 21600])
+    assert result["target_seconds"] == DELIVERY_TARGET_SECONDS == 14400
+    assert result["within_target"] == result["over_target"] == 2
+    docs = [dict(published_at=NOW - timedelta(hours=3), first_collected_at=NOW,
+        metadata_json={}, source_updated_at=NOW - timedelta(hours=5), content_changed_at=NOW)]
+    measured = delivery_metrics(docs, NOW, 48)
+    assert measured["updated_to_changed_in_window"]["target_seconds"] == 14400
+    assert measured["updated_to_changed_in_window"]["over_target"] == 1
+    fresh = freshness_snapshot(db, utc_now())
+    response = client.get("/api/v1/ops/coverage", headers={"X-API-Key": get_settings().admin_api_key.get_secret_value()})
+    assert response.status_code == 200
+    coverage = response.json()
+    targets = [coverage["delivery"][key]["target_seconds"] for key in
+        ("recent_publication_to_first_collection", "historical_first_seen_in_window", "updated_to_changed_in_window")]
+    assert targets == [fresh["schedule_policy"]["target_seconds"]] * 3 == [14400] * 3
 
 
 def test_admin_coverage_counts_saved_catalogue_not_independent_recall_and_excludes_demo(db, client):

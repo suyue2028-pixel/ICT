@@ -29,9 +29,10 @@ def capture_samples(db, now, component_health):
             continue
         snapshot = freshness_snapshot(db, now)
         from backend.services.enrichment_quality import monitoring
-        quality = monitoring(db)
+        quality = monitoring(db, include_issues=False)
         snapshot["enrichment_quality"] = {key: quality[key] for key in
-            ("scope", "scanned_documents", "scan_complete", "dimensions", "automatic_checks")}
+            ("scope", "total_documents", "scanned_documents", "scan_complete", "scan_version",
+             "scan_batch_size", "scan_consistency", "dimensions", "automatic_checks")}
         from backend.services.coverage import coverage_snapshot
         coverage = coverage_snapshot(db, now)
         snapshot["source_coverage"] = {key: coverage[key] for key in

@@ -3,6 +3,7 @@
 No network/model calls; neither source agreement nor a valid URL proves a fact.
 """
 from collections import Counter, defaultdict
+from itertools import groupby
 import hashlib
 import json
 import math
@@ -11,7 +12,8 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
+from sqlalchemy.orm import aliased
 from backend.models import (DataSource, Document, Evidence, EnrichmentQualityBatch,
                             EnrichmentQualityReview)
 from backend.services.enrichment import cpe_components
@@ -19,6 +21,8 @@ from backend.services.jobs import utc_now
 
 DIMENSIONS = ("affected", "cwe", "cvss", "remediation", "analysis", "poc")
 EVALUATOR_VERSION = "enrichment-quality-v1"
+SCAN_VERSION = "enrichment-quality-scan-v2"
+DEFAULT_SCAN_BATCH_SIZE = 200
 LIMITATIONS = [
     "Automatic checks measure structure/provenance, not semantic correctness or link availability.",
     "Human/independent annotation declarations require team verification; AI labels do not count.",
@@ -48,8 +52,18 @@ def unique(values):
     return [json.loads(key) for key in sorted({canonical(value) for value in values})]
 
 
+def source_shape(field, value):
+    if isinstance(value, list):
+        key = {"affected": "items", "cwe": "ids", "cvss": "vectors",
+               "remediation": "references", "analysis": "references", "poc": "references"}.get(field)
+        if key:
+            return {key: value}
+    return value
+
+
 def fact_units(field, value):
     """Stable source facts; malformed known values remain predictions, never disappear."""
+    value = source_shape(field, value)
     if not isinstance(value, dict):
         return [{"unparsed_value": value}]
     if field == "cwe" and isinstance(value.get("ids"), list):
@@ -72,6 +86,9 @@ def fact_units(field, value):
         for row in value.get("items", []) if isinstance(value.get("items", []), list) else [value["items"]]:
             if not isinstance(row, dict):
                 values.append({"unparsed_value": row})
+                continue
+            if row.get("cpe_criteria"):
+                values.append({"kind": "cpe", "criteria": row["cpe_criteria"], **row.get("version_bounds", {})})
                 continue
             package = row.get("package", {})
             values.append({"kind": "osv", "package": {key: package.get(key) for key in ("name", "ecosystem")}
@@ -121,7 +138,11 @@ def prediction_rows(rows):
 
 
 def prediction_hash(rows):
-    return digest(prediction_rows(rows))
+    predictions = prediction_rows(rows)
+    for item in predictions:
+        if item["method"] == "external:backend-evidence-v1" and isinstance(item["value"], dict):
+            item["value"] = {key: value for key, value in item["value"].items() if key != "checked_at"}
+    return digest(predictions)
 
 
 def predicted_units(rows):
@@ -155,6 +176,8 @@ def audit_document(doc, rows):
             continue
         external = row.method.startswith("external:")
         value = row.value.get("value") if external and isinstance(row.value, dict) else row.value
+        if external:
+            value = source_shape(row.field, value)
         if not row.locator or not row.excerpt:
             flag(row, "missing_provenance")
         if not valid_url(row.source_url):
@@ -233,33 +256,73 @@ def audit_document(doc, rows):
 
 
 def monitoring(db, is_demo=False, ai_relevant=True, source_id=None, document_type="vulnerability",
-               prediction_method="source_reported", limit=1000):
-    query = document_query(is_demo, ai_relevant, source_id, document_type)
-    total = db.scalar(select(func.count()).select_from(query.subquery()))
-    documents = list(db.scalars(query.order_by(Document.id).limit(limit)))
-    groups = evidence_groups(db, documents, prediction_method)
-    issues, coverage = [], {name: Counter() for name in DIMENSIONS}
-    for doc in documents:
-        rows = groups[str(doc.id)]
-        issues.extend(audit_document(doc, rows))
-        for name in DIMENSIONS:
-            matching = [row for row in rows if row.field == name]
-            states = {row.state for row in matching}
-            state = next((candidate for candidate in ("known", "pending_review", "failed", "unprocessed", "not_found", "unknown")
-                          if candidate in states), "unprocessed" if prediction_method == "external" else "unknown")
-            coverage[name][state] += 1
-    counts = Counter(item["code"] for item in issues)
+               prediction_method="source_reported", limit=None, *, batch_size=DEFAULT_SCAN_BATCH_SIZE,
+               include_issues=True, issue_severity=None, issue_code=None, issue_offset=0, issue_limit=None):
+    """Stream the full scope and matching current evidence from one PostgreSQL snapshot.
+
+    The window count is computed before an optional caller limit, and the outer
+    join preserves documents with no evidence. Fetching is bounded by row batches;
+    no extra query can observe a newer document hash halfway through this scan.
+    Summary/observation callers do not retain individual issues in memory.
+    """
+    if not 1 <= batch_size <= 500 or limit is not None and limit < 1:
+        raise ValueError("invalid_quality_scan_bounds")
+    if issue_offset < 0 or issue_limit is not None and issue_limit < 0:
+        raise ValueError("invalid_quality_issue_bounds")
+    query = document_query(is_demo, ai_relevant, source_id, document_type).add_columns(
+        func.count().over().label("scope_total")).order_by(Document.id)
+    if limit is not None:
+        query = query.limit(limit)
+    scope = query.cte("quality_documents")
+    scanned_doc = aliased(Document, scope)
+    predictions = method_filter(select(Evidence).where(Evidence.field.in_(DIMENSIONS)), prediction_method).subquery()
+    scanned_evidence = aliased(Evidence, predictions)
+    statement = select(scanned_doc, scanned_evidence, scope.c.scope_total).outerjoin(
+        scanned_evidence, and_(scanned_evidence.document_id == scanned_doc.id,
+                              scanned_evidence.content_hash == scanned_doc.content_hash))
+    statement = statement.order_by(scanned_doc.id, scanned_evidence.id).execution_options(yield_per=batch_size)
+    coverage = {name: Counter() for name in DIMENSIONS}
+    issues, counts = [], Counter()
+    scanned = total = error_count = warning_count = documents_with_errors = matching_issues = 0
+    measured_at = utc_now()
+    stream = db.execute(statement)
+    try:
+        for _, grouped in groupby(stream, key=lambda item: item[0].id):
+            first = next(grouped)
+            doc, total = first[0], first[2]
+            rows = ([first[1]] if first[1] is not None else []) + [item[1] for item in grouped if item[1] is not None]
+            found = audit_document(doc, rows)
+            scanned += 1
+            documents_with_errors += any(item["severity"] == "error" for item in found)
+            for item in found:
+                counts[item["code"]] += 1
+                error_count += item["severity"] == "error"
+                warning_count += item["severity"] == "warning"
+                if ((issue_severity is None or item["severity"] == issue_severity) and
+                        (issue_code is None or item["code"] == issue_code)):
+                    if include_issues and matching_issues >= issue_offset and (issue_limit is None or len(issues) < issue_limit):
+                        issues.append(item)
+                    matching_issues += 1
+            for name in DIMENSIONS:
+                states = {row.state for row in rows if row.field == name}
+                state = next((candidate for candidate in ("known", "pending_review", "failed", "unprocessed", "not_found", "unknown")
+                              if candidate in states), "unprocessed" if prediction_method == "external" else "unknown")
+                coverage[name][state] += 1
+    finally:
+        stream.close()
     return {"evaluator_version": EVALUATOR_VERSION, "measured_at": utc_now(),
         "scope": {"is_demo": is_demo, "ai_relevant": ai_relevant, "source_id": source_id,
                   "document_type": document_type, "prediction_method": prediction_method},
-        "total_documents": total, "scanned_documents": len(documents), "scan_limit": limit,
-        "scan_complete": total <= limit, "dimensions": {name: {**dict(values),
-            "known_ratio": values["known"] / len(documents) if documents else None} for name, values in coverage.items()},
-        "automatic_checks": {"error_count": sum(i["severity"] == "error" for i in issues),
-            "warning_count": sum(i["severity"] == "warning" for i in issues),
-            "documents_with_errors": len({i["document_id"] for i in issues if i["severity"] == "error"}),
+        "total_documents": total, "scanned_documents": scanned, "scan_limit": limit,
+        "scan_complete": scanned == total, "scan_version": SCAN_VERSION, "scan_started_at": measured_at,
+        "scan_batch_size": batch_size, "scan_consistency": "single_statement_snapshot",
+        "dimensions": {name: {**dict(values),
+            "known_ratio": values["known"] / scanned if scanned else None} for name, values in coverage.items()},
+        "automatic_checks": {"error_count": error_count, "warning_count": warning_count,
+            "documents_with_errors": documents_with_errors,
             "issue_codes": dict(counts), "semantic_accuracy": None},
-        "issues": issues, "accuracy": None, "recall": None, "limitations": LIMITATIONS}
+        "issues": issues, "issues_total": matching_issues,
+        "accuracy": None, "recall": None, "limitations": LIMITATIONS}
 
 
 def create_batch(db, request):

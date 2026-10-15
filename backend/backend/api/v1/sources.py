@@ -62,7 +62,7 @@ def update_source(source_id: UUID, payload: SourcePatch, db: Database):
     if source is None:
         raise HTTPException(404, "record_not_found")
     active = db.scalar(select(TaskRun.id).where(
-        TaskRun.source_id == source_id, TaskRun.status.in_(("queued", "running"))))
+        TaskRun.source_id == source_id, TaskRun.kind.in_(("collect", "offline_demo")), TaskRun.status.in_(("queued", "running"))))
     if active:
         raise HTTPException(409, "source_has_active_task")
     if source.adapter == "offline" and payload.enabled:

@@ -157,7 +157,7 @@ def validate_answer(db, answer, is_demo, *, query=None):
             .with_for_update().execution_options(populate_existing=True))
         revision = db.scalar(select(DocumentRevision).where(DocumentRevision.document_id == source.document_id,
             DocumentRevision.content_hash == source.content_hash))
-        if (document is None or document.deleted_at is not None or revision is None or document.is_demo != is_demo
+        if (document is None or document.deleted_at is not None or not document.ai_relevant or revision is None or document.is_demo != is_demo
                 or document.content_hash != source.content_hash or str(source.url) != revision.payload.get("source_url")
                 or source.title != revision.payload.get("title")):
             raise HTTPException(502, "agent_source_scope_or_version_invalid")

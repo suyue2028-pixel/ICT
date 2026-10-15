@@ -8,7 +8,7 @@ from backend.core.security import require_admin
 from backend.models import EnrichmentQualityBatch
 from backend.schemas.quality import QualityBatchRequest, QualityReviewRequest, PredictionMethod
 from backend.services.enrichment_quality import (DIMENSIONS, monitoring, create_batch,
-    save_review, batch_report, current_case_flags, LIMITATIONS)
+    save_review, batch_report, current_case_flags, LIMITATIONS, DEFAULT_SCAN_BATCH_SIZE)
 
 router = APIRouter(prefix="/ops/enrichment-quality", tags=["富化质量审核"],
                    dependencies=[Depends(require_admin)])
@@ -18,9 +18,11 @@ router = APIRouter(prefix="/ops/enrichment-quality", tags=["富化质量审核"]
 def quality_summary(db: Database, is_demo: bool = False, ai_relevant: bool = True,
                     source_id: UUID | None = None,
                     document_type: Literal["vulnerability", "advisory", "all"] = "vulnerability",
-                    prediction_method: PredictionMethod = "source_reported"):
-    """覆盖率、结构/出处问题和最近同范围人工评测；自动校验不等于准确率。"""
-    result = monitoring(db, is_demo, ai_relevant, source_id, document_type, prediction_method)
+                    prediction_method: PredictionMethod = "source_reported",
+                    batch_size: int = Query(DEFAULT_SCAN_BATCH_SIZE, ge=1, le=500)):
+    """分批扫描全部符合条件的当前文档；覆盖率、结构/出处问题不等于人工准确率。"""
+    result = monitoring(db, is_demo, ai_relevant, source_id, document_type, prediction_method,
+                        batch_size=batch_size, include_issues=False)
     result.pop("issues")
     selection = EnrichmentQualityBatch.selection
     latest = db.scalar(select(EnrichmentQualityBatch).where(EnrichmentQualityBatch.is_demo == is_demo,
@@ -42,12 +44,16 @@ def quality_issues(db: Database, is_demo: bool = False, ai_relevant: bool = True
                    prediction_method: PredictionMethod = "source_reported",
                    severity: Literal["error", "warning"] | None = None,
                    code: str | None = Query(default=None, max_length=100),
-                   page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
-    result = monitoring(db, is_demo, ai_relevant, source_id, document_type, prediction_method)
-    issues = [row for row in result["issues"] if (severity is None or row["severity"] == severity)
-              and (code is None or row["code"] == code)]
-    return {"items": issues[(page - 1) * page_size:page * page_size], "page": page,
-        "page_size": page_size, "total": len(issues), "scanned_documents": result["scanned_documents"],
+                   page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                   batch_size: int = Query(DEFAULT_SCAN_BATCH_SIZE, ge=1, le=500)):
+    """扫描完整范围后按错误码/级别分页，内存仅保留本页问题。"""
+    result = monitoring(db, is_demo, ai_relevant, source_id, document_type, prediction_method,
+        batch_size=batch_size, issue_severity=severity, issue_code=code,
+        issue_offset=(page - 1) * page_size, issue_limit=page_size)
+    return {"items": result["issues"], "page": page,
+        "page_size": page_size, "total": result["issues_total"], "scanned_documents": result["scanned_documents"],
+        "total_documents": result["total_documents"], "scan_batch_size": result["scan_batch_size"],
+        "scan_version": result["scan_version"], "scan_consistency": result["scan_consistency"],
         "scan_complete": result["scan_complete"], "scope": result["scope"], "limitations": LIMITATIONS}
 
 

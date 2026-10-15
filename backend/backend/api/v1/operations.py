@@ -59,7 +59,7 @@ def freshness(db: Database, hours: int = Query(default=48, ge=1, le=720),
 
 @router.get("/coverage")
 def coverage(db: Database, hours: int = Query(default=48, ge=1, le=720)):
-    """真实来源范围、目录收录进度、任务状态和实测6小时内入库比例；非全网召回率。"""
+    """真实来源范围、目录收录进度、任务状态和实测4小时内入库比例；非全网召回率。"""
     from backend.services.coverage import coverage_snapshot
     return coverage_snapshot(db, utc_now(), hours)
 
@@ -73,6 +73,13 @@ def distribution(values):
             "p95": values[max(0, math.ceil(len(values) * .95) - 1)], "max": values[-1]}
 
 
+@router.get("/enrichment")
+def enrichment_progress(db: Database, is_demo: bool = False):
+    """八类逐条处理进度；有证据、待审、未找到和不适用分别计数，非准确率。"""
+    from backend.services.eight_enrichment import processing_stats
+    return processing_stats(db, is_demo)
+
+
 @router.get("/metrics")
 def metrics(db: Database):
     now = utc_now()
@@ -83,11 +90,11 @@ def metrics(db: Database):
         if source.adapter == "offline":
             continue
         matching = [d for d in docs if d.source_id == source.id]
-        latest = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id).order_by(TaskRun.created_at.desc()).limit(1))
+        latest = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id, TaskRun.kind == "collect").order_by(TaskRun.created_at.desc()).limit(1))
         coverage.append({"adapter": source.adapter, "category": source.category, "enabled": source.enabled,
             "documents": len(matching), "ai_relevant_documents": sum(d.ai_relevant for d in matching),
             "last_success_at": db.scalar(select(func.max(TaskRun.finished_at)).where(
-                TaskRun.source_id == source.id, TaskRun.status == "succeeded")),
+                TaskRun.source_id == source.id, TaskRun.kind == "collect", TaskRun.status == "succeeded")),
             "last_task_status": latest.status if latest else None,
             "last_error_code": latest.error_code if latest else None})
         coverage[-1].update(source_observation(db, source, now))

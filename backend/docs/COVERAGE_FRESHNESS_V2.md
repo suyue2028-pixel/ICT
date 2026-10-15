@@ -45,7 +45,7 @@
 - `historical_first_seen_in_window`：最近首次发现的历史资料，不能当新发布，也不拿来美化实时达标比例。
 - `updated_to_changed_in_window`：最近实际内容变化，且有可信精确来源更新时间，统计更新至保存新版本。
 - 缺时间、日期低精度、负时差单列；只有日历日期或没有时区的不伪造时刻。未知不当零延迟。
-- `within_target`/`over_target` 与 `observed_within_target_ratio` 的门槛为21600秒；分母仅是已采到且具备可用精确时间的样本，不能证明未采数据及时，也不是连续SLA或独立召回率。样本少时P95只作描述。
+- 当前`within_target`/`over_target` 与`observed_within_target_ratio`统一使用14,400秒（4小时），与`/ops/freshness`共享同一代码常量；全局、每个来源、发布延迟、更新延迟和排队等待使用相同目标。分母仅是已采到且具备可用精确时间的样本，不能证明未采数据及时，也不是连续SLA或独立召回率。样本少时P95只作描述。下文2026-10-09实测数字仍保留当时6小时门槛，不回写旧观察记录。
 
 已有活动48小时观察窗口中，每分钟 RuntimeSample 新增 `detail.source_coverage`，记录真实计数、目录进度与延迟。窗口结束自动采样也结束；实时查询仍可用，需要新窗口时调用已有 `/ops/observations`，复用同一个 beat。旧样本/缺口不补写。
 

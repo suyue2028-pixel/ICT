@@ -87,7 +87,8 @@ def main():
         documents = db.scalar(select(func.count()).select_from(Document))
         migration = db.execute(text("select version_num from alembic_version")).scalar()
         duplicates = db.execute(select(TaskRun.source_id, func.count()).where(
-            TaskRun.status.in_(("queued", "running"))).group_by(TaskRun.source_id).having(func.count() > 1)).all()
+            TaskRun.kind.in_(("collect", "offline_demo")), TaskRun.status.in_(("queued", "running")))
+            .group_by(TaskRun.source_id).having(func.count() > 1)).all()
     checks["no_overlapping_source_tasks"] = not duplicates
     if baseline:
         checks["beat_heartbeat_advanced"] = heartbeat > baseline["heartbeat"]

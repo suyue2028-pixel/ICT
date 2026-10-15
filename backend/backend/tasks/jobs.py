@@ -20,7 +20,7 @@ def collect(task_id: str):
     task_uuid, token = UUID(task_id), uuid4()
     with get_session_factory()() as db, db.begin():
         task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
-        if task is None or task.status != "queued" or task.attempts >= 3:
+        if task is None or task.kind not in {"collect", "offline_demo"} or task.status != "queued" or task.attempts >= 3:
             return {"ignored": True}
         outbox = db.scalar(select(Outbox).where(Outbox.task_id == task_uuid))
         if outbox.available_at is not None and outbox.available_at > utc_now():
@@ -101,6 +101,56 @@ def maintenance():
         return maintain_jobs(db, celery_app)
 
 
+@celery_app.task(name="backend.enrich")
+def enrich(task_id: str):
+    """Idempotent eight-dimension enrichment, with source-version and lease fencing."""
+    from backend.services.eight_enrichment import store_dimensions
+    token, task_uuid, started = uuid4(), UUID(task_id), perf_counter()
+    with get_session_factory()() as db, db.begin():
+        task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+        if task is None or task.kind != "enrich" or task.status != "queued" or task.attempts >= 3:
+            return {"ignored": True}
+        outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id))
+        if outbox and outbox.available_at is not None and outbox.available_at > utc_now():
+            return {"ignored": True}
+        task.status, task.lease_token, task.lease_until = "running", token, utc_now() + timedelta(seconds=360)
+        task.started_at, task.attempts = utc_now(), task.attempts + 1
+        document_id, expected_hash = UUID(task.result["document_id"]), task.result["content_hash"]
+    try:
+        with get_session_factory()() as db, db.begin():
+            document = db.scalar(select(Document).where(Document.id == document_id).with_for_update())
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.lease_token != token or task.status != "running":
+                return {"ignored": True}
+            if document is None or document.deleted_at is not None or document.content_hash != expected_hash:
+                task.status, task.error_code, task.finished_at = "failed", "enrichment_document_changed", utc_now()
+                task.lease_token = task.lease_until = None
+                return {"superseded": True}
+            dimensions = store_dimensions(db, document)
+            task.result = {**task.result, "dimensions": dimensions, "model_calls": 0,
+                           "duration_ms": round((perf_counter() - started) * 1000, 3)}
+            task.status, task.finished_at, task.error_code = "succeeded", utc_now(), None
+            task.lease_token = task.lease_until = None
+            db.add(TaskStep(task_id=task.id, name="eight_dimension_enrichment", attempt=task.attempts,
+                status="succeeded", detail=task.result))
+            return {"processed_dimensions": len(dimensions)}
+    except Exception as error:
+        code = "enrichment_" + type(error).__name__
+        with get_session_factory()() as db, db.begin():
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.status == "running" and task.lease_token == token:
+                task.status, task.error_code = ("queued" if task.attempts < 3 else "failed"), code
+                task.lease_token = task.lease_until = None
+                db.add(TaskStep(task_id=task.id, name="eight_dimension_enrichment", attempt=task.attempts,
+                    status="failed", detail={"error_code": code}))
+                if task.status == "queued":
+                    outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id).with_for_update())
+                    outbox.sent_at, outbox.available_at = None, utc_now() + timedelta(seconds=10 * task.attempts)
+                else:
+                    task.finished_at = utc_now()
+        return {"failed_or_retrying": True, "error_code": code}
+
+
 @celery_app.task(name="backend.verify_tick")
 def verify_tick():
     """仅验证 beat→Redis→worker→PostgreSQL，不能计为业务采集任务。"""
@@ -152,7 +202,7 @@ def index_event(event_id: str):
         if event is None or event.status != "queued" or event.attempts >= 3:
             return {"ignored": True}
         document = db.get(Document, event.document_id)
-        if document is None or document.deleted_at is not None or document.content_hash != event.content_hash:
+        if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != event.content_hash:
             event.status, event.detail = "superseded", {"reason": "document_version_changed"}
             return {"ignored": True, "reason": "superseded"}
         event.status, event.lease_token = "indexing", token
@@ -169,7 +219,7 @@ def index_event(event_id: str):
             if event.lease_token != token or event.status != "indexing":
                 return {"ignored": True}
             document = db.scalar(select(Document).where(Document.id == event.document_id).with_for_update())
-            if document is None or document.deleted_at is not None or document.content_hash != expected_hash:
+            if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != expected_hash:
                 event.status, event.detail = "superseded", {"reason": "document_version_changed"}
                 event.lease_token = event.lease_until = None
                 return {"ignored": True, "reason": "superseded"}

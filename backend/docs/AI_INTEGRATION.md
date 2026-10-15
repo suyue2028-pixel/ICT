@@ -67,7 +67,7 @@ sources 每条：document_id、content_hash、title、url、source_type、source
 
 默认真实范围；演示需显式 is_demo=true。失效文档不能被 Tool 或问答检索；审计可通过原 `/documents/{id}` 查看保留历史和 deleted_at。每条文档带 document_id/hash、raw_id、source_name/source_url/source_type、adapter、document_type、发布时间/来源更新/首次采集时间、元数据、正文完整性、规则相关性。历史版本读取的 title/URL/内容来自该版本。缺失为 null，论文摘要不是全文，元数据不能冒充语义结果。
 
-缓存 last_checked_at 是来源最后成功检查的时间，version_updated_at 是该文档变更时间；stale 按 6h 表示，仅供查询方决定是否触发刷新，非真实性置信度。刷新通过管理员 `/sources/{id}/collect` 返回 202 和任务 ID，同步 Tool 不抓远程数据。CVE 聚合 severity 保留历史最高来源评级，各版本原文/证据可核对冲突。
+缓存 last_checked_at 是来源最后成功检查的时间，version_updated_at 是该文档变更时间；stale 按来源实际周期及容忍时间判断，普通来源执行周期上限4小时、arXiv按日级例外，不再使用固定6小时描述。stale仅供查询方决定是否触发刷新，非真实性置信度。刷新通过管理员 `/sources/{id}/collect` 返回 202 和任务 ID，同步 Tool 不抓远程数据。CVE 聚合 severity 保留历史最高来源评级，各版本原文/证据可核对冲突。
 
 统一错误：HTTP 401（鉴权）、403（会话归属）、404（无本地记录）、409（版本/并发）、422（结构/证据）、429（预算），JSON `{"error":{"code":"稳定码","message":"..."},"request_id":"..."}`；不是所有空集合都报错，搜索为空是 200 empty。
 
@@ -128,3 +128,10 @@ sources 每条：document_id、content_hash、title、url、source_type、source
 管理观察接口新增：POST `/api/v1/ops/observations`（202，hours默认48，1—168，严格整数）；GET `/api/v1/ops/observations/{id}`；GET `/api/v1/ops/observations/{id}/samples`（分页）。同一个活动窗口复用。观测缺口、失败和未结束状态必须保留，不伪装持续可用。
 
 静态契约以scripts/export-contracts.py从实际模型生成；新增回归验证共享BackendQuery和AgentAnswer往返、静态AgentQueryResponse一致、缺字段、重复请求、超时、格式错误、权限和限流。前端无需新增管理密钥。
+
+
+## 八类富化补充契约（2026-10-15）
+
+`GET /documents/{id}/enrichment`兼容source/external/normalized，增加八字段summary（state/checked_at/reason_code/scope/applicability）；包括known、pending_review、not_found、not_applicable、unprocessed、queued、processing、failed。`POST /documents/{id}/enrich`仅管理员，可异步返回202+task_id或200 already_processed。`GET /ops/enrichment`仅管理员，返回当前处理器全库进度。字段引用始终带文档ID/版本/URL/原文位置；不适用与未找到不是已知事实。
+
+`backend-evidence-v1`是后端保留provider，Agent回写不能使用。Agent继续使用原EnrichmentWrite协议；主题候选不能自动改成已审核。迁移和调用示例见[EIGHT_ENRICHMENT.md](EIGHT_ENRICHMENT.md)。来源原文更新继续使用既有KnowledgeEvent；仅富化检查时间变化不伪造原文新版本或索引事件。

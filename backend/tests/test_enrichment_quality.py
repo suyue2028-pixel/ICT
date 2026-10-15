@@ -1,8 +1,8 @@
 """Fictional labelled data, rollback-only PostgreSQL; no model self-evaluation."""
 from copy import deepcopy
-from uuid import uuid4
+from uuid import UUID, uuid4
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
 from test_agent_upgrade import db, client, token
 from backend.core.config import get_settings
 from backend.models import DataSource, Document, Evidence, TaskRun
@@ -200,3 +200,86 @@ def test_normalized_facts_deduplicate_numbers_and_preserve_version_roles():
     assert quality.fact_units("cvss", {"invalid": "not silently discarded"})
     assert not quality.valid_url(123) and not quality.valid_url("https://example.invalid:bad/fix")
     assert not quality.valid_url("https://user:password@example.invalid/")
+
+
+@pytest.fixture
+def large_scope(db):
+    source = DataSource(name="fictional-full-scan-" + str(uuid4()), adapter="offline", category="offline", config={})
+    db.add(source)
+    db.flush()
+    # Fixed ordering places the intentionally malformed fact after the former
+    # 1000-document cutoff. All rows live only in the rollback-only test DB.
+    rows = [{"id": UUID(int=index + 1), "source_id": source.id, "external_id": f"fictional-scan-{index}",
+             "title": "Fictional quality scan only", "source_url": "https://example.invalid/full-scan",
+             "document_type": "vulnerability", "content": "Fictional test; never real intelligence.",
+             "content_hash": "a" * 64, "raw_payload": {"source_fields": {"cwe": {"ids": ["invalid"]}}},
+             "ai_relevant": True, "is_demo": True} for index in range(1005)]
+    db.execute(insert(Document), rows)
+    db.execute(insert(Evidence), [
+        {"document_id": rows[-1]["id"], "content_hash": "a" * 64, "field": "cwe", "state": "known",
+         "value": {"ids": ["invalid"]}, "method": "source_reported", "source_url": rows[-1]["source_url"],
+         "locator": "source_fields.cwe", "excerpt": "invalid"},
+        {"document_id": rows[-2]["id"], "content_hash": "b" * 64, "field": "cwe", "state": "known",
+         "value": {"ids": ["CWE-79"]}, "method": "source_reported", "source_url": rows[-2]["source_url"],
+         "locator": "source_fields.cwe", "excerpt": "old version"}])
+    db.flush()
+    return source, rows[-1]["id"]
+
+
+def test_full_scan_covers_tail_missing_evidence_and_all_batch_sizes(db, large_scope):
+    source, _ = large_scope
+    summaries = [quality.monitoring(db, is_demo=True, source_id=source.id, batch_size=size, include_issues=False)
+                 for size in (1, 200, 500)]
+    for result in summaries:
+        assert result["total_documents"] == result["scanned_documents"] == 1005
+        assert result["scan_complete"] and result["scan_limit"] is None
+        assert result["scan_consistency"] == "single_statement_snapshot"
+        assert result["dimensions"]["cwe"]["known"] == 1
+        assert result["dimensions"]["cwe"]["unknown"] == 1004  # Old hash is excluded.
+        assert result["automatic_checks"]["issue_codes"] == {"invalid_cwe": 1}
+        assert result["automatic_checks"]["documents_with_errors"] == 1
+        assert result["issues"] == [] and result["issues_total"] == 1
+        assert result["accuracy"] is result["recall"] is None
+    assert summaries[0]["dimensions"] == summaries[1]["dimensions"] == summaries[2]["dimensions"]
+    bounded = quality.monitoring(db, is_demo=True, source_id=source.id, limit=1000)
+    assert bounded["total_documents"] == 1005 and bounded["scanned_documents"] == 1000
+    assert not bounded["scan_complete"] and bounded["automatic_checks"]["error_count"] == 0
+
+
+def test_full_scan_api_filters_and_pages_issues_after_old_cutoff(db, client, large_scope):
+    source, tail_id = large_scope
+    params = {"is_demo": True, "source_id": str(source.id), "batch_size": 7,
+              "severity": "error", "code": "invalid_cwe", "page_size": 1}
+    first = client.get(PREFIX + "/issues", headers=admin(), params=params).json()
+    assert first["total"] == 1 and first["scan_complete"] and first["scanned_documents"] == 1005
+    assert first["items"][0]["document_id"] == str(tail_id)
+    second = client.get(PREFIX + "/issues", headers=admin(), params={**params, "page": 2}).json()
+    assert second["total"] == 1 and second["items"] == []
+    empty = client.get(PREFIX + "/issues", headers=admin(), params={**params, "severity": "warning"}).json()
+    assert empty["total"] == 0
+    summary = client.get(PREFIX, headers=admin(), params={"is_demo": True, "source_id": str(source.id)}).json()
+    assert summary["scan_complete"] and summary["scanned_documents"] == 1005
+    real = client.get(PREFIX, headers=admin(), params={"source_id": str(source.id)}).json()
+    assert real["total_documents"] == real["scanned_documents"] == 0 and real["scan_complete"]
+    assert all(value["known_ratio"] is None for value in real["dimensions"].values())
+    for size in (0, 501):
+        assert client.get(PREFIX, headers=admin(), params={"batch_size": size}).status_code == 422
+
+
+def test_stream_keeps_one_snapshot_when_a_document_changes_mid_scan(db, large_scope, monkeypatch):
+    source, tail_id = large_scope
+    audit = quality.audit_document
+    changed = False
+    def change_after_scan_starts(doc, rows):
+        nonlocal changed
+        if not changed:
+            changed = True
+            db.execute(update(Document).where(Document.id == tail_id).values(content_hash="c" * 64))
+            db.execute(update(Evidence).where(Evidence.document_id == tail_id).values(content_hash="c" * 64,
+                value={"ids": ["CWE-79"]}))
+        return audit(doc, rows)
+    monkeypatch.setattr(quality, "audit_document", change_after_scan_starts)
+    result = quality.monitoring(db, is_demo=True, source_id=source.id, batch_size=1)
+    assert changed and result["scan_complete"] and result["scanned_documents"] == 1005
+    assert result["automatic_checks"]["issue_codes"] == {"invalid_cwe": 1}
+    assert result["issues"][0]["content_hash"] == "a" * 64

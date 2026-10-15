@@ -74,9 +74,9 @@ def apply_time_filter(statement, time_basis="published", recent_hours=None,
 
 
 def source_observation(db, source, now):
-    latest = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id)
+    latest = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id, TaskRun.kind.in_(("collect", "offline_demo")))
                        .order_by(TaskRun.created_at.desc()).limit(1))
-    active = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id,
+    active = db.scalar(select(TaskRun).where(TaskRun.source_id == source.id, TaskRun.kind.in_(("collect", "offline_demo")),
         TaskRun.status.in_(("queued", "running"))).limit(1))
     stale = source_stale(source, now)
     if not source.enabled:

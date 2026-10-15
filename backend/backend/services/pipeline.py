@@ -13,20 +13,9 @@ from backend.models import (
     TaskRun, TaskStep, Vulnerability, VulnerabilityAlias, VulnerabilityDocument,
 )
 from datetime import datetime, timezone
+from backend.services.relevance import AI_PRODUCTS, AI_PATTERN, SECURITY_PATTERN, assess_relevance
 
 RISK_ORDER = {name: i for i, name in enumerate(("unknown", "low", "medium", "high", "critical"))}
-AI_PRODUCTS = {"torch", "pytorch", "transformers", "langchain", "tensorflow", "keras",
-               "onnx", "vllm", "ollama", "gradio", "llama", "scikit-learn", "openai",
-               "tensorrt", "tensorrt-llm", "triton inference server", "chatrtx", "nemo", "riva", "merlin", "ai enterprise",
-               "llama-index", "llama-index-core", "sentence-transformers"}
-SECURITY_PATTERN = re.compile(r"\b(?:security|safety|vulnerabilit\w*|CVE-\d{4}-\d{4,}|CWE-\d+|exploit\w*|attack\w*|"
-    r"unsafe|deserializ\w*|malicious|injection|poison\w*|privacy|risk\w*|guardrails?|sandbox\w*)\b|"
-    r"安全|漏洞|投毒|注入|攻击|风险|泄露|法规", re.I)
-AI_PATTERN = re.compile(
-    r"\b(?:AI|artificial intelligence|machine learning|deep learning|large language model|"
-    r"LLMs?|prompt injection|model weights|neural network|generative AI)\b|"
-    r"人工智能|大语言模型|提示词注入", re.I,
-)
 ID_PATTERN = re.compile(
     r"^(?:CVE-\d{4}-\d{4,}|GHSA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}|"
     r"PYSEC-[A-Z0-9-]+|OSV-[A-Z0-9-]+)$", re.I,
@@ -47,31 +36,7 @@ def material_payload(payload):
 
 
 def relevance(record) -> dict:
-    # A link to a publisher's AI-assisted disclosure process does not make every
-    # advisory an AI product vulnerability. Ordinary AI marketing is not security.
-    assessed_text = re.sub(r"AI-Accelerated\s+Vulnerability\s+Discovery", "", record.content, flags=re.I)
-    products = sorted({p.lower().replace("_", "-") for p in record.products} & AI_PRODUCTS)
-    terms = sorted({match.group(0).lower() for match in AI_PATTERN.finditer(assessed_text)})
-    security_terms = sorted({match.group(0).lower() for match in SECURITY_PATTERN.finditer(assessed_text)})
-    body_products = sorted(p for p in AI_PRODUCTS if re.search(
-        r"(?<![\w-])" + re.escape(p) + r"(?![\w-])", assessed_text, re.I))
-    has_body = record.content_completeness != "metadata_only" and record.content.strip() != record.title.strip()
-    categories = []
-    if products or body_products:
-        categories.append("ai_infrastructure")
-    if re.search(r"prompt injection|data poisoning|model weights|提示词|数据投毒", record.content, re.I):
-        categories.append("model_and_data")
-    if re.search(r"\bagents?\b|langchain|智能体", record.content, re.I):
-        categories.append("application_and_agent")
-    if re.search(r"supply.chain|dependency|供应链", record.content, re.I):
-        categories.append("supply_chain")
-    return {"relevant": bool((products or (has_body and (terms or body_products))) and
-                             (security_terms or record.document_type == "vulnerability")), "method": "rule-v4",
-            "product_matches": products, "body_terms": terms, "body_products": body_products,
-            "security_terms": security_terms,
-            "body_available": has_body,
-            "risk_categories": categories,
-            "limitation": "Rule-based triage; title alone is not evidence or measured accuracy"}
+    return assess_relevance(record)
 
 
 def _link_once(db: Session, vulnerability_id, document_id):
@@ -190,7 +155,7 @@ def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: 
         elapsed["normalize"] += perf_counter() - started
         started = perf_counter()
         document = db.scalar(select(Document).where(
-            Document.source_id == source.id, Document.external_id == record.external_id))
+            Document.source_id == source.id, Document.external_id == record.external_id).with_for_update())
         if document is not None and document.deleted_at is not None:
             # Do not silently resurrect administrator-invalidated records on the next poll.
             counts["unchanged"] += 1
@@ -204,7 +169,8 @@ def ingest_batch(db: Session, source: DataSource, batch: CollectionBatch, task: 
         if document is not None and (document.content_hash == digest or
                 material_payload(document.raw_payload) == material_payload(payload)):
             if document.relevance != assessment:
-                document.relevance, document.ai_relevant = assessment, assessment["relevant"]
+                from backend.services.reclassification import apply_assessment
+                apply_assessment(db, document, assessment)
             observed_ids.append(document.id)
             counts["unchanged"] += 1
             counts["ai_relevant"] += int(document.ai_relevant)
