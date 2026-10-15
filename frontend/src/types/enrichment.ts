@@ -9,4 +9,5 @@ export interface EnrichmentSnapshot {
   content_hash: string
   source: Record<string, EnrichmentResult>
   external?: Record<string, EnrichmentResult[]>
+  summary?: Record<string, { state: string; checked_at?: string; reason_code?: string; applicability?: string; scope?: string }>
 }

@@ -14,6 +14,8 @@ export interface EnrichmentBlock {
 export const enrichmentStateNames: Record<string, string> = {
   known: '有来源字段', unknown: '来源未提供', unprocessed: '尚未处理', not_found: '未找到',
   failed: '处理失败', pending_review: '待审核', unavailable: '读取失败', historical: '版本不一致',
+  not_applicable: '不适用（已检查）',
+  queued: '排队处理', processing: '处理中',
 }
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : []
@@ -30,11 +32,18 @@ function presentValue(key: EnrichmentDimensionKey, value: unknown): Pick<Enrichm
         for (const event of array(range.events).map(object)) {
           for (const [field, label] of Object.entries({ introduced: '引入标记', fixed: '修复版本', last_affected: '最后受影响版本', limit: '范围上限' })) {
             const version = string(event[field])
-            if (version && (key === 'affected' || field === 'fixed')) facts.push(`${product} · ${label}：${version}${field === 'introduced' && version === '0' ? '（来源未指定起始版本）' : ''}`)
+            const isCommit = range.type === 'GIT'
+            const unitLabel = isCommit ? ({ introduced: '引入提交', fixed: '修复提交', last_affected: '最后受影响提交', limit: '提交范围上限' } as Record<string, string>)[field] || label : label
+            if (version && (key === 'affected' || field === 'fixed')) facts.push(`${product} · ${unitLabel}：${version}${field === 'introduced' && version === '0' ? `（来源未指定起始${isCommit ? '提交' : '版本'}）` : ''}`)
           }
         }
       }
       const versions = strings(item.versions)
+      if (key === 'affected' && typeof item.cpe_criteria === 'string') facts.push(`来源 CPE：${item.cpe_criteria}`)
+      if (key === 'affected') for (const [bound, version] of Object.entries(object(item.version_bounds))) {
+        if (typeof version === 'string') facts.push(`${bound}：${version}`)
+      }
+      if (key === 'affected' && item.version_state === 'unknown') facts.push('受影响版本范围：来源未提供，不能据此判断其他版本安全')
       if (key === 'affected' && versions.length) facts.push(`来源枚举版本：${versions.slice(0, 3).join('、')}${versions.length > 3 ? `等，共 ${versions.length} 个` : ''}`)
     }
     if (key === 'affected') for (const match of array(data.cpe_matches).map(object)) {
@@ -49,12 +58,13 @@ function presentValue(key: EnrichmentDimensionKey, value: unknown): Pick<Enrichm
     facts.push(`评分版本：${string(vector.version) || '暂无数据'}`)
     facts.push(`评分：${typeof vector.score === 'number' ? vector.score : '暂无数据'}`)
     if (typeof vector.vector === 'string') facts.push(`向量：${vector.vector}`)
-    if (typeof vector.origin === 'string') facts.push(`评分来源：${({ official: '官方', source_reported: '来源报告', system_estimate: '系统估算' } as Record<string, string>)[vector.origin] || vector.origin}`)
+    if (vector.derivation === 'cvss_v3_base_formula') facts.push('分数按来源向量及 CVSS 3.x 基础公式复算，非来源发布的官方分数')
+    if (typeof vector.origin === 'string') facts.push(`评分来源：${vector.derivation === 'cvss_v3_base_formula' ? '来源向量公式复算' : ({ official: '官方', source_reported: '来源报告', system_estimate: '系统估算' } as Record<string, string>)[vector.origin] || vector.origin}`)
   }
   if (key === 'exploitation') {
     if (typeof value === 'boolean') facts.push(`来源报告存在公开利用：${value ? '是' : '否'}`)
     for (const [field, label] of Object.entries({ catalog: '收录目录', status: '来源报告状态', added_at: '收录日期', required_action: '来源要求的措施' })) {
-      if (typeof data[field] === 'string') facts.push(`${label}：${data[field]}`)
+      if (typeof data[field] === 'string') facts.push(`${label}：${data[field] === 'public_exploit_disclosed_not_confirmed_active' ? '来源报告公开了利用代码；尚未确认实际利用' : data[field]}`)
     }
   }
   if (['remediation', 'analysis', 'poc', 'papers'].includes(key)) {
@@ -90,7 +100,7 @@ export function dimensionBlocks(item: IntelligenceItem, snapshot: EnrichmentSnap
     if (!quotes.length) continue
     const value = presentValue(key, payload.value)
     const pending = result.state === 'pending_review' || payload.review_state === 'pending_review' || payload.extraction_method === 'model'
-    blocks.push({ origin: `外部富化${result.provider ? ` · ${result.provider}` : ''}`, state: pending ? 'pending_review' : 'known', ...value, quotes })
+    blocks.push({ origin: result.provider === 'backend-evidence-v1' ? '后端证据富化' : `外部富化${result.provider ? ` · ${result.provider}` : ''}`, state: pending ? 'pending_review' : 'known', ...value, quotes })
   }
   return blocks
 }
@@ -101,6 +111,8 @@ export function dimensionState(item: IntelligenceItem, snapshot: EnrichmentSnaps
   const blocks = dimensionBlocks(item, snapshot, key)
   if (blocks.some(block => block.state === 'pending_review')) return 'pending_review'
   if (blocks.length) return 'known'
+  const checked = snapshot.summary?.[key]
+  if (checked && checked.state !== 'unprocessed') return checked.state
   const states = (snapshot.external?.[key] || []).map(result => result.state)
   return states.includes('failed') ? 'failed' : states.includes('not_found') ? 'not_found' : states.includes('unprocessed') ? 'unprocessed' : 'unknown'
 }
