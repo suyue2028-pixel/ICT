@@ -86,6 +86,27 @@ async def test_flash_thinking_option_is_endpoint_specific(monkeypatch, base_url,
     assert budget.llm_calls == 1
 
 
+@pytest.mark.parametrize("purpose", ["synthesize", "general_explain"])
+@pytest.mark.parametrize("requested,expected", [(64, 64), (3072, 3072), (5000, 4096)])
+async def test_direct_generation_token_budget_is_explicit_and_bounded(monkeypatch, purpose, requested, expected):
+    """Mock transport tests budget wiring, not real provider generation quality."""
+    requests = []
+    result = {"claims": []} if purpose == "synthesize" else {"answer": "Synthetic explanation."}
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
+            "message": {"content": json.dumps(result)}}]})
+
+    client_cls = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: client_cls(transport=httpx.MockTransport(handler), **kw))
+    settings = Settings(llm_mode="live", llm_transport="direct", llm_key="synthetic-test-key")
+    budget = Budget(time.monotonic() + 2, max_answer_tokens=requested)
+    assert await RemoteLLM(settings).complete(purpose, {}, budget, 1) == result
+    assert len(requests) == budget.llm_calls == 1
+    assert requests[0]["max_tokens"] == expected
+
+
 @pytest.mark.parametrize("reason,content,message", [
     ("length", '{"claims":[]}', "truncated"),
     ("content_filter", '{"claims":[]}', "interrupted"),

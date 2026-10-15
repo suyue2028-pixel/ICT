@@ -64,6 +64,7 @@ def answer_requirements(question: str, identifiers: list[str]) -> dict[str, Any]
         "output_profile": output_profile(question, identifiers, selected),
         "answer_style": [
             "直接回答当前问题；按需要说明结论、机制、条件、影响或动作，避免无关字段堆叠",
+            "未要求简答时，分自然段充分解释概念、原因和成立条件，不把每个方面压缩成一句标签式结论",
             "每条结论写清具体对象及行为，避免只写加强防护、完善机制、提高意识等空泛建议",
             "重要事实关联实际 evidence_id，推断单独标记，不输出内部推理过程",
             "证据缺少某项时明确缺少什么；不要为凑齐结构自行补充事实、场景或动作",
@@ -88,9 +89,9 @@ def output_profile(question: str, identifiers: list[str], facets: list[str]) -> 
         'relation':['关联依据','成立条件']}
     sections=list(dict.fromkeys(label for facet in facets for label in labels.get(facet,[])))
     one=bool(re.search(r'一句话|只要结论|one sentence',question,re.I))
-    return {'detail_level':'detailed' if detailed else 'concise',
-        'max_claims':1 if one else 2 if brief else 8 if detailed else 4,
-        'max_claim_chars':240 if detailed else 160,
+    return {'detail_level':'concise' if brief else 'detailed' if detailed else 'explanatory',
+        'max_claims':1 if one else 2 if brief else 8 if detailed else 6,
+        'max_claim_chars':160 if brief else 320 if detailed else 220,
         'sections':['核心结论'] if one else sections,
         'show_source_links':True,
         'explain_relation':'relation' in facets or 'comparison' in facets}

@@ -103,6 +103,23 @@ async def test_tool_budget_terminates(tmp_path, documents):
     assert r.status == "error" and r.metrics.tool_calls == 1
 
 
+@pytest.mark.parametrize("requested,expected", [(None, 3072), (64, 64), (1200, 1200), (4096, 4096), (10000, 4096)])
+async def test_service_answer_budget_default_and_requested_cap(service, monkeypatch, requested, expected):
+    """Synthetic local greeting probes the budget; no vendor API is called."""
+    import importlib
+    module = importlib.import_module("rag_agent.service")
+    real_budget, captured = module.Budget, []
+
+    def capture_budget(*args, **kwargs):
+        captured.append(kwargs["max_answer_tokens"])
+        return real_budget(*args, **kwargs)
+
+    monkeypatch.setattr(module, "Budget", capture_budget)
+    result = await service.query(QueryRequest(question="你好"), max_answer_tokens=requested)
+    assert captured == [expected]
+    assert result.response_kind == "conversation" and result.metrics.llm_calls == 0
+
+
 @pytest.mark.parametrize("limit,question", [(0, "CVE-2099-1234"), (0, "比较 Ollama 风险"), (1, "比较 Ollama 风险")])
 async def test_llm_budget_is_error_not_generation_fallback(tmp_path, documents, limit, question):
     llm = MockLLM()

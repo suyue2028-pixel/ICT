@@ -109,7 +109,7 @@
           "type": "integer"
         },
         "max_answer_tokens": {
-          "maximum": 1200,
+          "maximum": 4096,
           "minimum": 1,
           "title": "Max Answer Tokens",
           "type": "integer"

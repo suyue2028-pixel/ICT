@@ -153,7 +153,7 @@ class RAGService:
             raise ValueError("timeout must be between zero and 300 seconds")
         duration = min(timeout, self.settings.request_timeout) if timeout is not None else self.settings.request_timeout
         tools_limit = min(max_tool_calls, self.settings.max_tool_calls) if max_tool_calls is not None else self.settings.max_tool_calls
-        answer_limit = min(max_answer_tokens, 2048) if max_answer_tokens is not None else 2048
+        answer_limit = min(max_answer_tokens, 4096) if max_answer_tokens is not None else 3072
         scope = frozenset(document_ids) if document_ids is not None else None
         versions = dict(document_versions) if document_versions is not None else None
         started = time.monotonic()

@@ -44,7 +44,7 @@ class BackendHistory(StrictModel):
 
 class QueryLimits(StrictModel):
     max_tool_calls: int = Field(ge=1, le=10, strict=True)
-    max_answer_tokens: int = Field(ge=1, le=1200, strict=True)
+    max_answer_tokens: int = Field(ge=1, le=4096, strict=True)
 
 
 class BackendQuery(StrictModel):

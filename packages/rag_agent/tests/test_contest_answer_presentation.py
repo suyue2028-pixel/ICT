@@ -12,7 +12,8 @@ from rag_agent.agent.workflow import semantic_subqueries
 
 
 @pytest.mark.parametrize('q,ids,level,count,relation',[
-    ('什么是提示注入？',[],'concise',4,False),
+    ('什么是提示注入？',[],'explanatory',6,False),
+    ('智能体工具审计有什么风险，如何防护？',[],'explanatory',6,False),
     ('请详细说明提示注入如何影响工具调用。',[],'detailed',8,False),
     ('一句话说明数据投毒。',[],'concise',1,False),
     ('简要说明这个漏洞的影响。',[],'concise',2,False),
@@ -24,7 +25,7 @@ def test_output_profile_matches_intent_without_forcing_relation(q,ids,level,coun
     profile=answer_requirements(q,ids)['output_profile']
     assert profile['detail_level']==level and profile['max_claims']==count
     assert profile['explain_relation'] is relation and profile['show_source_links'] is True
-    assert profile['max_claim_chars']==(240 if level=='detailed' else 160)
+    assert profile['max_claim_chars']=={'detailed':320,'explanatory':220,'concise':160}[level]
 
 
 def test_source_relation_is_a_question_specific_requirement():
