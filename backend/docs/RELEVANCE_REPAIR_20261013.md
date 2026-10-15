@@ -36,7 +36,7 @@ cd 'D:\cit\后端开发'
 & 'D:\cit\.venv\Scripts\python.exe' scripts\reassess-relevance.py
 # 审阅计划后显式应用；旧版本/旧判定冲突会整笔回滚。
 & 'D:\cit\.venv\Scripts\python.exe' scripts\reassess-relevance.py --apply --plan <计划路径>
-& 'D:\cit\.venv\Scripts\python.exe' scripts\verify-relevance-runtime.py --applied <应用记录路径> --wait-seconds 60
+& 'D:\cit\.venv\Scripts\python.exe' scripts\verify-relevance-runtime.py --compose-project cit-backend-development --applied <应用记录路径> --wait-seconds 60
 ```
 
 计划默认排除演示数据。相同计划重复应用跳过已一致的分类，不重复制造索引事件。不能手工把失败或pending事件标成indexed；由Agent实际索引验证后确认。

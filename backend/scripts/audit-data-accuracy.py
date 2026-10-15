@@ -355,7 +355,7 @@ def main():
         limitations=["Native source agreement is not independent factual truth or human-labelled accuracy",
             "A bounded, stratified upstream sample cannot estimate full-corpus accuracy or recall",
             "V3 base scores only; CVSS v2/v4, environmental scoring and version applicability are not recomputed",
-            "HTTP/title identity checks do not verify every statement or every linked fix/POC", 
+            "HTTP/title identity checks do not verify every statement or every linked fix/POC",
             "Network failures and upstream modifications are separate from confirmed data errors"])
     report["upstream_checks"] = []
     upstream = Upstream() if not args.offline else None
