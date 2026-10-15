@@ -164,3 +164,8 @@ API 返回 202 和任务 ID，任务/outbox 一起提交；beat 补发 Redis 消
 部署需执行新增0011迁移（Compose迁移服务会处理），然后启动原有api/worker/唯一beat。`uv run python scripts/enrich-all.py --queue`可补处理已有数据；`uv run python scripts/verify-eight-enrichment.py --compose-project ict-backend`只读核验。原开发机需传`cit-backend-development`。GitHub代码更新不自动共享本机数据库，凭据、索引、备份和运行输出不上传。
 
 四小时口径统一、全量富化质量扫描及误关联修复见[监测验证](docs/FRESHNESS_QUALITY_VALIDATION_20261012.md)、[来源准确性审计](docs/DATA_ACCURACY_AUDIT_20261012.md)、[相关性修复](docs/RELEVANCE_REPAIR_20261013.md)。独立人工准确率/召回率和持续SLA仍待验收。
+
+
+## 手机号注册与密码登录
+
+登录页可切换注册，注册后获得普通用户会话。支持中国大陆手机号，密码15—128字符；尚未短信验证号码归属。新增0012迁移，既有令牌/历史及数据库卷保留。配置、接口和独立验证命令见[手机号账号说明](docs/PHONE_ACCOUNTS.md)。

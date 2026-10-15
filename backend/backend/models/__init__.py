@@ -5,3 +5,5 @@ from backend.models.entities import (  # noqa: F401
     VulnerabilityDocument, RuntimeObservation, RuntimeSample, EnrichmentQualityBatch, EnrichmentQualityReview,
 )
 from backend.models.snapshot import SnapshotImport, SnapshotMember, SnapshotSource  # noqa: F401
+
+from backend.models.accounts import UserAccount  # noqa: F401

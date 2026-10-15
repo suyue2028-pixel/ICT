@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = Field(default=30, ge=1, le=120)
     user_queries_per_minute: int = Field(default=10, ge=1, le=100)
     user_queries_per_day: int = Field(default=100, ge=1, le=10000)
+    signup_enabled: bool = True
+    account_session_hours: int = Field(default=8, ge=1, le=24)
     nvd_api_key: SecretStr | None = None
     # Search credentials are owned by FastAPI, never the Agent or browser.
     tavily_api_key: SecretStr | None = None

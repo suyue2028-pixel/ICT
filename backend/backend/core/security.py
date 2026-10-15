@@ -46,6 +46,12 @@ def require_user(db: Database, credential: HTTPAuthorizationCredentials | None =
         AccessToken.revoked.is_(False), AccessToken.expires_at > datetime.now(timezone.utc)))
     if row is None:
         raise HTTPException(401, "invalid_user_token")
+    if row.account_id is not None:
+        from backend.models import UserAccount
+        from backend.services.accounts import account_owner
+        account = db.get(UserAccount, row.account_id)
+        if account is None or account.disabled or row.owner_id != account_owner(account):
+            raise HTTPException(401, "invalid_user_token")
     return row.owner_id
 
 

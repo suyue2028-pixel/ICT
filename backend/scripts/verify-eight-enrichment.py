@@ -84,7 +84,9 @@ def main():
             TaskRun.result["processor_version"].as_string() == PROCESSOR_VERSION))
         checks["real_outbox_and_worker_completed_jobs"] = dispatched > 0
         migration = db.scalar(text("SELECT version_num FROM alembic_version"))
-        checks["migration_applied"] = migration == "0011_enrichment_tasks"
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        checks["migration_applied"] = migration == ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
     settings = get_settings()
     with httpx.Client(base_url=f"http://127.0.0.1:{settings.api_port}", trust_env=False, timeout=30,
             headers={"X-API-Key": settings.admin_api_key.get_secret_value()}) as client:

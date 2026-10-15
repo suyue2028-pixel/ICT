@@ -212,6 +212,7 @@ class Conversation(IdentityMixin, TimestampMixin, Base):
 
 class AccessToken(IdentityMixin, TimestampMixin, Base):
     __tablename__ = "access_tokens"
+    account_id: Mapped[UUID | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True, index=True)
     owner_id: Mapped[str] = mapped_column(String(100), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
