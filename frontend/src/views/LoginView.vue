@@ -2,7 +2,7 @@
 import LoginForm from '@/components/auth/LoginForm.vue'
 import { useLogin } from '@/composables/useLogin'
 
-const { mode, account, password, token, busy, error, authorized, submit, continueSession, clearSession } = useLogin()
+const { mode, account, password, confirmation, token, busy, error, authorized, submit, continueSession, clearSession } = useLogin()
 </script>
 
 <template>
@@ -15,9 +15,9 @@ const { mode, account, password, token, busy, error, authorized, submit, continu
     <main id="login-main" class="login-main" tabindex="-1">
       <section class="login-content" aria-labelledby="login-heading">
         <p class="login-eyebrow">AI 安全知识情报系统</p>
-        <h1 id="login-heading" class="login-heading">欢迎回来</h1>
+        <h1 id="login-heading" class="login-heading">{{ mode === 'register' ? '创建账号' : '欢迎回来' }}</h1>
         <p class="login-description">从一条情报开始，找到有依据的回答。</p>
-        <LoginForm v-model:mode="mode" v-model:account="account" v-model:password="password" v-model:token="token"
+        <LoginForm v-model:mode="mode" v-model:account="account" v-model:password="password" v-model:confirmation="confirmation" v-model:token="token"
           :busy="busy" :error="error" :authorized="authorized" @submit="submit" @continue-session="continueSession" @clear-session="clearSession" />
         <router-link to="/intelligence" class="browse-link">先浏览公开情报</router-link>
       </section>

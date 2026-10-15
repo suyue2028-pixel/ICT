@@ -7,11 +7,19 @@ export const userToken = shallowRef('')
 export const sessionState = shallowRef<'unauthorized' | 'checking' | 'authorized' | 'expired'>('unauthorized')
 export const sessionExpiresAt = shallowRef<string | null>(null)
 let sessionAttempt: Promise<void> | undefined
+let authorizationVersion = 0
+let localBootstrapAllowed = (() => { try { return sessionStorage.getItem('ict:manual-auth') !== '1' } catch { return true } })()
+export function beginUserAuthorization() {
+  localBootstrapAllowed = false
+  try { sessionStorage.setItem('ict:manual-auth', '1') } catch { /* Non-secret preference only. */ }
+  return ++authorizationVersion
+}
 export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 65_000 })
 export class UserAuthorizationRequired extends Error {
   constructor() { super('user_token_required') }
 }
 export function clearUserSession(expired = true) {
+  beginUserAuthorization()
   userToken.value = ''
   sessionExpiresAt.value = null
   sessionState.value = expired ? 'expired' : 'unauthorized'
@@ -27,13 +35,13 @@ http.interceptors.response.use(response => response, error => {
     { status: error.response?.status, data: error.response?.data })) clearUserSession(true)
   return Promise.reject(error)
 })
-export async function authorizeUser(token: string, expiresAt?: string | null) {
+export async function authorizeUser(token: string, expiresAt?: string | null, attempt = beginUserAuthorization(), signal?: AbortSignal) {
   const clean = token.trim()
   if (!clean || clean.length > 256 || /\s/.test(clean)) throw new UserAuthorizationRequired()
   const previousState = sessionState.value
   sessionState.value = 'checking'
   try {
-    const config = { headers: { Authorization: `Bearer ${clean}` } }
+    const config = { headers: { Authorization: `Bearer ${clean}` }, signal }
     try {
       const response = await http.get('/auth/me', config)
       if (!isVerifiedUserIdentity(response.data)) throw new Error('invalid_user_identity_response')
@@ -43,26 +51,29 @@ export async function authorizeUser(token: string, expiresAt?: string | null) {
       const response = await http.get('/agent/sessions', { ...config, params: { page: 1, page_size: 1 } })
       if (!Array.isArray(response.data?.items) || typeof response.data?.total !== 'number') throw new Error('invalid_user_identity_response')
     }
+    if (attempt !== authorizationVersion || signal?.aborted) throw new Error('authorization_superseded')
     userToken.value = clean
     sessionExpiresAt.value = expiresAt || null
     sessionState.value = 'authorized'
   } catch (error) {
-    sessionState.value = userToken.value ? 'authorized' : previousState === 'expired' ? 'expired' : 'unauthorized'
+    if (attempt === authorizationVersion) sessionState.value = userToken.value ? 'authorized' : previousState === 'expired' ? 'expired' : 'unauthorized'
     throw error
   }
 }
 export async function ensureSession(force = false) {
   if (!force && userToken.value && !knownSessionExpired(sessionExpiresAt.value)) return
   if (userToken.value && knownSessionExpired(sessionExpiresAt.value)) clearUserSession(true)
-  if (!import.meta.env.DEV) return
+  if (!import.meta.env.DEV || !localBootstrapAllowed) return
   if (!sessionAttempt) {
+    const attempt = authorizationVersion
     sessionAttempt = (async () => {
       try {
         // Read an administrator-issued credential. This endpoint never issues one.
         const response = await fetch('/__local/session', { cache: 'no-store' })
         if (!response.ok) return
         const result = await response.json() as { access_token?: string; expires_at?: string }
-        if (typeof result.access_token === 'string' && Date.parse(result.expires_at || '') > Date.now()) await authorizeUser(result.access_token, result.expires_at)
+        if (attempt !== authorizationVersion || userToken.value) return
+        if (typeof result.access_token === 'string' && Date.parse(result.expires_at || '') > Date.now()) await authorizeUser(result.access_token, result.expires_at, attempt)
       } catch { /* Keep explicit user reauthorization available. */ }
     })().finally(() => { sessionAttempt = undefined })
   }
