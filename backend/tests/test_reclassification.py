@@ -112,7 +112,10 @@ def test_external_scope_delete_ack_and_promotion_fence_stale_leases(db, monkeypa
         acknowledge_event(update_event.id, KnowledgeAck(status="indexed", detail={"index_id": "synthetic-index"}, lease_token=update_lease), db)
 
 
-def test_internal_scope_delete_and_new_answer_reject_excluded_sources(db):
+@pytest.mark.parametrize("provider,expected_status", [("internal", "invalidated"), ("external", "pending")])
+def test_scope_delete_and_new_answer_reject_excluded_sources(db, monkeypatch, provider, expected_status):
+    settings = get_settings().model_copy(update={"index_provider": provider})
+    monkeypatch.setattr("backend.services.jobs.get_settings", lambda: settings)
     src, doc = evidence_document(db)
     result = answer(src, doc)
     apply_assessment(db, doc, assessment(doc, False))
@@ -121,7 +124,7 @@ def test_internal_scope_delete_and_new_answer_reject_excluded_sources(db):
     assert error.value.detail == "agent_source_scope_or_version_invalid"
     maintain_index_events(db, None)
     deletion = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.document_id == doc.id, KnowledgeEvent.operation == "delete"))
-    assert deletion.status == "invalidated" and doc.deleted_at is None
+    assert deletion.status == expected_status and doc.deleted_at is None
 
 
 def test_unchanged_ingest_publishes_reclassification_and_retains_hash(db):
