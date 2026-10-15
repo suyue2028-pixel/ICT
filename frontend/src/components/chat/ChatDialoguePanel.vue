@@ -2,6 +2,7 @@
 import AssistantMascot from './AssistantMascot.vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatConversation from './ChatConversation.vue'
+import { useAssistantAvatar } from '@/composables/useAssistantAvatar'
 import type { ChatMessage } from '@/types'
 
 defineProps<{
@@ -15,11 +16,16 @@ defineProps<{
 }>()
 const draft = defineModel<string>({ required: true })
 const emit = defineEmits<{ submit: [question: string] }>()
+const { selectedAvatar, selectAvatar } = useAssistantAvatar()
 </script>
 
 <template>
   <div class="qa-dialogue">
-    <AssistantMascot :waiting="sending || restoring" />
+    <AssistantMascot
+      :waiting="sending || restoring"
+      :avatar="selectedAvatar"
+      @select-avatar="selectAvatar"
+    />
     <section class="panel chat-panel" aria-label="情报问答" :aria-busy="restoring || sending">
       <svg class="dialogue-tail" width="26" height="36" viewBox="0 0 26 36" aria-hidden="true">
         <path

@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import catImage from '@/assets/assistant-cat.png'
+import AssistantAvatarPicker from './AssistantAvatarPicker.vue'
+import type { AssistantAvatar, AssistantAvatarId } from '@/config/assistantAvatars'
 
-defineProps<{ waiting: boolean }>()
+defineProps<{ waiting: boolean; avatar: AssistantAvatar }>()
+const emit = defineEmits<{ selectAvatar: [id: AssistantAvatarId] }>()
 </script>
 
 <template>
   <div :class="['assistant-mascot', { waiting }]">
-    <div class="mascot-circle">
-      <img :src="catImage" width="80" height="80" alt="黑白小猫 AI 情报助手" />
+    <div :class="['mascot-circle', { 'is-person': avatar.id === 'boy' || avatar.id === 'girl' }]">
+      <img :src="avatar.image" width="80" height="80" :alt="`黑白${avatar.name}情报助手`" />
     </div>
+    <AssistantAvatarPicker :selected-id="avatar.id" @select="emit('selectAvatar', $event)" />
   </div>
 </template>
 
@@ -16,10 +19,12 @@ defineProps<{ waiting: boolean }>()
 .assistant-mascot {
   display: grid;
   justify-items: center;
+  gap: 10px;
   width: 80px;
   padding-top: 5px;
 }
 .mascot-circle {
+  position: relative;
   display: grid;
   place-items: center;
   width: 80px;
@@ -27,12 +32,22 @@ defineProps<{ waiting: boolean }>()
   border: 1px solid #000;
   border-radius: 50%;
   background: #fff;
+  overflow: hidden;
 }
 .mascot-circle img {
   display: block;
   width: 74px;
   height: 74px;
   object-fit: contain;
+}
+.mascot-circle.is-person img {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  width: 180%;
+  height: auto;
+  max-width: none;
+  translate: -50% 0;
 }
 .assistant-mascot.waiting img {
   animation: mascot-breathing 2s ease-in-out infinite;
