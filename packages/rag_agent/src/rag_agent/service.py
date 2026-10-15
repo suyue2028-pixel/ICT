@@ -93,7 +93,7 @@ class RAGService:
             'history':[m.model_dump(mode='json') for m in state['request'].history[-8:]]}
         for attempt in range(2):
             try:
-                result=await self.llm.complete('general_explain',payload,budget,min(8,self.settings.llm_timeout))
+                result=await self.llm.complete('general_explain',payload,budget,self.settings.llm_timeout)
                 answer=result.get('answer')
                 if not safe_unverified_answer(answer):raise ValueError('invalid unverified explanation')
                 return answer
@@ -104,7 +104,7 @@ class RAGService:
                 state['warnings'].append('general_explanation_schema_retry')
                 state['trace'].append({'node':'general_explanation_schema_error','error_type':type(exc).__name__})
                 payload={**payload,'output_contract':{'root_keys':['answer'],
-                    'answer':'short conceptual text only; no references, URLs, product/version/patch facts or decimal examples'}}
+                    'answer':'conceptual explanation only; no references, URLs, product/version/patch facts or decimal examples'}}
 
     async def deactivate(self, document_id):
         async with self._write_lock:
@@ -153,7 +153,7 @@ class RAGService:
             raise ValueError("timeout must be between zero and 300 seconds")
         duration = min(timeout, self.settings.request_timeout) if timeout is not None else self.settings.request_timeout
         tools_limit = min(max_tool_calls, self.settings.max_tool_calls) if max_tool_calls is not None else self.settings.max_tool_calls
-        answer_limit = min(max_answer_tokens, 4096) if max_answer_tokens is not None else 3072
+        answer_limit = min(max_answer_tokens, 8192) if max_answer_tokens is not None else 8192
         scope = frozenset(document_ids) if document_ids is not None else None
         versions = dict(document_versions) if document_versions is not None else None
         started = time.monotonic()

@@ -6,12 +6,12 @@ from rag_agent.agent.state import Budget
 from rag_agent.integration.contracts import QueryLimits
 
 
-@pytest.mark.parametrize("tokens", [1, 64, 1200, 3072, 4096])
+@pytest.mark.parametrize("tokens", [1, 64, 1200, 3072, 4096, 8192])
 def test_v1_answer_budget_accepts_old_and_extended_limits(tokens):
     assert QueryLimits(max_tool_calls=10, max_answer_tokens=tokens).max_answer_tokens == tokens
 
 
-@pytest.mark.parametrize("tokens", [0, 4097, True, "3072"])
+@pytest.mark.parametrize("tokens", [0, 8193, True, "8192"])
 def test_v1_answer_budget_remains_strict_and_bounded(tokens):
     with pytest.raises(ValueError):
         QueryLimits(max_tool_calls=10, max_answer_tokens=tokens)

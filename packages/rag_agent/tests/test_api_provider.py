@@ -7,7 +7,7 @@ from rag_agent.config import Settings
 from rag_agent.providers.llm import BackendLLM, RemoteLLM, TypedProviderError
 from rag_agent.agent.state import Budget, BudgetExceeded
 from rag_agent.agent.semantic import SemanticClassification
-from rag_agent.agent.semantic_prompts import CLASSIFICATION_SYSTEM, GENERAL_EXPLANATION_SYSTEM
+from rag_agent.agent.semantic_prompts import CLASSIFICATION_SYSTEM, GENERAL_EXPLANATION_SYSTEM, SYNTHESIS_LENGTH_SYSTEM
 
 
 def test_demo_adapter_contract(service, monkeypatch):
@@ -87,7 +87,7 @@ async def test_flash_thinking_option_is_endpoint_specific(monkeypatch, base_url,
 
 
 @pytest.mark.parametrize("purpose", ["synthesize", "general_explain"])
-@pytest.mark.parametrize("requested,expected", [(64, 64), (3072, 3072), (5000, 4096)])
+@pytest.mark.parametrize("requested,expected", [(64, 64), (3072, 3072), (5000, 5000), (8192, 8192), (10000, 8192)])
 async def test_direct_generation_token_budget_is_explicit_and_bounded(monkeypatch, purpose, requested, expected):
     """Mock transport tests budget wiring, not real provider generation quality."""
     requests = []
@@ -105,6 +105,10 @@ async def test_direct_generation_token_budget_is_explicit_and_bounded(monkeypatc
     assert await RemoteLLM(settings).complete(purpose, {}, budget, 1) == result
     assert len(requests) == budget.llm_calls == 1
     assert requests[0]["max_tokens"] == expected
+    if purpose == "synthesize":
+        assert requests[0]["messages"][1] == {"role": "system", "content": SYNTHESIS_LENGTH_SYSTEM}
+    else:
+        assert len(requests[0]["messages"]) == 2
 
 
 @pytest.mark.parametrize("reason,content,message", [
@@ -131,7 +135,8 @@ def platform_settings(**extra):
     return Settings(llm_mode="live", llm_service_token="synthetic-service-token", **extra)
 
 
-async def test_platform_transport_counts_supplier_attempts_and_keeps_key_server_side(monkeypatch):
+@pytest.mark.parametrize("requested", [64, 1200, 4096, 8192])
+async def test_platform_transport_counts_supplier_attempts_and_keeps_key_server_side(monkeypatch, requested):
     requests = []
     def handler(request):
         requests.append(request)
@@ -140,7 +145,7 @@ async def test_platform_transport_counts_supplier_attempts_and_keeps_key_server_
             "provider": "deepseek", "model": "deepseek-flash"})
     client_cls = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: client_cls(transport=httpx.MockTransport(handler), **kw))
-    budget = Budget(time.monotonic() + 4, max_llm=5, max_answer_tokens=64)
+    budget = Budget(time.monotonic() + 4, max_llm=5, max_answer_tokens=requested)
     assert await BackendLLM(platform_settings()).complete("synthesize", {"question": "q"}, budget, 2) == {"claims": []}
     assert budget.llm_calls == 2
     assert budget.llm_usage[0]["usage"] == {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25}
@@ -148,7 +153,7 @@ async def test_platform_transport_counts_supplier_attempts_and_keeps_key_server_
     assert requests[0].headers["X-Agent-Token"] == "synthetic-service-token"
     assert "Authorization" not in requests[0].headers
     body = json.loads(requests[0].content)
-    assert body["max_answer_tokens"] == 64 and body["max_attempts"] == 2
+    assert body["max_answer_tokens"] == requested and body["max_attempts"] == 2
     assert set(body) == {"purpose", "payload", "max_attempts", "timeout_seconds", "max_answer_tokens"}
     assert "synthetic-service-token" not in requests[0].content.decode()
 

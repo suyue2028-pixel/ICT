@@ -28,8 +28,8 @@ class Settings(Model):
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-flash"
     llm_key: SecretStr = SecretStr("")
-    request_timeout: float = Field(default=30, gt=0, le=300)
-    llm_timeout: float = Field(default=20, gt=0)
+    request_timeout: float = Field(default=75, gt=0, le=300)
+    llm_timeout: float = Field(default=60, gt=0)
     max_llm_calls: int = Field(default=6, ge=0, le=8)
     allow_unverified_concepts: bool = True
     max_tool_calls: int = Field(default=10, ge=1, le=10)

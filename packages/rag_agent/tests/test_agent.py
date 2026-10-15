@@ -103,7 +103,7 @@ async def test_tool_budget_terminates(tmp_path, documents):
     assert r.status == "error" and r.metrics.tool_calls == 1
 
 
-@pytest.mark.parametrize("requested,expected", [(None, 3072), (64, 64), (1200, 1200), (4096, 4096), (10000, 4096)])
+@pytest.mark.parametrize("requested,expected", [(None, 8192), (64, 64), (1200, 1200), (4096, 4096), (8192, 8192), (10000, 8192)])
 async def test_service_answer_budget_default_and_requested_cap(service, monkeypatch, requested, expected):
     """Synthetic local greeting probes the budget; no vendor API is called."""
     import importlib

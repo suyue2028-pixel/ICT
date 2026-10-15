@@ -90,11 +90,38 @@ def output_profile(question: str, identifiers: list[str], facets: list[str]) -> 
     sections=list(dict.fromkeys(label for facet in facets for label in labels.get(facet,[])))
     one=bool(re.search(r'一句话|只要结论|one sentence',question,re.I))
     return {'detail_level':'concise' if brief else 'detailed' if detailed else 'explanatory',
-        'max_claims':1 if one else 2 if brief else 8 if detailed else 6,
-        'max_claim_chars':160 if brief else 320 if detailed else 220,
+        'max_claims':1 if one else 2 if brief else 8,
+        'max_claim_chars':160 if brief else 800,
+        'min_answer_chars':0 if brief else 2500,
+        'max_answer_chars':160 if one else 320 if brief else 3500 if detailed else 3000,
         'sections':['核心结论'] if one else sections,
         'show_source_links':True,
         'explain_relation':'relation' in facets or 'comparison' in facets}
+
+
+def length_revision_feedback(claims, evidence, profile, budget):
+    """Length is a conditional target, with a call reserved for source verification."""
+    minimum = profile.get('min_answer_chars', 0)
+    maximum = profile.get('max_answer_chars', 3000)
+    characters = sum(len(claim.text) for claim in claims)
+    if (not minimum or not claims or minimum <= characters <= maximum
+            or budget.max_answer_tokens < 4096
+            or sum(len(item.excerpt) for item in evidence) < minimum
+            or budget.max_llm - budget.llm_calls < 2 or budget.remaining() < 12):
+        return None
+    target = (minimum + maximum) // 2
+    paragraphs = min(profile['max_claims'], max(len(claims),
+        (target + profile['max_claim_chars'] - 1) // profile['max_claim_chars']))
+    return {'body_chars': characters, 'min_body_chars': minimum, 'max_body_chars': maximum,
+        'suggested_body_chars': target, 'suggested_paragraphs': paragraphs,
+        'suggested_chars_per_paragraph': (target + paragraphs - 1) // paragraphs,
+        'max_claims': profile['max_claims'], 'max_claim_chars': profile['max_claim_chars'],
+        'instruction': '在现有证据确实支持的范围内重新组织并展开解释正文。'
+            '按 suggested_paragraphs 和 suggested_chars_per_paragraph 分配篇幅，'
+            '优先保持 supported_draft 已有的主题及引用范围，逐段充分展开，'
+            '不要重新加入先前没有通过引用及主题规则的内容；保留成立条件、真实引用和推断标记。'
+            '优先解释已有事实的机制、条件和动作，不新增没有来源的事实、版本、案例或建议，'
+            '不重复结论凑字数；资料不足时允许短答。字数只计算正文，不含引用列表或原文摘录。'}
 
 
 def render_claim_lines(claims: list[Claim]) -> list[str]:

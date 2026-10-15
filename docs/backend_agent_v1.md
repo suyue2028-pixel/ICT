@@ -45,7 +45,7 @@ python -m uvicorn examples.backend_api:app --host 127.0.0.1 --port 9001
 
 query原样接收后端的 schema_version/query/session_id/is_demo/request_id/invocation_id/history/limits/state_owner。history允许8条，核心只接最近6条role/content，历史引用和旧助手回答不作为新事实证据。`state_owner` 必须为backend，身份不由模型生成。
 
-2026-10-13 起，后端以 `AGENT_MAX_ANSWER_TOKENS` 管理专业回答的生成上限，默认 3072、可配置范围 256～4096。V1 的 `limits.max_answer_tokens` 仍是后端必须提供的纯整数，允许范围从 1～1200 放宽为 1～4096；旧 1200 及更小合法请求继续有效，不新增请求字段。内部模型 `CompletionRequest` 未指定预算时仍默认 1200。该预算是上限，不能保证每次回答用满，也不影响分类、证据评估和核验的原有较小生成上限。
+2026-10-14 起，后端以 `AGENT_MAX_ANSWER_TOKENS` 管理专业回答的生成上限，默认 8192、可配置范围 256～8192。V1 的 `limits.max_answer_tokens` 仍是后端必须提供的纯整数，允许范围为 1～8192；旧 1200、4096 及更小合法请求继续有效，不新增请求字段。内部模型 `CompletionRequest` 未指定预算时仍默认 1200。该预算是上限，不能保证每次回答用满，也不影响分类、证据评估和核验的原有较小生成上限。
 
 回答字段：schema_version、status、answer、sources、cve_ids、risk_level、evidence、tool_calls、tool_trace、partial_errors、retrieval_mode。status为completed/partial/insufficient_evidence；核心错误映射HTTP429/503/504，不伪装成正常回答。
 
@@ -55,7 +55,7 @@ CVE只从最终正文提及且来源revision记录的别名/主编号输出。�
 
 模式通过partial_errors和 `X-RAG-Answer-Mode`、`X-RAG-Embedding-Mode`、`X-RAG-LLM-Calls` 标记；后端当前不会向前端透传这些header，因此页面至少应读取partial_errors中的模式标识。后端不允许额外mode字段，Agent不在正文契约中擅加字段。
 
-工具事件来自本次真实调用的名称、状态、耗时和文档UUID。请求总时限取本地配置与25秒中的较小值；工具预算取本地8次与后端上限中的较小值。远程生成max_tokens不超过后端预算，生成阶段最多 4096。V1最终正文另按 `max_answer_tokens × 4` 设置保守UTF-8字节上限，优先保留完整行，截断为partial并标记answer_budget_truncated；正文还受既有 12000 字符契约限制。这不是供应商tokenizer的精确计量。
+工具事件来自本次真实调用的名称、状态、耗时和文档UUID。请求总时限遵守 Agent 的 `RAG_TIMEOUT` 配置（默认75秒）；工具预算仍取本地配置与后端上限中的较小值。远程生成max_tokens不超过后端预算，生成阶段最多8192。模型单次超时默认60秒，后端Agent请求默认90秒，前端仅问答提交等待100秒；管理员显式较小配置仍生效。V1最终正文另按 `max_answer_tokens × 4` 设置保守UTF-8字节上限，优先保留完整行，截断为partial并标记answer_budget_truncated；正文还受既有 12000 字符契约限制。这不是供应商tokenizer的精确计量。
 
 ## 文档同步与版本身份
 

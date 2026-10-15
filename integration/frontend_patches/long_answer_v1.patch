@@ -1,0 +1,13 @@
+diff --git a/frontend/src/composables/useDemoChat.ts b/frontend/src/composables/useDemoChat.ts
+index 59ffbb5..4028602 100644
+--- a/frontend/src/composables/useDemoChat.ts
++++ b/frontend/src/composables/useDemoChat.ts
+@@ -131,7 +131,7 @@ export function useDemoChat(getItems: () => IntelligenceItem[]) {
+       if (version !== context) return
+       if (!userToken.value) throw new UserAuthorizationRequired()
+       const response = await http.post<ChatAnswer>('/agent/query', { query: clean, session_id: sessionId.value,
+-        is_demo: scope }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
++        is_demo: scope }, { timeout: 100_000, headers: { 'Idempotency-Key': crypto.randomUUID() } })
+       if (version !== context) return
+       const answer = response.data
+       failedQuestion.value = ''; saveFailedQuestion(scope, '')

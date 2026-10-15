@@ -5,15 +5,15 @@ import time
 import pytest
 from rag_agent.schemas import Assertion, Claim
 from rag_agent.agent.presentation import (answer_requirements, render_assertion,
-    render_assertion_lines, render_claim_lines, render_boundary_summary)
+    render_assertion_lines, render_claim_lines, render_boundary_summary, length_revision_feedback)
 from rag_agent.agent.state import Budget
 from rag_agent.schemas import Plan,Filters
 from rag_agent.agent.workflow import semantic_subqueries
 
 
 @pytest.mark.parametrize('q,ids,level,count,relation',[
-    ('什么是提示注入？',[],'explanatory',6,False),
-    ('智能体工具审计有什么风险，如何防护？',[],'explanatory',6,False),
+    ('什么是提示注入？',[],'explanatory',8,False),
+    ('智能体工具审计有什么风险，如何防护？',[],'explanatory',8,False),
     ('请详细说明提示注入如何影响工具调用。',[],'detailed',8,False),
     ('一句话说明数据投毒。',[],'concise',1,False),
     ('简要说明这个漏洞的影响。',[],'concise',2,False),
@@ -25,7 +25,9 @@ def test_output_profile_matches_intent_without_forcing_relation(q,ids,level,coun
     profile=answer_requirements(q,ids)['output_profile']
     assert profile['detail_level']==level and profile['max_claims']==count
     assert profile['explain_relation'] is relation and profile['show_source_links'] is True
-    assert profile['max_claim_chars']=={'detailed':320,'explanatory':220,'concise':160}[level]
+    assert profile['max_claim_chars']=={'detailed':800,'explanatory':800,'concise':160}[level]
+    assert profile['min_answer_chars']==(0 if level=='concise' else 2500)
+    assert profile['max_answer_chars']==(3500 if level=='detailed' else 3000 if level=='explanatory' else 160 if count==1 else 320)
 
 
 def test_source_relation_is_a_question_specific_requirement():
@@ -33,6 +35,53 @@ def test_source_relation_is_a_question_specific_requirement():
     assert 'relation' in r['facets'] and '关联依据' in r['output_profile']['sections']
     assert any('关系两端' in point for point in r['required_points'])
     assert '关联依据' not in answer_requirements('如何缓解提示注入？',[])['output_profile']['sections']
+
+
+def test_long_answer_revision_reserves_verification_and_respects_evidence_and_briefness():
+    profile=answer_requirements('什么是提示注入？',[])['output_profile']
+    claims=[Claim(text='合成的简短解释。',evidence_ids=['synthetic'])]
+    evidence=[SimpleNamespace(excerpt='合成资料。'*600)]
+    budget=Budget(time.monotonic()+30,max_llm=6,llm_calls=3,max_answer_tokens=8192)
+    feedback=length_revision_feedback(claims,evidence,profile,budget)
+    assert feedback['min_body_chars']==2500 and feedback['max_body_chars']==3000
+    assert feedback['suggested_body_chars']==2750
+    assert length_revision_feedback(claims,evidence,
+        answer_requirements('一句话解释提示注入。',[])['output_profile'],budget) is None
+    assert length_revision_feedback(claims,[SimpleNamespace(excerpt='资料很少。')],profile,budget) is None
+    for updates in [{'llm_calls':5},{'deadline':time.monotonic()+3},{'max_answer_tokens':1200}]:
+        limited=Budget(**{**budget.__dict__,**updates})
+        assert length_revision_feedback(claims,evidence,profile,limited) is None
+    enough=[Claim(text='合成解释。'*550,evidence_ids=['synthetic'])]
+    assert length_revision_feedback(enough,evidence,profile,budget) is None
+
+
+async def test_long_generation_uses_one_revision_then_leaves_verification_budget(service):
+    """Synthetic source and model only; checks execution, not provider quality."""
+    snapshot=service.store.snapshot()
+    original=next(iter(snapshot.evidence.values()))
+    evidence=original.model_copy(update={'excerpt':'合成安全机制资料。'*400})
+
+    class SyntheticLLM:
+        mode='live'
+        def __init__(self):self.payloads=[]
+        async def complete(self,purpose,payload,budget,timeout):
+            assert purpose=='synthesize'
+            budget.llm();self.payloads.append(payload)
+            return {'claims':[{'text':'合成的安全机制解释。' if len(self.payloads)==1 else '合成解释。'*550,
+                'evidence_ids':[evidence.evidence_id],'kind':'fact','topic_ids':[]}]}
+
+    model=SyntheticLLM();service.nodes.llm=model
+    state={'snapshot':snapshot,'resolved_question':'什么是提示注入？','identifiers':[],
+        'evidence':[evidence],'assertions':[],'clarification':'','missing_fields':[],'conflicts':[],
+        'warnings':[],'trace':[],'started':time.monotonic(),
+        'budget':Budget(time.monotonic()+30,max_llm=6,llm_calls=2,max_answer_tokens=8192)}
+    result=await service.nodes.synthesize(state)
+    assert len(model.payloads)==2 and result['budget'].llm_calls==4
+    assert 'length_feedback' not in model.payloads[0]
+    assert model.payloads[1]['length_feedback']['min_body_chars']==2500
+    assert model.payloads[1]['supported_draft'][0]['evidence_ids']==[evidence.evidence_id]
+    assert result['warnings']==['answer_length_revision']
+    assert len(result['draft'].claims[0].text)==2750
 
 
 def fact(eid,*,score=9.8,source='synthetic-A',entity='CVE-2099-1234'):

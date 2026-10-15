@@ -459,7 +459,7 @@ def create_app(service, index, service_token: str | None) -> FastAPI:
                 request,scope_loader=load_scope,
                 max_tool_calls=body.limits.max_tool_calls,
                 max_answer_tokens=body.limits.max_answer_tokens,
-                timeout=min(service.settings.request_timeout, 25.0),
+                timeout=service.settings.request_timeout,
                 external_executor=external_executor,
             )
         except TimeoutError:

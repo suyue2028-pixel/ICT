@@ -14,7 +14,7 @@ from .conversation import conversation_kind
 from .coverage import requested_topics, parse_relevance, validate_claim_topics, final_coverage
 from .presentation import (answer_requirements, assertion_payload, render_assertion,
                            render_claim, render_missing_fields, render_claim_lines,
-                           render_assertion_lines, render_boundary_summary)
+                           render_assertion_lines, render_boundary_summary, length_revision_feedback)
 from .workflow import requirements, freshness_required, evaluate, next_tools, deduplicate, REGISTERED, package_entities, semantic_subqueries
 from ..schemas import RetrievalSummary
 from ..providers.llm import TypedProviderError
@@ -539,6 +539,25 @@ class Nodes:
                     result = await self.llm.complete('synthesize',payload,state['budget'],self.settings.llm_timeout)
                     try:
                         state['draft']=Draft.model_validate(result)
+                        if attempt == 0 and self.llm.mode == 'live':
+                            supported = []
+                            for claim in state['draft'].claims:
+                                try:
+                                    validate_draft(Draft(claims=[claim]), state['selected_evidence'], state['assertions'])
+                                    validate_claim_topics(claim, state.get('relevance_assignments', {}),
+                                                          state.get('requested_topics', []))
+                                except ValueError:
+                                    continue
+                                supported.append(claim)
+                            feedback = length_revision_feedback(supported, state['selected_evidence'],
+                                                                requirements['output_profile'], state['budget'])
+                            if feedback:
+                                state['warnings'].append('answer_length_revision')
+                                state['trace'].append({'node': 'answer_length_revision',
+                                                       'body_chars': feedback['body_chars']})
+                                payload = {**payload, 'length_feedback': feedback,
+                                    'supported_draft': [claim.model_dump(mode='json') for claim in supported]}
+                                continue
                         break
                     except ValidationError as exc:
                         # Record only schema paths/types, never model text,
