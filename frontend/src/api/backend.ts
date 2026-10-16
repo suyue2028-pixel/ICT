@@ -26,15 +26,23 @@ export function enrichedItem(item: IntelligenceItem, enrichment: Enrichment): In
     ? value.filter((entry): entry is string => typeof entry === 'string') : []
   const known = (field: string) => enrichment.source[field]?.state === 'known'
     ? record(enrichment.source[field]?.value) : {}
-  const cwe = strings(known('cwe').ids)
+  const externalValues = (field: string): unknown[] => (enrichment.external?.[field] || [])
+    .filter(result => result.state === 'known').flatMap(result => {
+      const value = record(result.value).value
+      return Array.isArray(value) ? value : []
+    })
+  const cwe = [...new Set([...strings(known('cwe').ids), ...strings(externalValues('cwe'))])]
   const vectors = known('cvss').vectors
-  const cvss = Array.isArray(vectors) ? vectors.map(record) : []
+  const cvss = [...(Array.isArray(vectors) ? vectors : []), ...externalValues('cvss')].map(record)
   const score = cvss.find(row => typeof row.score === 'number' && row.score >= 0 && row.score <= 10)?.score
-  const affected = known('affected').items
+  const sourceAffected = known('affected').items
+  const affected = Array.isArray(sourceAffected) && sourceAffected.length ? sourceAffected : externalValues('affected')
   const facts = (Array.isArray(affected) ? affected : []).map(record).map(row => {
     const pkg = record(row.package)
     const ranges = (Array.isArray(row.ranges) ? row.ranges : []).map(record)
-    const events = ranges.flatMap(range => (Array.isArray(range.events) ? range.events : []).map(record))
+    // Git object identifiers remain in the evidence panel; never present them
+    // as released software versions in the compact version facts.
+    const events = ranges.filter(range => range.type !== 'GIT').flatMap(range => (Array.isArray(range.events) ? range.events : []).map(record))
     const versions = (key: string) => [...new Set(events.flatMap(event => typeof event[key] === 'string' ? [event[key] as string] : []))]
     return { product: typeof pkg.name === 'string' ? pkg.name : '未标明产品',
       ecosystem: typeof pkg.ecosystem === 'string' ? pkg.ecosystem : '',

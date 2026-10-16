@@ -1,5 +1,15 @@
 import axios from 'axios'
-import { http } from './http'
+import { http, authorizeUser, beginUserAuthorization } from './http'
+
+interface AccountSession { access_token: string; expires_at: string; token_type: string; phone_verified: boolean }
+export async function signInAccount(phone: string, password: string, register: boolean, signal?: AbortSignal) {
+  const attempt = beginUserAuthorization()
+  const { data } = await http.post<AccountSession>(register ? '/auth/register' : '/auth/login', { phone, password }, { signal })
+  if (typeof data?.access_token !== 'string' || data.token_type !== 'Bearer' || !(Date.parse(data.expires_at) > Date.now())) {
+    throw new Error('invalid_identity_response')
+  }
+  await authorizeUser(data.access_token, data.expires_at, attempt, signal)
+}
 
 /** Validate a regular user credential. Never send account passwords here. */
 export async function verifyUserToken(token: string, signal?: AbortSignal): Promise<void> {
@@ -37,6 +47,17 @@ export function loginError(cause: unknown): string {
     return '服务未返回有效的用户身份信息，请联系项目管理员。'
   }
   if (axios.isAxiosError(cause)) {
+    const code = cause.response?.data?.error?.code || cause.response?.data?.detail
+    const messages: Record<string, string> = {
+      invalid_credentials: '手机号或密码错误。',
+      weak_password: '密码至少 15 个字符；请避免常见口令、连续重复字符或手机号。',
+      registration_unavailable: '暂时无法用此手机号注册，请尝试登录或稍后重试。',
+      registration_closed: '当前暂未开放注册，请联系管理员。',
+      auth_rate_limited: '尝试次数过多，请稍后再试。', password_work_busy: '登录服务繁忙，请稍后重试。',
+      auth_throttle_unavailable: '登录服务暂时不可用，请稍后重试。',
+      invalid_request: '请检查手机号和密码格式。',
+    }
+    if (typeof code === 'string' && messages[code]) return messages[code]
     if ([401, 403].includes(cause.response?.status || 0)) return '访问令牌无效或已过期，请向管理员获取新的令牌。'
     if (cause.code === 'ECONNABORTED') return '验证超时，请稍后重试。'
   }

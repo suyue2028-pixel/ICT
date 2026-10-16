@@ -32,6 +32,8 @@ const paperItem = computed(() => {
         <p v-if="block.evidenceId" class="enrichment-evidence-id">来源证据标识：{{ block.evidenceId }}</p>
       </article>
       <p v-if="!blocks.length" class="enrichment-empty">暂无数据 · {{ enrichmentStateNames[state] || '状态未确认' }}</p>
+      <p v-if="!blocks.length && state === 'not_applicable'" class="enrichment-description">已检查当前情报类型，该维度不适用；未编造漏洞编号、评分、版本或利用状态。</p>
+      <p v-else-if="!blocks.length && state === 'not_found'" class="enrichment-description">已检查现有保存资料及明确标识关联来源，未找到有证据的结果；不代表外部世界不存在此类信息。</p>
       <p v-if="!blocks.length && dimension === 'affected' && item.products.length" class="enrichment-description">来源元数据中的产品：{{ item.products.join('、') }}。版本范围：暂无数据。</p>
     </template>
   </div>

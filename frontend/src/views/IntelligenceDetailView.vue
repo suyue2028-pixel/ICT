@@ -60,7 +60,7 @@ watch(() => [route.params.id, route.query.content_hash, store.isDemo], () => { v
                 <h2>结构化信息</h2>
                 <p v-if="item.structuredStatus === 'unavailable'">结构化字段获取失败；原文仍可查看，缺失字段暂未核对。</p>
                 <p v-else-if="item.structuredStatus === 'historical'">当前为引用版本，未使用其他版本的结构化字段。</p>
-                <p v-else>结构化字段来自当前版本来源记录；未提供的字段如实标记。</p>
+                <p v-else>结构化信息来自当前版本来源及有原文证据的富化结果；未提供的字段如实标记。</p>
               </div>
             </div>
             <div class="field-grid">
