@@ -1,0 +1,5 @@
+{
+  "question": "它的评分和修复版本是什么？",
+  "history": [{"role":"user","content":"介绍 CVE-2024-37032"}],
+  "timezone": "Asia/Shanghai"
+}

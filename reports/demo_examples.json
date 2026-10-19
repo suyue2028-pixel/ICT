@@ -1,0 +1,441 @@
+{
+  "transport": "installed package CLI subprocess",
+  "passed": true,
+  "responses": {
+    "multi_turn": {
+      "status": "partial",
+      "answer": "以下为来源摘录与已记录字段，尚未进行远程模型语义生成。\n来源《CVE-2024-37032 — Ollama》的原文摘录：Ollama before 0.1.34 does not validate the format of the digest (sha256 with 64 hex digits) when getting the model path, and thus mishandles the TestGetBlobsPath test cases such as [doc_96659fd8349a7fa242672722:v1:c0]\n已记录 CVE-2024-37032 的 CVSS 3.1 评分 8.8（来源主体：134c704f-9b21-4f2e-91b3-4a467353bcc0） [doc_96659fd8349a7fa242672722:v1:field:e46f1fad89e77e79cf06130f6f11]\n已记录 CVE-2024-37032 的 受影响范围的原始 CPE 布尔条件已记录，尚未解析，不能据此断言资产受影响 [doc_96659fd8349a7fa242672722:v1:field:8d212676b92eac5518e3de4fcacf]\n证据未提供以下内容（未知）：doc_96659fd8349a7fa242672722:fixed_version",
+      "claims": [
+        {
+          "text": "来源《CVE-2024-37032 — Ollama》的原文摘录：Ollama before 0.1.34 does not validate the format of the digest (sha256 with 64 hex digits) when getting the model path, and thus mishandles the TestGetBlobsPath test cases such as",
+          "evidence_ids": [
+            "doc_96659fd8349a7fa242672722:v1:c0"
+          ],
+          "kind": "fact"
+        }
+      ],
+      "sources": [
+        {
+          "evidence_id": "doc_96659fd8349a7fa242672722:v1:c0",
+          "document_id": "doc_96659fd8349a7fa242672722",
+          "version": 1,
+          "title": "CVE-2024-37032 — Ollama",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-37032",
+          "excerpt": "Ollama before 0.1.34 does not validate the format of the digest (sha256 with 64 hex digits) when getting the model path, and thus mishandles the TestGetBlobsPath test cases such as fewer than 64 hex digits, more than 64 hex digits, or an initial ../ substring.",
+          "locator": {
+            "kind": "char_range",
+            "start": 0,
+            "end": 260
+          },
+          "published_at": "2024-05-31T04:15:09.617000Z",
+          "collected_at": "2026-10-01T12:01:52.307953Z"
+        },
+        {
+          "evidence_id": "doc_96659fd8349a7fa242672722:v1:field:e46f1fad89e77e79cf06130f6f11",
+          "document_id": "doc_96659fd8349a7fa242672722",
+          "version": 1,
+          "title": "CVE-2024-37032 — Ollama",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-37032",
+          "excerpt": "{\"cvssData\": {\"attackComplexity\": \"LOW\", \"attackVector\": \"NETWORK\", \"availabilityImpact\": \"HIGH\", \"baseScore\": 8.8, \"baseSeverity\": \"HIGH\", \"confidentialityImpact\": \"HIGH\", \"integrityImpact\": \"HIGH\", \"privilegesRequired\": \"LOW\", \"scope\": \"UNCHANGED\", \"userInteraction\": \"NONE\", \"vectorString\": \"CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H\", \"version\": \"3.1\"}, \"exploitabilityScore\": 2.8, \"impactScore\": 5.9, \"source\": \"134c704f-9b21-4f2e-91b3-4a467353bcc0\", \"type\": \"Secondary\"}",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/metrics/cvssMetricV31/0"
+          },
+          "published_at": "2024-05-31T04:15:09.617000Z",
+          "collected_at": "2026-10-01T12:01:52.307953Z"
+        },
+        {
+          "evidence_id": "doc_96659fd8349a7fa242672722:v1:field:8d212676b92eac5518e3de4fcacf",
+          "document_id": "doc_96659fd8349a7fa242672722",
+          "version": 1,
+          "title": "CVE-2024-37032 — Ollama",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-37032",
+          "excerpt": "[{\"nodes\": [{\"cpeMatch\": [{\"criteria\": \"cpe:2.3:a:ollama:ollama:*:*:*:*:*:*:*:*\", \"matchCriteriaId\": \"B6FFF9F3-E470-40F2-B950-615D4B263935\", \"versionEndExcluding\": \"0.1.34\", \"vulnerable\": true}], \"negate\": false, \"operator\": \"OR\"}]}]",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/configurations"
+          },
+          "published_at": "2024-05-31T04:15:09.617000Z",
+          "collected_at": "2026-10-01T12:01:52.307953Z"
+        }
+      ],
+      "facts": [
+        {
+          "assertion_id": "assert_1752be183e7030b29f1913a91b26",
+          "document_id": "doc_96659fd8349a7fa242672722",
+          "version": 1,
+          "entity_id": "CVE-2024-37032",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 8.8,
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+            "severity": "HIGH",
+            "source": "134c704f-9b21-4f2e-91b3-4a467353bcc0",
+            "type": "Secondary"
+          },
+          "evidence_ids": [
+            "doc_96659fd8349a7fa242672722:v1:field:e46f1fad89e77e79cf06130f6f11"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.307953Z"
+        },
+        {
+          "assertion_id": "assert_0959e5b297acbb64b38ea7cc11af",
+          "document_id": "doc_96659fd8349a7fa242672722",
+          "version": 1,
+          "entity_id": "CVE-2024-37032",
+          "field": "affected_version",
+          "value": {
+            "raw_conditions": [
+              {
+                "nodes": [
+                  {
+                    "operator": "OR",
+                    "negate": false,
+                    "cpeMatch": [
+                      {
+                        "vulnerable": true,
+                        "criteria": "cpe:2.3:a:ollama:ollama:*:*:*:*:*:*:*:*",
+                        "versionEndExcluding": "0.1.34",
+                        "matchCriteriaId": "B6FFF9F3-E470-40F2-B950-615D4B263935"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "parsed": false,
+            "warning": "CPE boolean applicability is recorded, not resolved"
+          },
+          "evidence_ids": [
+            "doc_96659fd8349a7fa242672722:v1:field:8d212676b92eac5518e3de4fcacf"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.307953Z"
+        }
+      ],
+      "missing_fields": [
+        "doc_96659fd8349a7fa242672722:fixed_version"
+      ],
+      "conflicts": [],
+      "warnings": [],
+      "trace_id": "3e42ddb458da4180b00a572665bfccdf",
+      "metrics": {
+        "elapsed_ms": 5.619290997856297,
+        "llm_calls": 0,
+        "tool_calls": 2,
+        "retries": 0,
+        "embedding_mode": "live",
+        "index_generation": 20
+      },
+      "mode": "extractive"
+    },
+    "compare": {
+      "status": "ok",
+      "answer": "以下为来源摘录与已记录字段，尚未进行远程模型语义生成。\n来源《CVE-2024-3571 — LangChain》的原文摘录：langchain-ai/langchain is vulnerable to path traversal due to improper limitation of a pathname to a restricted directory ('Path Traversal') in its LocalFileStore functionality. An [doc_3cd694e9fb0f3acf712c6b8b:v1:c0]\n来源《CVE-2024-5998 — LangChain》的原文摘录：A vulnerability in the FAISS.deserialize_from_bytes function of langchain-ai/langchain allows for pickle deserialization of untrusted data. This can lead to the execution of arbitr [doc_61652e11a4bbc7c6246b2983:v1:c0]\n已记录 CVE-2024-3571 的 CVSS 3.1 评分 8.8（来源主体：nvd@nist.gov） [doc_3cd694e9fb0f3acf712c6b8b:v1:field:e46f1fad89e77e79cf06130f6f11]\n已记录 CVE-2024-3571 的 CVSS 3.0 评分 6.5（来源主体：security@huntr.dev） [doc_3cd694e9fb0f3acf712c6b8b:v1:field:8c3a77c8f7fcc09d3bd63d810328]\n已记录 CVE-2024-3571 的 受影响范围的原始 CPE 布尔条件已记录，尚未解析，不能据此断言资产受影响 [doc_3cd694e9fb0f3acf712c6b8b:v1:field:8d212676b92eac5518e3de4fcacf]\n已记录 CVE-2024-5998 的 CVSS 3.1 评分 7.8（来源主体：nvd@nist.gov） [doc_61652e11a4bbc7c6246b2983:v1:field:e46f1fad89e77e79cf06130f6f11]\n已记录 CVE-2024-5998 的 CVSS 3.0 评分 5.2（来源主体：security@huntr.dev） [doc_61652e11a4bbc7c6246b2983:v1:field:8c3a77c8f7fcc09d3bd63d810328]\n已记录 CVE-2024-5998 的 受影响范围的原始 CPE 布尔条件已记录，尚未解析，不能据此断言资产受影响 [doc_61652e11a4bbc7c6246b2983:v1:field:8d212676b92eac5518e3de4fcacf]\n以上为多文档证据对照；当前结果不构成已验证的攻击链或多跳推理结论。",
+      "claims": [
+        {
+          "text": "来源《CVE-2024-3571 — LangChain》的原文摘录：langchain-ai/langchain is vulnerable to path traversal due to improper limitation of a pathname to a restricted directory ('Path Traversal') in its LocalFileStore functionality. An",
+          "evidence_ids": [
+            "doc_3cd694e9fb0f3acf712c6b8b:v1:c0"
+          ],
+          "kind": "fact"
+        },
+        {
+          "text": "来源《CVE-2024-5998 — LangChain》的原文摘录：A vulnerability in the FAISS.deserialize_from_bytes function of langchain-ai/langchain allows for pickle deserialization of untrusted data. This can lead to the execution of arbitr",
+          "evidence_ids": [
+            "doc_61652e11a4bbc7c6246b2983:v1:c0"
+          ],
+          "kind": "fact"
+        }
+      ],
+      "sources": [
+        {
+          "evidence_id": "doc_3cd694e9fb0f3acf712c6b8b:v1:c0",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "title": "CVE-2024-3571 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-3571",
+          "excerpt": "langchain-ai/langchain is vulnerable to path traversal due to improper limitation of a pathname to a restricted directory ('Path Traversal') in its LocalFileStore functionality. An attacker can leverage this vulnerability to read or write files anywhere on the filesystem, potentially leading to information disclosure or remote code execution. The issue lies in the handling of file paths in the mset and mget methods, where user-supplied input is not adequately sanitized, allowing directory traversal sequences to reach unintended directories.",
+          "locator": {
+            "kind": "char_range",
+            "start": 0,
+            "end": 546
+          },
+          "published_at": "2024-04-16T00:15:12.203000Z",
+          "collected_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "evidence_id": "doc_61652e11a4bbc7c6246b2983:v1:c0",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "title": "CVE-2024-5998 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-5998",
+          "excerpt": "A vulnerability in the FAISS.deserialize_from_bytes function of langchain-ai/langchain allows for pickle deserialization of untrusted data. This can lead to the execution of arbitrary commands via the os.system function. The issue affects the latest version of the product.",
+          "locator": {
+            "kind": "char_range",
+            "start": 0,
+            "end": 273
+          },
+          "published_at": "2024-09-17T12:15:02.977000Z",
+          "collected_at": "2026-10-01T12:01:52.537166Z"
+        },
+        {
+          "evidence_id": "doc_3cd694e9fb0f3acf712c6b8b:v1:field:e46f1fad89e77e79cf06130f6f11",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "title": "CVE-2024-3571 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-3571",
+          "excerpt": "{\"cvssData\": {\"attackComplexity\": \"LOW\", \"attackVector\": \"NETWORK\", \"availabilityImpact\": \"HIGH\", \"baseScore\": 8.8, \"baseSeverity\": \"HIGH\", \"confidentialityImpact\": \"HIGH\", \"integrityImpact\": \"HIGH\", \"privilegesRequired\": \"LOW\", \"scope\": \"UNCHANGED\", \"userInteraction\": \"NONE\", \"vectorString\": \"CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H\", \"version\": \"3.1\"}, \"exploitabilityScore\": 2.8, \"impactScore\": 5.9, \"source\": \"nvd@nist.gov\", \"type\": \"Primary\"}",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/metrics/cvssMetricV31/0"
+          },
+          "published_at": "2024-04-16T00:15:12.203000Z",
+          "collected_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "evidence_id": "doc_3cd694e9fb0f3acf712c6b8b:v1:field:8c3a77c8f7fcc09d3bd63d810328",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "title": "CVE-2024-3571 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-3571",
+          "excerpt": "{\"cvssData\": {\"attackComplexity\": \"LOW\", \"attackVector\": \"NETWORK\", \"availabilityImpact\": \"NONE\", \"baseScore\": 6.5, \"baseSeverity\": \"MEDIUM\", \"confidentialityImpact\": \"HIGH\", \"integrityImpact\": \"NONE\", \"privilegesRequired\": \"LOW\", \"scope\": \"UNCHANGED\", \"userInteraction\": \"NONE\", \"vectorString\": \"CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N\", \"version\": \"3.0\"}, \"exploitabilityScore\": 2.8, \"impactScore\": 3.6, \"source\": \"security@huntr.dev\", \"type\": \"Secondary\"}",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/metrics/cvssMetricV30/0"
+          },
+          "published_at": "2024-04-16T00:15:12.203000Z",
+          "collected_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "evidence_id": "doc_3cd694e9fb0f3acf712c6b8b:v1:field:8d212676b92eac5518e3de4fcacf",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "title": "CVE-2024-3571 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-3571",
+          "excerpt": "[{\"nodes\": [{\"cpeMatch\": [{\"criteria\": \"cpe:2.3:a:langchain:langchain:0.0.351:*:*:*:*:*:*:*\", \"matchCriteriaId\": \"64CECC7D-4F8C-406D-BAFD-C7E50B730B12\", \"vulnerable\": true}], \"negate\": false, \"operator\": \"OR\"}]}]",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/configurations"
+          },
+          "published_at": "2024-04-16T00:15:12.203000Z",
+          "collected_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "evidence_id": "doc_61652e11a4bbc7c6246b2983:v1:field:e46f1fad89e77e79cf06130f6f11",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "title": "CVE-2024-5998 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-5998",
+          "excerpt": "{\"cvssData\": {\"attackComplexity\": \"LOW\", \"attackVector\": \"LOCAL\", \"availabilityImpact\": \"HIGH\", \"baseScore\": 7.8, \"baseSeverity\": \"HIGH\", \"confidentialityImpact\": \"HIGH\", \"integrityImpact\": \"HIGH\", \"privilegesRequired\": \"NONE\", \"scope\": \"UNCHANGED\", \"userInteraction\": \"REQUIRED\", \"vectorString\": \"CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H\", \"version\": \"3.1\"}, \"exploitabilityScore\": 1.8, \"impactScore\": 5.9, \"source\": \"nvd@nist.gov\", \"type\": \"Primary\"}",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/metrics/cvssMetricV31/0"
+          },
+          "published_at": "2024-09-17T12:15:02.977000Z",
+          "collected_at": "2026-10-01T12:01:52.537166Z"
+        },
+        {
+          "evidence_id": "doc_61652e11a4bbc7c6246b2983:v1:field:8c3a77c8f7fcc09d3bd63d810328",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "title": "CVE-2024-5998 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-5998",
+          "excerpt": "{\"cvssData\": {\"attackComplexity\": \"LOW\", \"attackVector\": \"PHYSICAL\", \"availabilityImpact\": \"LOW\", \"baseScore\": 5.2, \"baseSeverity\": \"MEDIUM\", \"confidentialityImpact\": \"HIGH\", \"integrityImpact\": \"LOW\", \"privilegesRequired\": \"LOW\", \"scope\": \"UNCHANGED\", \"userInteraction\": \"REQUIRED\", \"vectorString\": \"CVSS:3.0/AV:P/AC:L/PR:L/UI:R/S:U/C:H/I:L/A:L\", \"version\": \"3.0\"}, \"exploitabilityScore\": 0.5, \"impactScore\": 4.7, \"source\": \"security@huntr.dev\", \"type\": \"Secondary\"}",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/metrics/cvssMetricV30/0"
+          },
+          "published_at": "2024-09-17T12:15:02.977000Z",
+          "collected_at": "2026-10-01T12:01:52.537166Z"
+        },
+        {
+          "evidence_id": "doc_61652e11a4bbc7c6246b2983:v1:field:8d212676b92eac5518e3de4fcacf",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "title": "CVE-2024-5998 — LangChain",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-5998",
+          "excerpt": "[{\"nodes\": [{\"cpeMatch\": [{\"criteria\": \"cpe:2.3:a:langchain:langchain:*:*:*:*:*:*:*:*\", \"matchCriteriaId\": \"E8A44661-51CE-4876-8F4A-06A317332780\", \"versionEndExcluding\": \"0.2.9\", \"vulnerable\": true}], \"negate\": false, \"operator\": \"OR\"}]}]",
+          "locator": {
+            "kind": "json_pointer",
+            "pointer": "/raw_payload/cve/configurations"
+          },
+          "published_at": "2024-09-17T12:15:02.977000Z",
+          "collected_at": "2026-10-01T12:01:52.537166Z"
+        }
+      ],
+      "facts": [
+        {
+          "assertion_id": "assert_3d5e4ff3c571e822bea32df23731",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "entity_id": "CVE-2024-3571",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 8.8,
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+            "severity": "HIGH",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          },
+          "evidence_ids": [
+            "doc_3cd694e9fb0f3acf712c6b8b:v1:field:e46f1fad89e77e79cf06130f6f11"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "assertion_id": "assert_cb6b006c0c1411ffaa6b0bdf16d4",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "entity_id": "CVE-2024-3571",
+          "field": "cvss",
+          "value": {
+            "version": "3.0",
+            "score": 6.5,
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+            "severity": "MEDIUM",
+            "source": "security@huntr.dev",
+            "type": "Secondary"
+          },
+          "evidence_ids": [
+            "doc_3cd694e9fb0f3acf712c6b8b:v1:field:8c3a77c8f7fcc09d3bd63d810328"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "assertion_id": "assert_683617db2d97a6b19d0df64a0993",
+          "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+          "version": 1,
+          "entity_id": "CVE-2024-3571",
+          "field": "affected_version",
+          "value": {
+            "raw_conditions": [
+              {
+                "nodes": [
+                  {
+                    "operator": "OR",
+                    "negate": false,
+                    "cpeMatch": [
+                      {
+                        "vulnerable": true,
+                        "criteria": "cpe:2.3:a:langchain:langchain:0.0.351:*:*:*:*:*:*:*",
+                        "matchCriteriaId": "64CECC7D-4F8C-406D-BAFD-C7E50B730B12"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "parsed": false,
+            "warning": "CPE boolean applicability is recorded, not resolved"
+          },
+          "evidence_ids": [
+            "doc_3cd694e9fb0f3acf712c6b8b:v1:field:8d212676b92eac5518e3de4fcacf"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.518822Z"
+        },
+        {
+          "assertion_id": "assert_be3818522d44006789142fac54af",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "entity_id": "CVE-2024-5998",
+          "field": "cvss",
+          "value": {
+            "version": "3.1",
+            "score": 7.8,
+            "vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+            "severity": "HIGH",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          },
+          "evidence_ids": [
+            "doc_61652e11a4bbc7c6246b2983:v1:field:e46f1fad89e77e79cf06130f6f11"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.537166Z"
+        },
+        {
+          "assertion_id": "assert_dcd0fde13d6ba9e01e5597628e6f",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "entity_id": "CVE-2024-5998",
+          "field": "cvss",
+          "value": {
+            "version": "3.0",
+            "score": 5.2,
+            "vector": "CVSS:3.0/AV:P/AC:L/PR:L/UI:R/S:U/C:H/I:L/A:L",
+            "severity": "MEDIUM",
+            "source": "security@huntr.dev",
+            "type": "Secondary"
+          },
+          "evidence_ids": [
+            "doc_61652e11a4bbc7c6246b2983:v1:field:8c3a77c8f7fcc09d3bd63d810328"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.537166Z"
+        },
+        {
+          "assertion_id": "assert_5ad9ba2bb1b0ae27778e1801af61",
+          "document_id": "doc_61652e11a4bbc7c6246b2983",
+          "version": 1,
+          "entity_id": "CVE-2024-5998",
+          "field": "affected_version",
+          "value": {
+            "raw_conditions": [
+              {
+                "nodes": [
+                  {
+                    "operator": "OR",
+                    "negate": false,
+                    "cpeMatch": [
+                      {
+                        "vulnerable": true,
+                        "criteria": "cpe:2.3:a:langchain:langchain:*:*:*:*:*:*:*:*",
+                        "versionEndExcluding": "0.2.9",
+                        "matchCriteriaId": "E8A44661-51CE-4876-8F4A-06A317332780"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "parsed": false,
+            "warning": "CPE boolean applicability is recorded, not resolved"
+          },
+          "evidence_ids": [
+            "doc_61652e11a4bbc7c6246b2983:v1:field:8d212676b92eac5518e3de4fcacf"
+          ],
+          "origin": "source_structured",
+          "verification": "source_recorded",
+          "recorded_at": "2026-10-01T12:01:52.537166Z"
+        }
+      ],
+      "missing_fields": [],
+      "conflicts": [],
+      "warnings": [],
+      "trace_id": "67d1c4a72c8e4bedb7ca85eeddfce3f7",
+      "metrics": {
+        "elapsed_ms": 4.724916012492031,
+        "llm_calls": 0,
+        "tool_calls": 3,
+        "retries": 0,
+        "embedding_mode": "live",
+        "index_generation": 20
+      },
+      "mode": "extractive"
+    }
+  }
+}

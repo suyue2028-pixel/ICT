@@ -1,0 +1,18 @@
+{
+  "split": "tuning",
+  "cases": [
+    {
+      "question": "prompt injection",
+      "doc_types": [
+        "paper"
+      ]
+    },
+    {
+      "question": "supply chain",
+      "doc_types": [
+        "standard"
+      ]
+    }
+  ],
+  "note": "Separate exploratory queries, excluded from acceptance metrics."
+}

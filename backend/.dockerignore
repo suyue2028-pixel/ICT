@@ -1,0 +1,12 @@
+.env
+.env.*
+.venv
+.git
+.vscode
+__pycache__
+**/__pycache__
+tests
+output
+datasets
+docs
+*.code-workspace

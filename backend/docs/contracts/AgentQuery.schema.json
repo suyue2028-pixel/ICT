@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "session_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Id"
+    },
+    "is_demo": {
+      "default": false,
+      "title": "Is Demo",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "title": "AgentQuery",
+  "type": "object"
+}

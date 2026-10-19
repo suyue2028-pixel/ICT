@@ -1,0 +1,367 @@
+{
+  "$defs": {
+    "AnswerQuote": {
+      "properties": {
+        "number": {
+          "title": "Number",
+          "type": "integer"
+        },
+        "document_id": {
+          "format": "uuid",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "locator": {
+          "title": "Locator",
+          "type": "string"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuotePosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quote_verified": {
+          "title": "Quote Verified",
+          "type": "boolean"
+        },
+        "is_current": {
+          "title": "Is Current",
+          "type": "boolean"
+        },
+        "deleted_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Deleted At"
+        },
+        "version_url": {
+          "title": "Version Url",
+          "type": "string"
+        },
+        "associations": {
+          "items": {
+            "$ref": "#/$defs/AssociationProof"
+          },
+          "title": "Associations",
+          "type": "array"
+        },
+        "index_events_observed_now": {
+          "items": {
+            "$ref": "#/$defs/IndexEventObserved"
+          },
+          "title": "Index Events Observed Now",
+          "type": "array"
+        }
+      },
+      "required": [
+        "number",
+        "document_id",
+        "content_hash",
+        "title",
+        "source_url",
+        "excerpt",
+        "locator",
+        "position",
+        "quote_verified",
+        "is_current",
+        "deleted_at",
+        "version_url",
+        "associations",
+        "index_events_observed_now"
+      ],
+      "title": "AnswerQuote",
+      "type": "object"
+    },
+    "AssociationProof": {
+      "properties": {
+        "identifier": {
+          "title": "Identifier",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "source_declared_alias",
+            "explicit_identifier",
+            "exact_product_body_fallback",
+            "exact_url_fallback"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "locator": {
+          "title": "Locator",
+          "type": "string"
+        },
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "group_identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Group Identifiers",
+          "type": "array"
+        },
+        "origin": {
+          "enum": [
+            "recorded_at_ingestion",
+            "reconstructed_from_revision"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "recorded_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recorded At"
+        },
+        "vulnerability_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vulnerability Id"
+        },
+        "active_link": {
+          "title": "Active Link",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "identifier",
+        "method",
+        "locator",
+        "excerpt",
+        "group_identifiers",
+        "origin",
+        "recorded_at",
+        "vulnerability_id",
+        "active_link"
+      ],
+      "title": "AssociationProof",
+      "type": "object"
+    },
+    "IndexEventObserved": {
+      "properties": {
+        "event_id": {
+          "format": "uuid",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "operation": {
+          "title": "Operation",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "operation",
+        "status"
+      ],
+      "title": "IndexEventObserved",
+      "type": "object"
+    },
+    "QuotePosition": {
+      "properties": {
+        "representation": {
+          "enum": [
+            "content",
+            "revision_json"
+          ],
+          "title": "Representation",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "offset_unit": {
+          "const": "unicode_code_points",
+          "title": "Offset Unit",
+          "type": "string"
+        },
+        "locator_verified": {
+          "title": "Locator Verified",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "representation",
+        "start",
+        "end",
+        "offset_unit",
+        "locator_verified"
+      ],
+      "title": "QuotePosition",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "invocation_id": {
+      "format": "uuid",
+      "title": "Invocation Id",
+      "type": "string"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "generation_mode": {
+      "enum": [
+        "live",
+        "extractive",
+        "mock",
+        "unknown"
+      ],
+      "title": "Generation Mode",
+      "type": "string"
+    },
+    "llm_http_calls": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Llm Http Calls"
+    },
+    "answer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Answer"
+    },
+    "retrieval_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Retrieval Mode"
+    },
+    "cve_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Cve Ids",
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/AnswerQuote"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "all_quotes_verified": {
+      "title": "All Quotes Verified",
+      "type": "boolean"
+    },
+    "all_versions_current": {
+      "title": "All Versions Current",
+      "type": "boolean"
+    },
+    "claim_support_status": {
+      "const": "not_independently_reviewed",
+      "title": "Claim Support Status",
+      "type": "string"
+    },
+    "limits": {
+      "title": "Limits",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "invocation_id",
+    "session_id",
+    "request_id",
+    "status",
+    "generation_mode",
+    "llm_http_calls",
+    "answer",
+    "retrieval_mode",
+    "cve_ids",
+    "evidence",
+    "all_quotes_verified",
+    "all_versions_current",
+    "claim_support_status",
+    "limits"
+  ],
+  "title": "AgentInvocationEvidence",
+  "type": "object"
+}

@@ -1,0 +1,92 @@
+name: ${COMPOSE_PROJECT_NAME:-ict-backend}
+
+x-backend: &backend
+  image: ${COMPOSE_PROJECT_NAME:-ict-backend}:local
+  pull_policy: never
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:16-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run scripts/init-env.py}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/init-env.py}
+      POSTGRES_DB: ${POSTGRES_DB:?Run scripts/init-env.py}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5440}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-bookworm@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run scripts/init-env.py}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    image: ${COMPOSE_PROJECT_NAME:-ict-backend}:local
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    command: ["sh", "-c", "alembic upgrade head && python -m backend.bootstrap"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:${API_PORT:-8010}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=8)"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "backend.tasks.celery_app:celery_app", "worker", "--loglevel=WARNING", "--concurrency=2"]
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "backend.tasks.celery_app:celery_app", "beat", "--loglevel=WARNING", "--schedule=/state/celerybeat-schedule"]
+    volumes:
+      - beat_state:/state
+
+volumes:
+  postgres_data:
+  redis_data:
+  beat_state:

@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# SHA-256 covers exact packet bytes; do not normalize snapshots.
+datasets/public-intelligence/** -text

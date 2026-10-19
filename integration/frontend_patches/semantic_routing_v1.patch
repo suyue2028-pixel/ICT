@@ -1,0 +1,566 @@
+diff --git a/frontend/src/composables/useDemoChat.ts b/frontend/src/composables/useDemoChat.ts
+--- a/frontend/src/composables/useDemoChat.ts
++++ b/frontend/src/composables/useDemoChat.ts
+@@ -2,6 +2,7 @@
+ import axios from 'axios'
+ import { apiGet, ensureSession, http, requestFailure, UserAuthorizationRequired, userToken } from '@/api/http'
+ import { normalizeWorkflow, normalizeToolTrace, returnedWorkflow } from '@/utils/answerWorkflow'
++import { generationModeLabel as modeLabel, responseKind, UNVERIFIED_EXPLANATION_LABEL } from '@/utils/chatPresentation'
+ import { readFailedQuestion, saveFailedQuestion } from '@/utils/queryDraft'
+ import { useIntelligenceStore } from '@/stores/intelligence'
+ import type { AnswerCoverage, AnswerStatus, ChatMessage, IntelligenceItem, ResponseKind, RetrievalMode } from '@/types'
+@@ -21,7 +22,7 @@
+   const sending = shallowRef(false), sessionId = shallowRef<string | null>(null)
+   const failedQuestion = shallowRef(readFailedQuestion(store.isDemo))
+   let sequence = 0, context = 0
+-  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'status' | 'coverage' | 'workflow' | 'toolTrace' | 'invocationId' | 'requestId'>
++  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'retrievalMode' | 'status' | 'coverage' | 'workflow' | 'toolTrace' | 'invocationId' | 'requestId'>
+   let metadata: Metadata[] = []
+   const metadataKey = (id: string) => `ict:answer-meta:${id}`
+   function remember(id: string, row: Metadata) {
+@@ -55,12 +56,14 @@
+         const date = row.created_at ? new Date(row.created_at) : null
+         const saved = row.role === 'assistant' ? metadata[assistantIndex++] : undefined
+         const kind = row.response_kind || (row.retrieval_mode === 'conversation' ? 'conversation' : saved?.responseKind || 'knowledge')
+-        const restoredMode = kind === 'knowledge' && !row.citations.length && saved?.generationMode?.startsWith('资料摘录')
++        const retrievalMode = row.retrieval_mode || saved?.retrievalMode
++        const restoredMode = retrievalMode === 'llm_unverified' ? UNVERIFIED_EXPLANATION_LABEL : kind === 'knowledge' && !row.citations.length && saved?.generationMode?.startsWith('资料摘录')
+           ? '历史消息 · 未记录可核验引用' : saved?.generationMode || '历史消息 · 生成模式未记录'
+         return { id: row.id || `history-${index}`, role: row.role,
+           content: row.content, time: date && Number.isFinite(date.getTime()) ? clock.format(date) : '',
+           generationMode: row.role === 'assistant' ? restoredMode : undefined,
+           responseKind: row.role === 'assistant' ? kind : undefined,
++          retrievalMode: row.role === 'assistant' ? retrievalMode : undefined,
+           status: saved?.status,
+           coverage: saved?.coverage,
+           workflow: normalizeWorkflow(saved?.workflow, row.citations.length),
+@@ -84,30 +87,6 @@
+   }
+   watch(() => store.isDemo, () => { clearView(); void restore() })
+   onMounted(() => { void restore() })
+-  function responseKind(answer: Answer): ResponseKind {
+-    return answer.response_kind || (answer.retrieval_mode === 'conversation' ? 'conversation' : 'knowledge')
+-  }
+-  function modeLabel(answer: Answer, headers: Record<string, unknown>) {
+-    const notes = answer.partial_errors
+-    const conversation = responseKind(answer) === 'conversation'
+-    const hasCode = (code: string) => notes.some(note => note === code || note.startsWith(`${code}:`))
+-    const hasEvidence = answer.evidence.length > 0
+-    if (!conversation) {
+-      if (['model_generation_failed', 'relevance_check_failed', 'claim_support_check_failed'].some(hasCode)) {
+-        return hasEvidence ? '模型服务异常 · 已显示资料证据' : '模型服务异常 · 未生成回答'
+-      }
+-      if (hasCode('retrieval_failed')) return hasEvidence ? '检索服务异常 · 仅显示已取得的证据' : '检索服务异常 · 未取得证据'
+-      if (answer.status === 'insufficient_evidence' || !hasEvidence) return '证据不足 · 未生成资料回答'
+-    }
+-    if (notes.some(x => x.includes('after_remote_attempt'))) return conversation ? '模型暂不可用 · 本地回复' : '资料摘录 · 大模型调用后降级'
+-    if (notes.some(x => x.includes('after_mock_attempt'))) return conversation ? '本地回复 · 测试替身调用后降级' : '资料摘录 · 测试替身调用后降级'
+-    if (notes.some(x => x.includes('mock_not_real'))) return '测试替身结果'
+-    if (headers['x-rag-answer-mode'] === 'extractive' || notes.some(x => x.includes('generation_mode:extractive'))) {
+-      if (conversation) return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '模型暂不可用 · 本地回复' : '本地回复 · 未调用大模型'
+-      return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '资料摘录 · 大模型调用后降级' : '资料摘录 · 未调用大模型生成'
+-    }
+-    return headers['x-rag-answer-mode'] === 'live' ? '大模型回答' : '回答 · 生成模式未提供'
+-  }
+   function coverage(answer: Answer): AnswerCoverage | undefined {
+     if (!answer.coverage) return undefined
+     const topics = (value: unknown): string[] => Array.isArray(value)
+@@ -137,7 +116,7 @@
+       failedQuestion.value = ''; saveFailedQuestion(scope, '')
+       const workflow = returnedWorkflow(answer, answer.evidence.length), toolTrace = normalizeToolTrace(answer.tool_trace)
+       remember(answer.session_id, { generationMode: modeLabel(answer, response.headers),
+-        responseKind: responseKind(answer),
++        responseKind: responseKind(answer), retrievalMode: answer.retrieval_mode,
+         status: answer.status, coverage: coverage(answer),
+         workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
+         warnings: answerWarnings(answer),
+@@ -146,7 +125,7 @@
+       messages.value = [...messages.value, { id: `a-${++sequence}`, role: 'assistant', content: answer.answer,
+         time: clock.format(new Date()), evidence: answer.evidence,
+         generationMode: modeLabel(answer, response.headers),
+-        responseKind: responseKind(answer),
++        responseKind: responseKind(answer), retrievalMode: answer.retrieval_mode,
+         status: answer.status, coverage: coverage(answer),
+         workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
+         warnings: answerWarnings(answer),
+diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
+--- a/frontend/src/types/index.ts
++++ b/frontend/src/types/index.ts
+@@ -82,7 +82,7 @@
+   label: string
+ }
+ export type ResponseKind = 'knowledge' | 'conversation'
+-export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation'
++export type RetrievalMode = 'keyword' | 'keyword_fallback' | 'semantic' | 'hybrid' | 'structured' | 'conversation' | 'llm_unverified'
+ export type AnswerStatus = 'completed' | 'partial' | 'insufficient_evidence'
+ export interface AnswerCoverage {
+   answered_topics: string[]
+@@ -118,6 +118,7 @@
+   simulated?: boolean
+   generationMode?: string
+   responseKind?: ResponseKind
++  retrievalMode?: RetrievalMode
+   status?: AnswerStatus | 'request_failed'
+   coverage?: AnswerCoverage
+   warnings?: string[]
+@@ -126,5 +127,5 @@
+   invocationId?: string
+   workflow?: AnswerWorkflow
+   toolTrace?: AnswerToolTrace[]
+-  failureKind?: 'user_auth' | 'model' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
++  failureKind?: 'user_auth' | 'model' | 'search' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
+ }
+diff --git a/frontend/src/utils/requestFailure.ts b/frontend/src/utils/requestFailure.ts
+--- a/frontend/src/utils/requestFailure.ts
++++ b/frontend/src/utils/requestFailure.ts
+@@ -1,6 +1,7 @@
+ /** Classify public error codes. An upstream 401 is not a user sign-in failure. */
++import { searchWarningLabels } from './chatPresentation.ts'
+ export interface RequestFailureInput { status?: number; code?: string; data?: unknown }
+-export type FailureKind = 'user_auth' | 'model' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
++export type FailureKind = 'user_auth' | 'model' | 'search' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
+ const userCodes = new Set(['user_token_required', 'invalid_user_token', 'user_session_expired', 'user_session_revoked'])
+ export function publicErrorCode(data: unknown): string {
+   if (!data || typeof data !== 'object') return ''
+@@ -28,6 +29,8 @@
+   model_relevance_failed: '模型服务未能完成资料相关性核验，本次回答中断。这不代表知识库没有相关资料，请稍后重试。',
+   model_verification_failed: '模型服务未能完成回答的事实核验，本次未返回未经核实的答案，请稍后重试。',
+   model_generation_failed: '模型服务未能完成回答生成，请稍后重试。',
++  model_classification_failed: '模型未能完成问题理解与分类，本次请求未进入正常问答流程，请稍后重试。这不代表知识库没有资料。',
++  model_conversation_failed: '模型未能完成日常回复，请稍后重试。',
+   model_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
+   llm_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
+   deepseek_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
+@@ -46,6 +49,7 @@
+   backend_index_unavailable: '资料检索索引暂不可用，这不代表知识库没有相关资料，请稍后重试。',
+   backend_index_embedding_signature_mismatch: '资料索引与向量模型配置不一致，请联系平台管理员检查索引配置。',
+   retrieval_failed: '资料检索服务异常，这不代表知识库没有相关资料，请稍后重试。',
++  local_retrieval_failed: '本地资料检索服务异常，这不代表知识库没有相关资料，请稍后重试。',
+   agent_query_failed: '问答处理异常，本次未能取得完整回答，请稍后重试。',
+   agent_rate_limited: '问答服务当前请求过多，请稍后重试。',
+   user_query_budget_exceeded: '当前用户的问答请求额度已用完，请等待额度恢复后重试。',
+@@ -55,7 +59,9 @@
+   const code = publicErrorCode(input.data)
+   if (isUserAuthorizationFailure(input)) return { kind: 'user_auth', heading: '用户授权已失效', message: '用户会话未授权或已过期。问题已保留，请重新授权后重试。' }
+   if (/^(platform_model_|model_|llm_|deepseek_)/.test(code)) return { kind: 'model', heading: '平台模型服务异常', message: messages[code] || '平台模型服务暂不可用，请稍后重试。你的用户登录状态未因此失效。' }
+-  if (['backend_index_unavailable', 'backend_index_embedding_signature_mismatch', 'retrieval_failed'].includes(code)) return { kind: 'retrieval', heading: '检索服务异常', message: messages[code] || '资料检索服务异常，请稍后重试。' }
++  if (code.startsWith('search_')) return { kind: 'search', heading: code === 'search_not_configured' ? '联网搜索未配置' : '联网搜索服务异常',
++    message: Object.hasOwn(searchWarningLabels, code) ? `${searchWarningLabels[code]}。${code === 'search_not_configured' ? '请联系平台管理员配置搜索服务。' : '请稍后重试或联系平台管理员。'}` : '联网搜索未完成，请稍后重试；这不代表本地知识库没有资料。' }
++  if (['backend_index_unavailable', 'backend_index_embedding_signature_mismatch', 'retrieval_failed', 'local_retrieval_failed'].includes(code)) return { kind: 'retrieval', heading: '检索服务异常', message: messages[code] || '资料检索服务异常，请稍后重试。' }
+   if (input.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(input.code || '')) return { kind: 'timeout', heading: '回答超时', message: '回答超时，问题已保留，可以缩小问题范围后重试。' }
+   if (input.status === 429) return { kind: 'rate_limit', heading: '请求受限', message: messages[code] || '请求过于频繁或额度已用完，请稍后重试。' }
+   if (input.status === 401) return { kind: 'service', heading: '服务认证异常', message: '服务返回认证异常，但未标明为用户会话失效。请联系平台管理员检查服务配置。' }
+diff --git a/frontend/src/utils/answerWorkflow.ts b/frontend/src/utils/answerWorkflow.ts
+--- a/frontend/src/utils/answerWorkflow.ts
++++ b/frontend/src/utils/answerWorkflow.ts
+@@ -51,10 +51,11 @@
+     tool_budget_reserved: '已为完成回答预留工具预算', deadline_reserved: '已接近请求时间上限',
+     model_budget_reserved: '已为答案生成与核验预留模型预算', model_failed: '模型生成或核验失败',
+     available_tools_exhausted: '可用工具已执行，未找到更多资料', not_started: '尚未开始资料检索',
++    general_explanation: '仅提供模型一般解释，未完成来源核验', semantic_conversation: '日常对话不执行资料检索',
+     insufficient_evidence: '当前资料不足', tool_unavailable: '所需工具尚不可用', conversation: '基础对话不执行资料检索' }
+   return labels[reason] || (reason ? '工作流已结束，具体原因以服务端记录为准' : '未提供停止原因')
+ }
+ export function questionTypeLabel(kind: string): string {
+-  const labels: Record<string, string> = { cve: 'CVE 漏洞查询', security_knowledge: '安全知识问题', comparison: '资料对比', package: '依赖包漏洞查询', clarification: '需要澄清的问题', conversation: '基础对话' }
++  const labels: Record<string, string> = { cve: 'CVE 漏洞查询', security_knowledge: '安全知识问题', comparison: '资料对比', package: '依赖包漏洞查询', clarification: '需要澄清的问题', conversation: '基础对话', general_explanation: '模型一般解释' }
+   return labels[kind] || '其他问题'
+ }
+diff --git a/frontend/src/utils/answerPresentation.ts b/frontend/src/utils/answerPresentation.ts
+--- a/frontend/src/utils/answerPresentation.ts
++++ b/frontend/src/utils/answerPresentation.ts
+@@ -8,7 +8,8 @@
+ }
+ 
+ // Present only facts that appear in the answer. Original text is always retained.
+-export function answerBlocks(content: string): AnswerBlock[] {
++export function answerBlocks(content: string, plain = false): AnswerBlock[] {
++  if (plain) return content.split(/\n+/).filter(line => line.trim()).map(text => ({ kind: 'text', text }))
+   return content.split(/\n+/).filter(line => line.trim()).map(line => {
+     const quote = line.match(/^来源《(.+?)》的原文摘录：(.*?)(\s*\[\d+\])?$/)
+     if (quote) return { kind: 'quote', title: quote[1], text: quote[2] || '', reference: quote[3]?.trim() }
+diff --git a/frontend/src/components/chat/AnswerContent.vue b/frontend/src/components/chat/AnswerContent.vue
+--- a/frontend/src/components/chat/AnswerContent.vue
++++ b/frontend/src/components/chat/AnswerContent.vue
+@@ -1,8 +1,8 @@
+ <script setup lang="ts">
+ import { computed } from 'vue'
+ import { answerBlocks } from '@/utils/answerPresentation'
+-const props = defineProps<{ content: string }>()
+-const blocks = computed(() => answerBlocks(props.content))
++const props = defineProps<{ content: string; plain?: boolean }>()
++const blocks = computed(() => answerBlocks(props.content, props.plain))
+ </script>
+ 
+ <template>
+diff --git a/frontend/src/components/chat/ChatConversation.vue b/frontend/src/components/chat/ChatConversation.vue
+--- a/frontend/src/components/chat/ChatConversation.vue
++++ b/frontend/src/components/chat/ChatConversation.vue
+@@ -3,36 +3,10 @@
+ import type { ChatMessage } from '@/types'
+ import AnswerContent from './AnswerContent.vue'
+ import { coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel } from '@/utils/answerWorkflow'
++import { isUnverifiedMessage, messageGenerationLabel, messageHeading, showSecurityEvidence, toolLabel, warningText } from '@/utils/chatPresentation'
+ 
+ const props = defineProps<{ messages: ChatMessage[]; sending: boolean }>()
+ const feed = useTemplateRef<HTMLElement>('feed')
+-const warningLabels: Record<string, string> = {
+-  answer_rebuilt_after_citation_validation: '部分引用未通过核对，已改为有效来源摘录',
+-  citation_excerpt_not_in_backend_revision: '部分引用无法在原始版本中定位',
+-  source_fields_missing: '来源没有记录部分结构化字段',
+-  source_assertions_conflict: '不同来源的字段存在分歧',
+-  tool_trace_incomplete: '部分检索过程记录不完整',
+-  answer_budget_truncated: '回答达到长度限制，可缩小问题范围后追问',
+-  transport_answer_truncated: '回答达到传输长度限制',
+-  transport_evidence_truncated: '部分来源摘录超过展示长度，相关生成结论已撤下',
+-  requested_field_omitted_due_to_size: '部分请求字段超过引用长度限制，请核对原始资料',
+-  transport_answer_limit: '回答达到长度限制',
+-  coverage_incomplete: '现有证据仅支持问题的一部分',
+-  retrieval_failed: '部分资料检索失败，不能据此判断知识库没有相关内容',
+-  model_generation_failed: '大模型生成失败，当前仅显示已取得的资料证据；这不代表知识库没有相关资料',
+-  relevance_check_failed: '大模型相关性核验失败，回答未完成；这不代表知识库没有相关资料',
+-  claim_support_check_failed: '大模型事实核验失败，回答未完成；这不代表知识库没有相关资料',
+-}
+-function warningText(warnings: string[]) {
+-  return [...new Set(warnings.filter(code => !code.startsWith('relevance_filter:')).map(code => warningLabels[code.split(':')[0] || ''] || '部分信息未完整返回'))].join('；')
+-}
+-function messageHeading(message: ChatMessage) {
+-  if (message.role === 'user') return '你的问题'
+-  if (message.responseKind === 'conversation') return '基础对话'
+-  if (message.status === 'request_failed') return '请求异常'
+-  if (message.status === 'insufficient_evidence') return '资料不足'
+-  return message.status === 'partial' ? '部分资料回答' : '资料回答'
+-}
+ function revealEvidence(messageId: string, id: string) {
+   const element = document.getElementById(`evidence-${messageId}-${id}`)
+   const details = element?.closest('details')
+@@ -67,10 +41,10 @@
+           ><span v-if="message.simulated" class="simulated-label small">模拟回答</span
+           ><time>{{ message.time }}</time>
+         </div>
+-        <div v-if="message.generationMode" class="simulated-label small">{{ message.generationMode }}</div>
+-        <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" /><template v-else>{{ message.content }}</template></div>
++        <div v-if="messageGenerationLabel(message)" class="simulated-label small">{{ messageGenerationLabel(message) }}</div>
++        <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" :plain="message.responseKind === 'conversation' || isUnverifiedMessage(message)" /><template v-else>{{ message.content }}</template></div>
+         <router-link v-if="message.failureKind === 'user_auth'" :to="{ path: '/login', query: { returnTo: '/qa' } }" class="retry-authorization">重新授权，保留问题后重试 ↗</router-link>
+-        <div v-if="message.workflow?.requirement_coverage.length" class="citation-box requirement-coverage">
++        <div v-if="showSecurityEvidence(message) && message.workflow?.requirement_coverage.length" class="citation-box requirement-coverage">
+           <strong>问题范围与证据覆盖</strong>
+           <ul><li v-for="requirement in message.workflow.requirement_coverage" :key="requirement.requirement_id">
+             <strong>{{ requirement.label }}</strong> · {{ coverageStatusLabel[requirement.status] }}
+@@ -78,32 +52,32 @@
+             <a v-for="id in requirement.evidence_ids" :key="id" :href="`#evidence-${message.id}-${id}`" @click.prevent="revealEvidence(message.id, id)">证据 {{ id }} ↗</a>
+           </li></ul>
+         </div>
+-        <div v-else-if="message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length" class="citation-box">
++        <div v-else-if="showSecurityEvidence(message) && (message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length)" class="citation-box">
+           <div v-if="message.coverage?.answered_topics?.length"><strong>已有证据支持</strong><ul><li v-for="topic in message.coverage?.answered_topics || []" :key="topic">{{ topic }}</li></ul></div>
+           <div v-if="message.coverage?.missing_topics?.length"><strong>尚未核实的范围</strong><ul><li v-for="topic in message.coverage?.missing_topics || []" :key="topic">{{ topic }}</li></ul></div>
+         </div>
+-        <p v-if="message.status === 'partial' && !message.coverage?.missing_topics?.length" class="muted">回答尚不完整，请结合原文证据和提示阅读。</p>
+-        <details v-if="message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :id="`evidence-${message.id}-${index + 1}`" :key="index"><strong>证据 {{ index + 1 }}</strong><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
+-        <details v-if="message.workflow || message.toolTrace?.length" class="citation-box execution-record">
++        <p v-if="showSecurityEvidence(message) && message.status === 'partial' && !message.coverage?.missing_topics?.length" class="muted">回答尚不完整，请结合原文证据和提示阅读。</p>
++        <details v-if="showSecurityEvidence(message) && message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :id="`evidence-${message.id}-${index + 1}`" :key="index"><strong>证据 {{ index + 1 }}</strong><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
++        <details v-if="message.responseKind !== 'conversation' && (message.workflow || message.toolTrace?.length)" class="citation-box execution-record">
+           <summary>检索与执行记录{{ message.toolTrace?.length ? `（${message.toolTrace.length}）` : '' }}</summary>
+           <p>以下为服务端已经返回的执行记录。</p>
+           <template v-if="message.workflow">
+             <p v-if="message.workflow.question_type">问题类型：{{ questionTypeLabel(message.workflow.question_type) }}</p>
+             <p>检索轮次：{{ message.workflow.retrieval_summary.rounds }} · {{ stopReasonLabel(message.workflow.retrieval_summary.stop_reason) }}</p>
+-            <p v-if="message.workflow.retrieval_summary.initial_tools.length">初始工具：{{ message.workflow.retrieval_summary.initial_tools.join('、') }}</p>
+-            <p v-if="message.workflow.retrieval_summary.supplemental_tools.length">补充工具：{{ message.workflow.retrieval_summary.supplemental_tools.join('、') }}</p>
++            <p v-if="message.workflow.retrieval_summary.initial_tools.length">初始工具：{{ message.workflow.retrieval_summary.initial_tools.map(toolLabel).join('、') }}</p>
++            <p v-if="message.workflow.retrieval_summary.supplemental_tools.length">补充工具：{{ message.workflow.retrieval_summary.supplemental_tools.map(toolLabel).join('、') }}</p>
+           </template>
+           <ol v-if="message.toolTrace?.length"><li v-for="(trace, index) in message.toolTrace" :key="index">
+-            <strong>{{ trace.tool }}</strong> · {{ traceStatusLabel[trace.status] }} · {{ trace.duration_ms }} ms
++            <strong>{{ toolLabel(trace.tool) }}</strong> · {{ traceStatusLabel[trace.status] }} · {{ trace.duration_ms }} ms
+             <p v-if="trace.input_summary">{{ trace.input_summary }}</p>
+             <p v-if="trace.document_ids?.length">返回文档：{{ trace.document_ids.join('、') }}</p>
+             <small v-if="trace.error_code">错误代码：{{ trace.error_code }}</small>
+           </li></ol>
+           <p v-if="message.requestId" class="trace-reference">请求编号：{{ message.requestId }}</p>
+         </details>
+-        <div v-if="message.workflow?.limitations.length" class="citation-box"><strong>资料与运行限制</strong><ul><li v-for="limitation in message.workflow.limitations" :key="limitation">{{ limitation }}</li></ul></div>
++        <div v-if="message.responseKind !== 'conversation' && message.workflow?.limitations.length" class="citation-box"><strong>资料与运行限制</strong><ul><li v-for="limitation in message.workflow.limitations" :key="limitation">{{ limitation }}</li></ul></div>
+         <p v-if="warningText(message.warnings || [])" class="muted">{{ warningText(message.warnings || []) }}</p>
+-        <div v-if="message.citations?.length" class="citation-box">
++        <div v-if="showSecurityEvidence(message) && message.citations?.length" class="citation-box">
+           <span>引用的来源资料</span
+           ><router-link
+             v-for="citation in message.citations"
+@@ -113,7 +87,7 @@
+           >
+         </div>
+         <div
+-          v-else-if="message.role === 'assistant' && message.id !== 'welcome' && message.responseKind !== 'conversation' && message.status !== 'request_failed'"
++          v-else-if="message.role === 'assistant' && message.id !== 'welcome' && showSecurityEvidence(message) && message.status !== 'request_failed'"
+           class="citation-empty"
+         >
+           没有可核验的引用证据
+diff --git a/frontend/tests/session-workflow.test.mjs b/frontend/tests/session-workflow.test.mjs
+--- a/frontend/tests/session-workflow.test.mjs
++++ b/frontend/tests/session-workflow.test.mjs
+@@ -8,6 +8,7 @@
+ import { compile } from '@vue/compiler-dom'
+ import * as Vue from 'vue'
+ import { renderToString } from '@vue/server-renderer'
++import { isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel } from '../src/utils/chatPresentation.ts'
+ 
+ test('only explicit user authorization errors invalidate a user credential', () => {
+   for (const code of ['user_token_required', 'invalid_user_token', 'user_session_expired', 'user_session_revoked']) {
+@@ -104,7 +105,8 @@
+   async function html(message) {
+     const app = Vue.createSSRApp({ render, setup: () => ({ messages: [message], sending: false,
+       messageHeading: () => '资料回答', warningText: () => '', coverageStatusLabel: { supported: '证据支持' },
+-      questionTypeLabel: () => '安全知识问题', stopReasonLabel: () => '已结束', traceStatusLabel: {}, revealEvidence: () => {} }) })
++      questionTypeLabel: () => '安全知识问题', stopReasonLabel: () => '已结束', traceStatusLabel: {}, revealEvidence: () => {},
++      isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel }) })
+     app.component('AnswerContent', { props: ['content'], setup: props => () => Vue.h('p', props.content) })
+     app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', {
+       href: props.to.path + (props.to.query ? `?${new URLSearchParams(props.to.query)}` : ''),
+diff --git a/frontend/src/utils/chatPresentation.ts b/frontend/src/utils/chatPresentation.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/utils/chatPresentation.ts
+@@ -0,0 +1,105 @@
++import type { ChatMessage, ResponseKind, RetrievalMode } from '../types/index'
++
++export const UNVERIFIED_EXPLANATION_LABEL = '模型一般解释 · 未经实时来源核验'
++export const searchWarningLabels: Record<string, string> = {
++  search_not_configured: '联网搜索服务尚未配置，本次未取得联网来源；这不等于知识问题无法解释',
++  search_auth_failed: '平台搜索服务认证失败，本次联网检索未完成；用户登录状态未因此失效',
++  search_rate_limited: '联网搜索服务限流，本次未完成补充检索',
++  search_timeout: '联网搜索服务响应超时，本次未完成补充检索',
++  search_source_unavailable: '联网搜索服务暂不可用，本次未完成补充检索',
++  search_invalid_response: '联网搜索返回格式未通过校验，相关结果未作为证据',
++  search_unsafe_url: '联网结果包含不安全地址，相关结果已阻止使用',
++  search_response_too_large: '联网搜索响应超过长度限制，相关结果未作为证据',
++  search_busy: '联网搜索服务当前繁忙，本次未完成补充检索',
++}
++const warningLabels: Record<string, string> = {
++  ...searchWarningLabels,
++  answer_rebuilt_after_citation_validation: '部分引用未通过核对，已改为有效来源摘录',
++  citation_excerpt_not_in_backend_revision: '部分引用无法在原始版本中定位',
++  source_fields_missing: '来源没有记录部分结构化字段',
++  source_assertions_conflict: '不同来源的字段存在分歧',
++  tool_trace_incomplete: '部分检索过程记录不完整',
++  answer_budget_truncated: '回答达到长度限制，可缩小问题范围后追问',
++  transport_answer_truncated: '回答达到传输长度限制',
++  transport_evidence_truncated: '部分来源摘录超过展示长度，相关生成结论已撤下',
++  requested_field_omitted_due_to_size: '部分请求字段超过引用长度限制，请核对原始资料',
++  transport_answer_limit: '回答达到长度限制',
++  coverage_incomplete: '现有证据仅支持问题的一部分',
++  local_retrieval_failed: '本地资料检索服务异常，不能据此判断知识库没有相关内容',
++  retrieval_failed: '资料检索服务异常，不能据此判断知识库没有相关内容',
++  model_classification_failed: '模型未能完成问题理解与分类，本次请求未进入正常问答流程',
++  model_conversation_failed: '模型未能完成日常回复，请稍后重试',
++  model_generation_failed: '大模型生成失败，当前仅显示已取得的资料证据；这不代表知识库没有相关资料',
++  relevance_check_failed: '大模型相关性核验失败，回答未完成；这不代表知识库没有相关资料',
++  claim_support_check_failed: '大模型事实核验失败，回答未完成；这不代表知识库没有相关资料',
++  llm_unverified: '本条是模型一般解释，尚未由本次来源证据核验',
++}
++export function warningCode(note: string): string {
++  return note.split(':').find(code => Object.hasOwn(warningLabels, code)) || note.split(':')[0] || ''
++}
++export function warningText(warnings: string[]): string {
++  return [...new Set(warnings.filter(code => !code.startsWith('relevance_filter:') && !code.startsWith('generation_mode:'))
++    .map(code => warningLabels[warningCode(code)] || '部分信息未完整返回'))].join('；')
++}
++export function isUnverifiedMessage(message: Pick<ChatMessage, 'retrievalMode' | 'responseKind'>): boolean {
++  return message.responseKind !== 'conversation' && message.retrievalMode === 'llm_unverified'
++}
++export function showSecurityEvidence(message: Pick<ChatMessage, 'retrievalMode' | 'responseKind'>): boolean {
++  return message.responseKind !== 'conversation' && !isUnverifiedMessage(message)
++}
++export function messageHeading(message: ChatMessage): string {
++  if (message.role === 'user') return '你的问题'
++  if (message.status === 'request_failed') return '请求异常'
++  if (message.responseKind === 'conversation') return '基础对话'
++  if (isUnverifiedMessage(message)) return '模型一般解释'
++  if (!message.evidence?.length) {
++    const codes = (message.warnings || []).map(warningCode)
++    if (codes.some(code => Object.hasOwn(searchWarningLabels, code))) return codes.includes('search_not_configured') ? '联网检索未配置' : '联网检索未完成'
++    if (codes.includes('local_retrieval_failed') || codes.includes('retrieval_failed')) return '本地检索异常'
++    if (codes.some(code => ['model_classification_failed', 'model_generation_failed', 'relevance_check_failed', 'claim_support_check_failed'].includes(code))) return '模型服务异常'
++  }
++  if (message.status === 'insufficient_evidence') return '资料不足'
++  return message.status === 'partial' ? '部分资料回答' : '资料回答'
++}
++export function messageGenerationLabel(message: ChatMessage): string {
++  if (!isUnverifiedMessage(message)) return message.generationMode || ''
++  return message.generationMode?.startsWith(UNVERIFIED_EXPLANATION_LABEL) ? message.generationMode : UNVERIFIED_EXPLANATION_LABEL
++}
++export function toolLabel(name: string): string { return name === 'web_search' ? '联网检索' : name }
++
++export interface ModeInput {
++  status: string
++  partial_errors: string[]
++  retrieval_mode: RetrievalMode
++  response_kind?: ResponseKind
++  evidence: unknown[]
++}
++export function responseKind(answer: ModeInput): ResponseKind {
++  return answer.response_kind || (answer.retrieval_mode === 'conversation' ? 'conversation' : 'knowledge')
++}
++export function generationModeLabel(answer: ModeInput, headers: Record<string, unknown>): string {
++  const notes = answer.partial_errors, conversation = responseKind(answer) === 'conversation'
++  const hasCode = (code: string) => notes.some(note => warningCode(note) === code)
++  const hasEvidence = answer.evidence.length > 0
++  if (!conversation && answer.retrieval_mode === 'llm_unverified') {
++    return UNVERIFIED_EXPLANATION_LABEL + (notes.some(note => note.includes('mock_not_real')) ? ' · 测试替身结果' : '')
++  }
++  if (!conversation) {
++    if (['model_classification_failed', 'model_generation_failed', 'relevance_check_failed', 'claim_support_check_failed'].some(hasCode)) {
++      return hasEvidence ? '模型服务异常 · 已显示资料证据' : '模型服务异常 · 未生成回答'
++    }
++    if (hasCode('retrieval_failed') || hasCode('local_retrieval_failed')) return hasEvidence ? '本地检索服务异常 · 仅显示已取得的证据' : '本地检索服务异常 · 未取得证据'
++    if (!hasEvidence && notes.some(note => Object.hasOwn(searchWarningLabels, warningCode(note)))) {
++      return hasCode('search_not_configured') ? '联网检索未配置 · 未取得可核验来源' : '联网检索未完成 · 未取得可核验来源'
++    }
++    if (answer.status === 'insufficient_evidence' || !hasEvidence) return '证据不足 · 未生成资料回答'
++  }
++  if (notes.some(note => note.includes('after_remote_attempt'))) return conversation ? '模型暂不可用 · 本地回复' : '资料摘录 · 大模型调用后降级'
++  if (notes.some(note => note.includes('after_mock_attempt'))) return conversation ? '本地回复 · 测试替身调用后降级' : '资料摘录 · 测试替身调用后降级'
++  if (notes.some(note => note.includes('mock_not_real'))) return '测试替身结果'
++  if (headers['x-rag-answer-mode'] === 'extractive' || notes.some(note => note.includes('generation_mode:extractive'))) {
++    if (conversation) return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '模型暂不可用 · 本地回复' : '本地回复 · 未调用大模型'
++    return Number(headers['x-rag-llm-calls'] || 0) > 0 ? '资料摘录 · 大模型调用后降级' : '资料摘录 · 未调用大模型生成'
++  }
++  return headers['x-rag-answer-mode'] === 'live' ? '大模型回答' : '回答 · 生成模式未提供'
++}
+diff --git a/frontend/tests/semantic-rendering.test.mjs b/frontend/tests/semantic-rendering.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/frontend/tests/semantic-rendering.test.mjs
+@@ -0,0 +1,114 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { readFileSync } from 'node:fs'
++import { parse } from '@vue/compiler-sfc'
++import { compile } from '@vue/compiler-dom'
++import * as Vue from 'vue'
++import { renderToString } from '@vue/server-renderer'
++import { answerBlocks } from '../src/utils/answerPresentation.ts'
++import { normalizeToolTrace, returnedWorkflow, coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel } from '../src/utils/answerWorkflow.ts'
++import { generationModeLabel, isUnverifiedMessage, messageGenerationLabel, messageHeading, showSecurityEvidence, toolLabel, warningText, UNVERIFIED_EXPLANATION_LABEL } from '../src/utils/chatPresentation.ts'
++import { classifyFailure, shouldInvalidateCredential } from '../src/utils/requestFailure.ts'
++
++const fixtures = JSON.parse(readFileSync(new URL('./fixtures/semantic_responses.json', import.meta.url), 'utf8'))
++assert.equal(fixtures.synthetic, true)
++function templateRender(path) {
++  const source = readFileSync(new URL(path, import.meta.url), 'utf8')
++  return new Function('Vue', compile(parse(source).descriptor.template.content, { mode: 'function', prefixIdentifiers: true }).code)(Vue)
++}
++const contentRender = templateRender('../src/components/chat/AnswerContent.vue')
++const conversationRender = templateRender('../src/components/chat/ChatConversation.vue')
++async function html(message) {
++  const app = Vue.createSSRApp({ render: conversationRender, setup: () => ({ messages: [message], sending: false,
++    messageHeading, warningText, coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel,
++    revealEvidence: () => {}, isUnverifiedMessage, messageGenerationLabel, showSecurityEvidence, toolLabel }) })
++  app.component('AnswerContent', { props: ['content', 'plain'], render: contentRender,
++    setup: props => ({ blocks: Vue.computed(() => answerBlocks(props.content, props.plain)) }) })
++  app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', {
++    href: props.to.path + (props.to.query ? `?${new URLSearchParams(props.to.query)}` : ''),
++  }, slots.default?.()) })
++  return renderToString(app)
++}
++function message(answer) {
++  return { id: answer.id, role: 'assistant', time: '', content: answer.answer,
++    responseKind: answer.response_kind, retrievalMode: answer.retrieval_mode, status: answer.status,
++    generationMode: generationModeLabel(answer, { 'x-rag-answer-mode': 'live' }), evidence: answer.evidence,
++    citations: [], warnings: answer.partial_errors, workflow: returnedWorkflow(answer, answer.evidence.length),
++    toolTrace: normalizeToolTrace(answer.tool_trace) }
++}
++
++for (const fixture of fixtures.cases.filter(row => row.response_kind === 'conversation')) {
++  test(`daily fixture ${fixture.id} displays natural reply without security panels or insufficiency`, async () => {
++    const output = await html(message(fixture))
++    assert.match(output, /基础对话/)
++    assert.ok(output.includes(fixture.answer))
++    assert.doesNotMatch(output, /知识库.*不足|资料不足|没有可核验|核对原文证据|引用的来源资料|问题范围与证据覆盖|检索与执行记录/)
++    assert.doesNotMatch(output, /<blockquote|answer-versions/)
++  })
++}
++test('unverified general explanation is prominently labelled and retains real failed search records', async () => {
++  const fixture = { ...fixtures.cases.find(row => row.id === 'general_explanation'), question_type: 'general_explanation',
++    tool_trace: [{ tool: 'web_search', status: 'failed', duration_ms: 8, error_code: 'search_not_configured', document_ids: [] }] }
++  const output = await html(message(fixture))
++  assert.ok(output.includes(UNVERIFIED_EXPLANATION_LABEL))
++  assert.match(output, /联网检索/)
++  assert.match(output, /调用失败/)
++  assert.match(output, /搜索服务尚未配置/)
++  assert.doesNotMatch(output, /资料回答|没有可核验的引用证据|核对原文证据|引用的来源资料|证据支持/)
++})
++test('plain conversation and unverified text cannot turn numbers or source-looking text into citations', async () => {
++  for (const kind of ['conversation', 'llm_unverified']) {
++    const sourceLooking = '来源《这是字符串》的原文摘录：2+2=4 [1]'
++    const output = await html({ id: kind, role: 'assistant', time: '', content: sourceLooking,
++      responseKind: kind === 'conversation' ? 'conversation' : 'knowledge', retrievalMode: kind,
++      evidence: [], citations: [], warnings: [] })
++    assert.ok(output.includes('2+2=4 [1]'))
++    assert.doesNotMatch(output, /<blockquote|class="answer-source"|引用的来源资料|核对原文证据/)
++    assert.ok(answerBlocks(sourceLooking, true).every(row => row.kind === 'text'))
++  }
++})
++test('all typed search errors differ from model, user authorization and evidence shortage', () => {
++  const codes = ['search_not_configured', 'search_auth_failed', 'search_rate_limited', 'search_timeout',
++    'search_source_unavailable', 'search_invalid_response', 'search_unsafe_url', 'search_response_too_large', 'search_busy']
++  for (const code of codes) {
++    const result = classifyFailure({ status: 503, data: { error: { code } } })
++    assert.equal(result.kind, 'search')
++    assert.doesNotMatch(result.message, /用户会话.*过期|重新登录|证据不足/)
++    assert.equal(shouldInvalidateCredential('Bearer user-fixture', 'user-fixture', { status: 401, data: { detail: code } }), false)
++    assert.match(warningText([`web_search:${code}`]), /联网|搜索/)
++  }
++  assert.equal(classifyFailure({ status: 503, data: { detail: 'local_retrieval_failed' } }).kind, 'retrieval')
++  assert.equal(classifyFailure({ status: 503, data: { detail: 'model_classification_failed' } }).kind, 'model')
++  assert.equal(classifyFailure({ status: 401, data: { detail: 'invalid_user_token' } }).kind, 'user_auth')
++})
++test('failed retrieval is not labelled as data insufficiency while genuine no-result remains distinct', () => {
++  const base = { status: 'insufficient_evidence', response_kind: 'knowledge', retrieval_mode: 'hybrid', evidence: [] }
++  assert.match(generationModeLabel({ ...base, partial_errors: ['search_timeout'] }, {}), /联网检索未完成/)
++  assert.match(generationModeLabel({ ...base, partial_errors: ['local_retrieval_failed'] }, {}), /本地检索服务异常/)
++  assert.match(generationModeLabel({ ...base, partial_errors: ['model_classification_failed'] }, {}), /模型服务异常/)
++  assert.match(generationModeLabel({ ...base, partial_errors: [] }, {}), /证据不足/)
++  assert.equal(messageHeading({ id: 'failure', role: 'assistant', content: '', time: '', warnings: ['search_timeout'], evidence: [], status: 'insufficient_evidence' }), '联网检索未完成')
++})
++test('web search appears only for actual returned records and its empty result is not success', async () => {
++  const base = { id: 'actual-trace-fixture', role: 'assistant', time: '', content: '资料尚未取得。',
++    responseKind: 'knowledge', retrievalMode: 'hybrid', citations: [], evidence: [], warnings: [] }
++  assert.doesNotMatch(await html(base), /联网检索/)
++  const output = await html({ ...base, toolTrace: normalizeToolTrace([
++    { tool: 'web_search', status: 'empty', duration_ms: 3, document_ids: [] },
++    { tool: 'web_search', status: 'running', duration_ms: 0 },
++  ]) })
++  assert.match(output, /联网检索/)
++  assert.match(output, /没有结果/)
++  assert.doesNotMatch(output, /已完成|实时搜索成功|独立抓取|全文/)
++})
++test('completed web search displays only returned execution facts and does not manufacture source links', async () => {
++  const output = await html({ id: 'completed-trace-only', role: 'assistant', time: '', content: '执行记录样例。',
++    responseKind: 'knowledge', retrievalMode: 'hybrid', citations: [], evidence: [], warnings: [],
++    toolTrace: normalizeToolTrace([{ tool: 'web_search', status: 'completed', duration_ms: 12,
++      input_summary: 'synthetic frontend trace fixture', document_ids: ['synthetic-returned-document'] }]) })
++  assert.match(output, /联网检索/)
++  assert.match(output, /已完成/)
++  assert.match(output, /12 ms/)
++  assert.match(output, /synthetic-returned-document/)
++  assert.doesNotMatch(output, /引用的来源资料|核对原文证据|独立抓取|全文/)
++})
+diff --git a/frontend/tests/fixtures/semantic_responses.json b/frontend/tests/fixtures/semantic_responses.json
+new file mode 100644
+--- /dev/null
++++ b/frontend/tests/fixtures/semantic_responses.json
+@@ -0,0 +1,10 @@
++{
++  "synthetic": true,
++  "purpose": "Frontend rendering only; these examples are not real model/API results or factual gold.",
++  "cases": [
++    {"id": "affection", "question": "我喜欢你", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "谢谢你愿意这么说。想聊什么都可以。", "sources": [], "evidence": [], "partial_errors": []},
++    {"id": "arithmetic", "question": "2+2等于多少？", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "2+2=4。", "sources": [], "evidence": [], "partial_errors": []},
++    {"id": "daily_chat", "question": "今天过得怎么样？", "response_kind": "conversation", "retrieval_mode": "conversation", "status": "completed", "answer": "我可以陪你聊聊今天发生的事情。你今天怎么样？", "sources": [], "evidence": [], "partial_errors": []},
++    {"id": "general_explanation", "question": "安全概念是什么意思？", "response_kind": "knowledge", "retrieval_mode": "llm_unverified", "status": "partial", "answer": "这里提供一般性的概念说明，不能当作某个具体漏洞的已核实事实。", "sources": [], "evidence": [], "partial_errors": ["search_not_configured"], "limitations": ["模型通用解释；未经过来源核验。"]}
++  ]
++}

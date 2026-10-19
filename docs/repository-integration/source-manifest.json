@@ -1,0 +1,25 @@
+{
+  "repository": "suyue2028-pixel/ICT",
+  "date": "2026-10-19",
+  "main_before": "31392b03e7771f28062122461d367fcc8794b8d1",
+  "sources": {
+    "agent": "b69804c67477cc8f20340bde94aab45113183abf",
+    "backend": "a036610d2a019ac33971b4f1ee7e945207309710",
+    "frontend_demo": "5aac03d1b1bf252cc4ca3940071b1acce3dca199",
+    "frontend_feature": "14ce87a9c98bd28121987c946526f9442cd1e527",
+    "agent_feature": "8bceeb9c1ac653b9a107487412726aa4806fb6dc"
+  },
+  "frontend_three_way_base": "2500b0f848b5cd69dc44ec37c6e824c2db57c236",
+  "frontend_conflicts": [
+    "frontend/README.md"
+  ],
+  "frontend_readme_merge_returncode": 1,
+  "frontend_readme_merge_resolved": true,
+  "agent_feature_handling": "Preserved original branch; current agent-dev supersedes old workflow changes; Windows conditional timezone dependency retained.",
+  "compatibility_adjustments": [
+    "backend token/timeout/prompt budgets",
+    "frontend 120s timeout",
+    "Windows conditional tzdata"
+  ],
+  "validation": "Archive blob hashes, three-way merge review, sensitive-content scan and static structure checks; no new functional tests or model calls."
+}

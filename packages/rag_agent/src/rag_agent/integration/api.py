@@ -1,0 +1,514 @@
+"""Authenticated backend V1 adapter over an explicitly mapped RAG index."""
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import secrets
+from typing import Any
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from pydantic import ValidationError
+
+from ..schemas import Message, QueryRequest, QueryResponse
+from .contracts import (
+    AgentAnswer, AgentEvidence, AgentSource, AnswerCoverage, BackendQuery, IndexProof,
+    IndexVerification, ToolTrace,
+)
+
+_CVE = re.compile(r"CVE-\d{4}-\d{4,}", re.I)
+_RISK_ORDER = ("UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+
+def _original_structured_excerpt(excerpt: str, locator: dict, revision: dict) -> str | None:
+    """Restore source key order only for an identical recorded JSON object.
+
+    The ingestion store canonicalizes JSON field quotes. Backend revisions keep
+    source key order. A match must preserve the complete JSON value, including
+    types and array order; internal normalized identifier records are excluded.
+    The returned quote still has to pass the ordinary substring/locator check.
+    """
+    pointer = locator.get("pointer", "")
+    if (locator.get("kind") != "json_pointer" or not isinstance(pointer, str)
+            or not (pointer.startswith("/raw_payload/source_fields/")
+                    or pointer.startswith("/raw_payload/cve/")
+                    or pointer == "/product_entities")):
+        return None
+    try:
+        value = json.loads(excerpt)
+        if not isinstance(value, (dict, list)):
+            return None
+        canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        pending = [revision]
+        while pending:
+            candidate = pending.pop()
+            if isinstance(candidate, (dict, list)):
+                if json.dumps(candidate, ensure_ascii=False, sort_keys=True, allow_nan=False) == canonical:
+                    original = json.dumps(candidate, ensure_ascii=False, allow_nan=False)
+                    # Compare the complete value before applying the transport
+                    # quote bound. Never parse a truncated canonical JSON quote.
+                    return original[:2000]
+                pending.extend(candidate.values() if isinstance(candidate, dict) else candidate)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return None
+
+
+def _locator(original: str, revision_text: str, excerpt: str) -> str:
+    """Locate the validated excerpt in the backend's original representation."""
+    start = original.find(excerpt)
+    if start >= 0:
+        return f"content:chars:{start}:{start + len(excerpt)}"
+    start = revision_text.find(excerpt)
+    if start < 0:
+        raise ValueError("excerpt_not_in_backend_revision")
+    return f"revision_json:chars:{start}:{start + len(excerpt)}"
+
+
+def _source(metadata: dict[str, Any]) -> AgentSource:
+    return AgentSource(
+        document_id=metadata["document_id"], content_hash=metadata["content_hash"],
+        title=metadata["title"], url=metadata["source_url"],
+        source_type=metadata["source_type"], source_name=metadata["source_name"],
+        published_time=metadata.get("published_time"),
+    )
+
+
+def _public_references(answer: str, references: dict[str, int]) -> str:
+    def replace(match):
+        identifiers = match.group(1).split(",")
+        if all(identifier in references for identifier in identifiers):
+            return "[" + ",".join(str(references[identifier]) for identifier in identifiers) + "]"
+        return match.group(0)
+    # A source field may contain an unfinished/truncated JSON array before its
+    # citation. Start at the innermost bracket so that citation is still mapped.
+    return re.sub(r"\[([^\[\]\n]+)\]", replace, answer)
+
+
+def _backend_trace(summary, mappings):
+    by_rag_id = {rag_id: metadata for (rag_id, _), metadata in mappings.items()}
+    traces, calls, warnings = [], [], []
+    for event in summary.get("tools", [])[:30]:
+        name = event.get("tool")
+        if isinstance(name, str):
+            calls.append(name)
+        # Missing instrumentation is disclosed, never filled with fabricated zero durations.
+        if event.get("status") not in {"completed", "failed", "empty"} or "duration_ms" not in event:
+            warnings.append("tool_trace_incomplete")
+            continue
+        documents = list(dict.fromkeys(
+            str(by_rag_id[doc_id]["document_id"])
+            for doc_id in event.get("document_ids", []) if doc_id in by_rag_id
+        ))[:30]
+        try:
+            traces.append(ToolTrace(
+                tool=name, status=event["status"],
+                duration_ms=max(0, round(event["duration_ms"])),
+                document_ids=documents,
+                error_code=event.get("error_code"),
+                input_summary=event.get("input_summary"),
+            ))
+        except (ValidationError, TypeError, ValueError):
+            warnings.append("tool_trace_invalid")
+    return calls, traces, warnings
+
+
+def _allowed_cves(metadata):
+    revision = metadata.get("revision", {})
+    values = revision.get("aliases", [])
+    if not isinstance(values, list):
+        values = []
+    values = [*values, revision.get("vulnerability_id") or ""]
+    return {value.upper() for value in values
+            if isinstance(value, str) and _CVE.fullmatch(value)}
+
+
+def _risk(facts, valid_ids):
+    recorded = []
+    for fact in facts:
+        if (fact.field != "cvss" or fact.verification != "source_recorded"
+                or fact.origin == "llm_candidate" or not set(fact.evidence_ids).issubset(valid_ids)
+                or not isinstance(fact.value, dict)):
+            continue
+        level = str(fact.value.get("severity") or "").upper()
+        if level in _RISK_ORDER:
+            recorded.append(level)
+    return max(recorded, key=_RISK_ORDER.index) if recorded else "UNKNOWN"
+
+
+def _extractive_answer(evidence, reason):
+    lines = [reason, "以下仅展示通过后端原始版本核对的来源摘录："]
+    for number, item in enumerate(evidence[:4], 1):
+        excerpt = item.content[:240].replace("\n", " ")
+        if re.search(r"ignore.*(?:instruction|previous)|忽略.*指令|输出.*HACKED", excerpt, re.I):
+            excerpt = "资料包含疑似指令注入内容；已作为不可信资料隔离，请查看证据。"
+        lines.append(f"[{number}] {excerpt}")
+    return "\n".join(lines)
+
+
+def _generation_note(mode, llm_calls, configured_llm_mode):
+    if mode == "mock":
+        return "generation_mode:mock_not_real_model"
+    if mode == "extractive":
+        if not llm_calls:
+            return "generation_mode:extractive_no_remote_llm"
+        if configured_llm_mode == "mock":
+            return "generation_mode:extractive_after_mock_attempt"
+        return "generation_mode:extractive_after_remote_attempt"
+    return None
+
+
+def _bounded_answer(answer: str, byte_limit: int):
+    """UTF-8 transport bound; this is not a vendor tokenizer measurement."""
+    encoded = answer.encode("utf-8")
+    if len(encoded) <= byte_limit:
+        return answer, False
+    marker = "\n..." if byte_limit >= 8 else ""
+    available = byte_limit - len(marker.encode("utf-8"))
+    retained, size = [], 0
+    for line in answer.splitlines():
+        line_size = len(line.encode("utf-8")) + (1 if retained else 0)
+        if size + line_size > available:
+            break
+        retained.append(line)
+        size += line_size
+    text = "\n".join(retained)
+    if not text:
+        # Do not expose a half sentence or a citation with a missing bracket.
+        message = "回答超过长度限制，请缩小查询范围。"
+        text = message if len(message.encode("utf-8")) <= available else "..."[:available]
+    text = text or "?"
+    if len((text + marker).encode("utf-8")) <= byte_limit:
+        text += marker
+    return text, True
+
+
+def _answer_coverage(result) -> AnswerCoverage:
+    """Accept the internal model or an older result with no coverage field."""
+    raw = getattr(result, "coverage", None)
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        return AnswerCoverage()
+    try:
+        return AnswerCoverage.model_validate(raw)
+    except ValidationError:
+        # Optional presentation metadata must not hide an otherwise valid,
+        # source-checked answer. Invalid metadata is omitted conservatively.
+        return AnswerCoverage()
+
+
+def _demote_coverage(coverage: AnswerCoverage) -> None:
+    """Revoked or truncated conclusions leave their scope unverified."""
+    coverage.missing_topics = list(dict.fromkeys(
+        [*coverage.missing_topics, *coverage.answered_topics]))[:12]
+    coverage.answered_topics = []
+
+
+def adapt_answer(result: QueryResponse, mappings, summary, *, configured_llm_mode=None,
+                 max_answer_tokens: int | None = None) -> AgentAnswer:
+    """Only mapped, current backend source revisions can reach the gateway."""
+    coverage = _answer_coverage(result)
+    if result.retrieval_mode_override=='llm_unverified':
+        from ..agent.semantic import UNVERIFIED_NOTICE,safe_unverified_answer
+        if (result.sources or result.claims or result.facts or result.status!='partial'
+                or coverage.answered_topics or UNVERIFIED_NOTICE not in result.limitations
+                or not safe_unverified_answer(result.answer)):
+            raise ValueError('invalid unverified explanation')
+        calls,trace,trace_warnings=_backend_trace(summary,mappings)
+        answer=result.answer
+        errors=[*result.warnings,*trace_warnings]
+        if max_answer_tokens is not None:
+            answer,truncated=_bounded_answer(answer,max_answer_tokens*4)
+            if truncated:
+                errors.append('answer_budget_truncated')
+                if UNVERIFIED_NOTICE not in answer:
+                    answer=UNVERIFIED_NOTICE
+        return AgentAnswer(status='partial',answer=answer,response_kind='knowledge',
+            question_type='general_explanation',coverage=coverage,
+            requirement_coverage=[row.model_copy(update={'status':'missing','evidence_ids':[]}).model_dump()
+                for row in result.requirement_coverage],
+            retrieval_summary=result.retrieval_summary.model_dump(),limitations=result.limitations,
+            sources=[],evidence=[],cve_ids=[],risk_level='UNKNOWN',tool_calls=calls,tool_trace=trace,
+            partial_errors=list(dict.fromkeys(errors))[:20],retrieval_mode='llm_unverified')
+    if result.response_kind == "conversation":
+        from ..agent.conversation import safe_conversation_answer
+        if (result.sources or result.claims or result.facts or result.metrics.tool_calls
+                or summary.get("tools") or coverage.answered_topics or coverage.missing_topics
+                or not safe_conversation_answer(result.answer)):
+            raise ValueError("invalid conversation response")
+        answer = result.answer
+        errors = list(result.warnings)
+        if max_answer_tokens is not None:
+            answer, truncated = _bounded_answer(answer, max_answer_tokens * 4)
+            if truncated:
+                errors.append("answer_budget_truncated")
+        return AgentAnswer(status="completed", answer=answer, response_kind="conversation",
+                           sources=[], cve_ids=[], risk_level="UNKNOWN", evidence=[],
+                           tool_calls=[], tool_trace=[], partial_errors=errors,
+                           retrieval_mode="conversation")
+    sources, evidence, valid_ids, retained_metadata = {}, [], set(), {}
+    public_ids = {}
+    errors = list(result.warnings)
+    rejected = False
+    for item in result.sources:
+        metadata = mappings.get((item.document_id, item.version))
+        if metadata is None:
+            rejected = True
+            errors.append("citation_not_in_backend_scope")
+            continue
+        revision = metadata.get("revision", {})
+        content = revision.get("content")
+        original = content if isinstance(content, str) else ""
+        excerpt_truncated = len(item.excerpt) > 2000
+        excerpt = item.excerpt[:2000]
+        revision_text = json.dumps(revision, ensure_ascii=False)
+        if excerpt not in original and excerpt not in revision_text:
+            excerpt = _original_structured_excerpt(item.excerpt, item.locator, revision) or excerpt
+        if (not excerpt or item.url != metadata.get("source_url")
+                or (excerpt not in original and excerpt not in revision_text)):
+            rejected = True
+            errors.append("citation_excerpt_not_in_backend_revision")
+            continue
+        try:
+            source = _source(metadata)
+            converted = AgentEvidence(
+                document_id=source.document_id, content_hash=source.content_hash,
+                content=excerpt, source=source.url, locator=_locator(original, revision_text, excerpt),
+                score=None, score_type="not_scored",
+            )
+        except (KeyError, TypeError, ValidationError):
+            rejected = True
+            errors.append("backend_source_metadata_invalid")
+            continue
+        source_key = (str(source.document_id), source.content_hash)
+        if (source_key not in sources and len(sources) >= 30) or len(evidence) >= 50:
+            rejected = True
+            errors.append("transport_evidence_limit")
+            continue
+        sources[source_key] = source
+        retained_metadata[source_key] = metadata
+        evidence.append(converted)
+        if excerpt_truncated:
+            # Keep a real source prefix for inspection, but it cannot establish
+            # claims/facts generated against the longer internal source value.
+            rejected = True
+            errors.append("transport_evidence_truncated")
+        else:
+            valid_ids.add(item.evidence_id)
+            public_ids[item.evidence_id]=len(evidence)
+
+    calls, traces, trace_errors = _backend_trace(summary, mappings)
+    errors.extend(trace_errors)
+    generation_note = _generation_note(result.mode, result.metrics.llm_calls, configured_llm_mode)
+    if generation_note:
+        errors.insert(0, generation_note)
+    if result.metrics.embedding_mode == "mock":
+        errors.append("embedding_mode:mock_not_real_semantic_retrieval")
+    if result.missing_fields:
+        # Internal document IDs are not part of the backend's public identity contract.
+        errors.append("source_fields_missing")
+    if result.conflicts:
+        errors.append("source_assertions_conflict")
+
+    if not evidence:
+        status = "insufficient_evidence"
+        answer = ("后端当前文档范围内没有可核验的证据，无法给出有来源支持的回答。"
+                  if rejected else result.answer)
+        if rejected:
+            errors.insert(0, "answer_rebuilt_after_citation_validation")
+            errors.insert(0, _generation_note("extractive", result.metrics.llm_calls, configured_llm_mode))
+        cves, risk = [], "UNKNOWN"
+        _demote_coverage(coverage)
+    else:
+        status = "completed" if result.status == "ok" else "partial"
+        claims_invalid = any(not set(claim.evidence_ids).issubset(valid_ids) for claim in result.claims)
+        facts_invalid = any(not set(fact.evidence_ids).issubset(valid_ids) for fact in result.facts)
+        if rejected or claims_invalid or facts_invalid:
+            status = "partial"
+            errors.insert(0, "answer_rebuilt_after_citation_validation")
+            rebuilt_note = _generation_note("extractive", result.metrics.llm_calls, configured_llm_mode)
+            if rebuilt_note not in errors:
+                errors.insert(0, rebuilt_note)
+            answer = _extractive_answer(evidence, "部分引用未通过完整证据校验，相关结论已撤下。")
+            _demote_coverage(coverage)
+        else:
+            references = public_ids
+
+            answer = _public_references(result.answer, references)
+            if not result.claims:
+                # Source excerpts alone do not establish that a topic was
+                # answered. Only surviving, source-linked claims can carry it.
+                _demote_coverage(coverage)
+        risk = _risk(result.facts, valid_ids)
+    if len(answer) > 12000:
+        answer = answer[:11940] + "\n回答超过传输长度限制，已截断；请缩小查询范围。"
+        errors.append("transport_answer_truncated")
+        if evidence:
+            status = "partial"
+        _demote_coverage(coverage)
+    if max_answer_tokens is not None:
+        # max_answer_tokens bounds provider generation; it is not a UTF-8 byte
+        # count. This separate generous transport guard is only an approximation.
+        answer, truncated = _bounded_answer(answer, max_answer_tokens * 4)
+        if truncated:
+            errors.insert(0, "answer_budget_truncated")
+            if evidence:
+                status = "partial"
+            _demote_coverage(coverage)
+    allowed = set().union(*(_allowed_cves(metadata) for metadata in retained_metadata.values()))
+    cves = sorted({value.upper() for value in _CVE.findall(answer)} & allowed)[:100]
+    mode = "structured" if "exact_lookup" in calls else "hybrid" if "hybrid_search" in calls else "keyword"
+    requirement_rows=[]
+    rebuilt=any(code in errors for code in ('answer_rebuilt_after_citation_validation','transport_answer_truncated','answer_budget_truncated'))
+    for row in result.requirement_coverage:
+        data=row.model_dump()
+        ids=[str(public_ids[eid]) for eid in row.evidence_ids if eid in public_ids]
+        data['evidence_ids']=list(dict.fromkeys(ids))
+        if data['status']=='missing' or not ids:
+            data['status']='missing';data['evidence_ids']=[]
+        elif rebuilt and data['status']=='supported':
+            data['status']='partial';data['reason']='部分引用或正文未能完整保留，当前仅有可核验来源摘录。'
+        requirement_rows.append(data)
+    return AgentAnswer(
+        status=status, answer=answer or "没有满足要求的来源证据。", sources=list(sources.values()),
+        coverage=coverage,
+        question_type=result.question_type,requirement_coverage=requirement_rows,
+        retrieval_summary=result.retrieval_summary.model_dump(),limitations=result.limitations,
+        cve_ids=cves, risk_level=risk, evidence=evidence, tool_calls=calls,
+        tool_trace=traces, partial_errors=list(dict.fromkeys(errors))[:20], retrieval_mode=mode,
+    )
+
+
+def create_app(service, index, service_token: str | None) -> FastAPI:
+    """Inject service/index for local validation; all V1 routes require a token."""
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app):
+        # Loading cached CPU weights can exceed a query's deadline. Readiness
+        # means the embedding provider is usable, including after an Agent restart.
+        if service.embedding.mode == "live":
+            await service.embedding.query("readiness check")
+        yield
+
+    app = FastAPI(title="ICT Agent backend V1 adapter", version="1", lifespan=lifespan)
+    app.state.service, app.state.index = service, index
+    expected = (service_token or "").encode("utf-8")
+
+    @app.middleware("http")
+    async def response_metadata(request: Request, call_next):
+        response = await call_next(request)
+        request_id = request.headers.get("X-Request-ID", "")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", request_id):
+            request_id = str(uuid4())
+        response.headers.setdefault("X-Request-ID", request_id)
+        response.headers.setdefault("X-RAG-Answer-Mode", service.settings.llm_mode)
+        response.headers.setdefault("X-RAG-Embedding-Mode", service.embedding.mode)
+        return response
+
+    async def authenticate(authorization: str | None = Header(default=None)):
+        if not expected:
+            raise HTTPException(503, "agent_service_token_not_configured")
+        scheme, _, token = (authorization or "").partition(" ")
+        if (scheme.casefold() != "bearer" or not token
+                or not secrets.compare_digest(token.encode("utf-8"), expected)):
+            raise HTTPException(401, "invalid_agent_service_token", headers={"WWW-Authenticate": "Bearer"})
+
+    authorized = [Depends(authenticate)]
+
+    @app.get("/v1/health", dependencies=authorized)
+    async def health(response: Response):
+        response.headers["X-RAG-Answer-Mode"] = service.settings.llm_mode
+        response.headers["X-RAG-Embedding-Mode"] = service.embedding.mode
+        try:
+            snapshot = await asyncio.to_thread(service.store.snapshot)
+            if snapshot.signature and snapshot.signature != service.embedding.signature():
+                raise HTTPException(503, "backend_index_embedding_signature_mismatch")
+            scopes = await asyncio.to_thread(lambda: (index.mappings(False), index.mappings(True)))
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, "backend_index_unavailable") from None
+        return {"schema_version": "1", "status": "ok", "llm_mode": service.settings.llm_mode,
+                "llm_transport": service.settings.llm_transport,
+                "embedding_provider": service.settings.embedding_provider,
+                "embedding_mode": service.embedding.mode,
+                "backend_documents": {"real": len(scopes[0]), "demo": len(scopes[1])}}
+
+    @app.post("/v1/query", response_model=AgentAnswer, dependencies=authorized)
+    async def query(body: BackendQuery, response: Response):
+        response.headers["X-Request-ID"] = body.request_id
+        response.headers["X-RAG-Answer-Mode"] = service.settings.llm_mode
+        response.headers["X-RAG-Embedding-Mode"] = service.embedding.mode
+        mappings={}
+        async def load_scope():
+            nonlocal mappings
+            mappings=await asyncio.to_thread(index.mappings,body.is_demo)
+            return {rag_id for rag_id,_ in mappings},{rag_id:version for rag_id,version in mappings}
+        request = QueryRequest(question=body.query, history=[
+            Message(role=item.role, content=item.content) for item in body.history[-8:]
+        ])
+        try:
+            external_executor=None
+            if service.settings.external_tools_enabled and not body.is_demo:
+                from .intelligence import IntelligenceExecutor
+                external_executor=IntelligenceExecutor(service,index)
+            result = await service.query(
+                request,scope_loader=load_scope,
+                max_tool_calls=body.limits.max_tool_calls,
+                max_answer_tokens=body.limits.max_answer_tokens,
+                timeout=service.settings.request_timeout,
+                external_executor=external_executor,
+            )
+        except TimeoutError:
+            raise HTTPException(504, "agent_query_timeout") from None
+        result_headers = {"X-Request-ID": body.request_id, "X-RAG-Answer-Mode": result.mode,
+                          "X-RAG-Embedding-Mode": result.metrics.embedding_mode,
+                          "X-RAG-LLM-Calls": str(result.metrics.llm_calls)}
+        # Provider errors remain service errors even if safe source excerpts
+        # exist. Do not turn an upstream auth failure into a normal response.
+        from ..providers.llm import SAFE_PROVIDER_CODES
+        for code in sorted(SAFE_PROVIDER_CODES):
+            if code in result.warnings:
+                raise HTTPException(504 if code=='platform_model_timeout' else 502 if code in {'platform_model_auth_failed','platform_internal_auth_failed'} else 503,code,headers=result_headers)
+        if result.status == "error":
+            if "TimeoutError" in result.warnings:
+                raise HTTPException(504, "agent_query_timeout", headers=result_headers)
+            if "BudgetExceeded" in result.warnings:
+                raise HTTPException(429, "agent_call_budget_exceeded", headers=result_headers)
+            for warning, detail in (("relevance_check_failed", "model_relevance_failed"),
+                                    ("intent_classification_failed", "intent_classification_failed"),
+                                    ("general_explanation_failed", "general_explanation_failed"),
+                                    ("claim_support_check_failed", "model_verification_failed"),
+                                    ("model_generation_failed", "model_generation_failed"),
+                                    ("retrieval_failed", "retrieval_failed")):
+                if warning in result.warnings:
+                    raise HTTPException(503, detail, headers=result_headers)
+            raise HTTPException(503, "agent_query_failed", headers=result_headers)
+        response.headers.update(result_headers)
+        if external_executor and result.response_kind!='conversation':
+            mappings=await asyncio.to_thread(index.mappings,body.is_demo)
+        try:
+            summary = service.get_run_summary(result.trace_id)
+        except KeyError:
+            summary = {"tools": []}
+            result.warnings.append("tool_trace_unavailable")
+        answer = adapt_answer(result, mappings, summary, configured_llm_mode=service.settings.llm_mode,
+                              max_answer_tokens=body.limits.max_answer_tokens)
+        if "answer_rebuilt_after_citation_validation" in answer.partial_errors:
+            response.headers["X-RAG-Answer-Mode"] = "extractive"
+        return answer
+
+    @app.post("/v1/indexes/verify", response_model=IndexProof, dependencies=authorized)
+    async def verify(body: IndexVerification):
+        try:
+            proof = await asyncio.to_thread(index.verify, body.model_dump(mode="json"))
+            return IndexProof.model_validate(proof)
+        except KeyError:
+            raise HTTPException(404, "backend_index_not_found") from None
+        except (ValueError, ValidationError):
+            raise HTTPException(422, "backend_index_verification_failed") from None
+
+    return app

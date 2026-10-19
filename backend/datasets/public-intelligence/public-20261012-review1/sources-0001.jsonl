@@ -1,0 +1,13 @@
+{"id":"9f0bd86f-9f8e-4fa1-a85f-33a97382e1f8","key":"public:nvd:9f0bd86f-9f8e-4fa1-a85f-33a97382e1f8","name":"NVD AI 相关漏洞","adapter":"nvd","category":"vulnerability","config":{}}
+{"id":"911b08f7-209d-48cd-9077-b67184f89eee","key":"public:osv:911b08f7-209d-48cd-9077-b67184f89eee","name":"OSV AI 软件包漏洞库","adapter":"osv","category":"vulnerability","config":{}}
+{"id":"e9eba266-21a0-4d62-bf46-5b21644b043b","key":"public:crossref:e9eba266-21a0-4d62-bf46-5b21644b043b","name":"Crossref AI 安全论文元数据","adapter":"crossref","category":"academic","config":{}}
+{"id":"dd8992ff-77c8-4164-8491-5f5dc4de9079","key":"public:cisco:dd8992ff-77c8-4164-8491-5f5dc4de9079","name":"Cisco PSIRT 厂商公告","adapter":"cisco","category":"vendor","config":{}}
+{"id":"f0f13af2-0099-4e45-aa08-0f07e7629fdf","key":"public:nvidia:f0f13af2-0099-4e45-aa08-0f07e7629fdf","name":"NVIDIA AI 产品安全公告目录","adapter":"nvidia","category":"vendor","config":{}}
+{"id":"dddd3f25-2746-472b-91bb-32f4e02043d3","key":"public:govuk_search:dddd3f25-2746-472b-91bb-32f4e02043d3","name":"英国政府 AI 安全政策动态发现","adapter":"govuk_search","category":"policy","config":{}}
+{"id":"056742a5-fbad-49a5-a005-2cf7ab1d8dfc","key":"public:huggingface:056742a5-fbad-49a5-a005-2cf7ab1d8dfc","name":"Hugging Face AI 社区","adapter":"huggingface","category":"community","config":{}}
+{"id":"0289309e-b5cd-4a74-af70-67f183d7002c","key":"public:arxiv:0289309e-b5cd-4a74-af70-67f183d7002c","name":"arXiv AI 安全论文摘要","adapter":"arxiv","category":"academic","config":{}}
+{"id":"e2d80782-28a6-46a0-bc0c-172d639ed301","key":"public:sans:e2d80782-28a6-46a0-bc0c-172d639ed301","name":"SANS ISC 安全社区","adapter":"sans","category":"community","config":{}}
+{"id":"d3c13c0a-736b-4129-8fc0-1bdcc0110b29","key":"public:nist_drafts:d3c13c0a-736b-4129-8fc0-1bdcc0110b29","name":"NIST AI 安全规范草案动态发现","adapter":"nist_drafts","category":"standard","config":{}}
+{"id":"1675e627-167d-4e54-888d-b07fb731fb3d","key":"public:trailofbits:1675e627-167d-4e54-888d-b07fb731fb3d","name":"Trail of Bits 安全分析博客","adapter":"trailofbits","category":"blog","config":{}}
+{"id":"cbdabf42-6e69-42bc-bcec-97f3929f35ff","key":"public:china_policy:cbdabf42-6e69-42bc-bcec-97f3929f35ff","name":"中国政府网生成式 AI 法规","adapter":"china_policy","category":"policy","config":{}}
+{"id":"ea95dfc4-9eba-4ce5-9cd1-d7f5ae65f0c7","key":"public:govuk:ea95dfc4-9eba-4ce5-9cd1-d7f5ae65f0c7","name":"英国政府 AI 安全政策与指导","adapter":"govuk","category":"policy","config":{}}

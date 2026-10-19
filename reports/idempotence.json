@@ -1,0 +1,177 @@
+{
+  "generated_at": "2026-10-01T12:57:01.645355+00:00",
+  "embedding": "real E5 signature; no re-encoding needed for unchanged documents",
+  "before_generation": 20,
+  "after_generation": 20,
+  "ingest": {
+    "inserted": 0,
+    "updated": 0,
+    "unchanged": 19,
+    "failed": 0,
+    "document_ids": [
+      "doc_c2705749db5db5a0fd8de89c",
+      "doc_43e52dc987c90923d9f1728f",
+      "doc_e76cbb9f9d1bbe26d9729c5e",
+      "doc_3cd694e9fb0f3acf712c6b8b",
+      "doc_96659fd8349a7fa242672722",
+      "doc_61652e11a4bbc7c6246b2983",
+      "doc_6293ba4e8ac326db0c956d9c",
+      "doc_eb56cd1ff6a0fc9cd8c41150",
+      "doc_56670995b6801523c356e958",
+      "doc_85a4867df1991c5c2272c290",
+      "doc_35bffccebf6ea91f1a667217",
+      "doc_b93c6023fe0492a88f740805",
+      "doc_20eb46f016965e9de92f76c0",
+      "doc_3182417db8ca8f155cc158d7",
+      "doc_785b8bac74ed4011d681307c",
+      "doc_6aac2f8dfa6c3ea3b1db05c3",
+      "doc_89d4954c8eba18c4d4dec47c",
+      "doc_e979dd6afeefb7126d11aadf",
+      "doc_d9727f1325e9981ff925d194"
+    ],
+    "items": [
+      {
+        "external_id": "EU-AI-Act",
+        "document_id": "doc_c2705749db5db5a0fd8de89c",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "CVE-2024-1569",
+        "document_id": "doc_43e52dc987c90923d9f1728f",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "CVE-2024-34359",
+        "document_id": "doc_e76cbb9f9d1bbe26d9729c5e",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "CVE-2024-3571",
+        "document_id": "doc_3cd694e9fb0f3acf712c6b8b",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "CVE-2024-37032",
+        "document_id": "doc_96659fd8349a7fa242672722",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "CVE-2024-5998",
+        "document_id": "doc_61652e11a4bbc7c6246b2983",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm01-prompt-injection",
+        "document_id": "doc_6293ba4e8ac326db0c956d9c",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm022025-sensitive-information-disclosure",
+        "document_id": "doc_eb56cd1ff6a0fc9cd8c41150",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm032025-supply-chain",
+        "document_id": "doc_56670995b6801523c356e958",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm042025-data-and-model-poisoning",
+        "document_id": "doc_85a4867df1991c5c2272c290",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm052025-improper-output-handling",
+        "document_id": "doc_35bffccebf6ea91f1a667217",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm062025-excessive-agency",
+        "document_id": "doc_b93c6023fe0492a88f740805",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm072025-system-prompt-leakage",
+        "document_id": "doc_20eb46f016965e9de92f76c0",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm082025-vector-and-embedding-weaknesses",
+        "document_id": "doc_3182417db8ca8f155cc158d7",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm092025-misinformation",
+        "document_id": "doc_785b8bac74ed4011d681307c",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "llm102025-unbounded-consumption",
+        "document_id": "doc_6aac2f8dfa6c3ea3b1db05c3",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "2302.12173",
+        "document_id": "doc_89d4954c8eba18c4d4dec47c",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "2306.05499",
+        "document_id": "doc_e979dd6afeefb7126d11aadf",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      },
+      {
+        "external_id": "2307.15043",
+        "document_id": "doc_d9727f1325e9981ff925d194",
+        "version": 1,
+        "status": "unchanged",
+        "error": null
+      }
+    ]
+  },
+  "enrich": {
+    "assertions_added": 0,
+    "assertions_retained": 12,
+    "relations_added": 0,
+    "relations_retained": 13,
+    "candidates": 0,
+    "warnings": []
+  },
+  "passed": true
+}

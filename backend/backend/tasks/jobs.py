@@ -1,0 +1,244 @@
+from datetime import timedelta
+from time import perf_counter
+from uuid import UUID, uuid4
+
+from sqlalchemy import select, text
+
+from backend.collectors.registry import get_collector
+from backend.db.session import get_session_factory
+from backend.models import DataSource, Document, KnowledgeEvent, Outbox, TaskRun, TaskStep, VerificationProbe
+from backend.core.config import get_settings
+from backend.services.semantic import EmbeddingError, embed_texts, split_text, store_chunks
+from backend.services.jobs import maintain_jobs, utc_now
+from backend.services.pipeline import ingest_batch
+from backend.services.freshness import effective_interval, record_failure
+from backend.tasks.celery_app import celery_app
+
+
+@celery_app.task(name="backend.collect")
+def collect(task_id: str):
+    task_uuid, token = UUID(task_id), uuid4()
+    with get_session_factory()() as db, db.begin():
+        task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+        if task is None or task.kind not in {"collect", "offline_demo"} or task.status != "queued" or task.attempts >= 3:
+            return {"ignored": True}
+        outbox = db.scalar(select(Outbox).where(Outbox.task_id == task_uuid))
+        if outbox.available_at is not None and outbox.available_at > utc_now():
+            return {"ignored": True}
+        task.status, task.lease_token = "running", token
+        task.started_at, task.lease_until = utc_now(), utc_now() + timedelta(seconds=360)
+        task.attempts += 1
+        source = db.get(DataSource, task.source_id)
+        source.last_attempt_at = task.started_at
+        adapter, cursor, config = source.adapter, dict(source.cursor), dict(source.config)
+    stage = "collect"
+    stage_started = perf_counter()
+    try:
+        batch = get_collector(adapter, config).collect(cursor)
+        with get_session_factory()() as db, db.begin():
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.lease_token != token or task.status != "running":
+                return {"ignored": True}
+            db.add(TaskStep(task_id=task.id, name="collect", attempt=task.attempts,
+                            status="succeeded", detail={"received": len(batch.records),
+                                                        "duration_ms": round((perf_counter() - stage_started) * 1000, 3)}))
+            db.get(DataSource, task.source_id).last_checked_at = utc_now()
+        stage = "pipeline"
+        stage_started = perf_counter()
+        with get_session_factory()() as db, db.begin():
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.lease_token != token or task.status != "running":
+                return {"ignored": True}
+            source = db.scalar(select(DataSource).where(DataSource.id == task.source_id).with_for_update())
+            # 框架阶段串行提交归一化实体，避免跨来源同一漏洞并发创建。
+            db.execute(text("SELECT pg_advisory_xact_lock(7429031)"))
+            task.result = ingest_batch(db, source, batch, task)
+            if batch.coverage:
+                task.result = {**task.result, "coverage": batch.coverage}
+            source.next_run_at = utc_now() + timedelta(seconds=(
+                max(60, min(180, batch.continuation_delay_seconds)) if batch.more else effective_interval(source)))
+            task.status, task.finished_at = "succeeded", utc_now()
+            task.error_code = None
+            source.last_success_at = task.finished_at
+            source.consecutive_failures, source.last_error_code = 0, None
+            if task.result["created"] or task.result["updated"]:
+                source.last_new_content_at = task.finished_at
+            task.lease_token, task.lease_until = None, None
+            result = task.result
+        return result
+    except Exception as error:
+        # 保存稳定错误标识；禁止将可能带密码的连接异常原文写入接口或日志。
+        import httpx
+        if isinstance(error, httpx.HTTPStatusError):
+            error_code = f"source_http_{error.response.status_code}"
+        elif isinstance(error, httpx.RequestError):
+            error_code = "source_network_error"
+        else:
+            error_code = f"processing_{type(error).__name__}"[:100]
+        with get_session_factory()() as db, db.begin():
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.lease_token == token and task.status == "running":
+                record_failure(db.get(DataSource, task.source_id), error_code, utc_now(),
+                               terminal=task.attempts >= 3)
+                task.error_code = error_code
+                task.lease_token, task.lease_until = None, None
+                db.add(TaskStep(task_id=task.id, name=stage, attempt=task.attempts,
+                                status="failed", detail={"error_code": error_code,
+                                                         "duration_ms": round((perf_counter() - stage_started) * 1000, 3)}))
+                if task.attempts < 3:
+                    task.status = "queued"
+                    outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id).with_for_update())
+                    outbox.sent_at = None
+                    outbox.available_at = utc_now() + timedelta(seconds=10 * (2 ** (task.attempts - 1)))
+                else:
+                    task.status, task.finished_at = "failed", utc_now()
+        return {"failed_or_retrying": True, "error_code": error_code}
+
+
+@celery_app.task(name="backend.maintenance")
+def maintenance():
+    with get_session_factory()() as db, db.begin():
+        return maintain_jobs(db, celery_app)
+
+
+@celery_app.task(name="backend.enrich")
+def enrich(task_id: str):
+    """Idempotent eight-dimension enrichment, with source-version and lease fencing."""
+    from backend.services.eight_enrichment import store_dimensions
+    token, task_uuid, started = uuid4(), UUID(task_id), perf_counter()
+    with get_session_factory()() as db, db.begin():
+        task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+        if task is None or task.kind != "enrich" or task.status != "queued" or task.attempts >= 3:
+            return {"ignored": True}
+        outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id))
+        if outbox and outbox.available_at is not None and outbox.available_at > utc_now():
+            return {"ignored": True}
+        task.status, task.lease_token, task.lease_until = "running", token, utc_now() + timedelta(seconds=360)
+        task.started_at, task.attempts = utc_now(), task.attempts + 1
+        document_id, expected_hash = UUID(task.result["document_id"]), task.result["content_hash"]
+    try:
+        with get_session_factory()() as db, db.begin():
+            document = db.scalar(select(Document).where(Document.id == document_id).with_for_update())
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.lease_token != token or task.status != "running":
+                return {"ignored": True}
+            if document is None or document.deleted_at is not None or document.content_hash != expected_hash:
+                task.status, task.error_code, task.finished_at = "failed", "enrichment_document_changed", utc_now()
+                task.lease_token = task.lease_until = None
+                return {"superseded": True}
+            dimensions = store_dimensions(db, document)
+            task.result = {**task.result, "dimensions": dimensions, "model_calls": 0,
+                           "duration_ms": round((perf_counter() - started) * 1000, 3)}
+            task.status, task.finished_at, task.error_code = "succeeded", utc_now(), None
+            task.lease_token = task.lease_until = None
+            db.add(TaskStep(task_id=task.id, name="eight_dimension_enrichment", attempt=task.attempts,
+                status="succeeded", detail=task.result))
+            return {"processed_dimensions": len(dimensions)}
+    except Exception as error:
+        code = "enrichment_" + type(error).__name__
+        with get_session_factory()() as db, db.begin():
+            task = db.scalar(select(TaskRun).where(TaskRun.id == task_uuid).with_for_update())
+            if task.status == "running" and task.lease_token == token:
+                task.status, task.error_code = ("queued" if task.attempts < 3 else "failed"), code
+                task.lease_token = task.lease_until = None
+                db.add(TaskStep(task_id=task.id, name="eight_dimension_enrichment", attempt=task.attempts,
+                    status="failed", detail={"error_code": code}))
+                if task.status == "queued":
+                    outbox = db.scalar(select(Outbox).where(Outbox.task_id == task.id).with_for_update())
+                    outbox.sent_at, outbox.available_at = None, utc_now() + timedelta(seconds=10 * task.attempts)
+                else:
+                    task.finished_at = utc_now()
+        return {"failed_or_retrying": True, "error_code": code}
+
+
+@celery_app.task(name="backend.verify_tick")
+def verify_tick():
+    """仅验证 beat→Redis→worker→PostgreSQL，不能计为业务采集任务。"""
+    with get_session_factory()() as db, db.begin():
+        probe = db.scalar(select(VerificationProbe).where(
+            VerificationProbe.key == "beat-heartbeat"
+        ).with_for_update())
+        if probe is None:
+            db.add(VerificationProbe(key="beat-heartbeat", count=1))
+        else:
+            probe.count += 1
+    return {"verification_only": True}
+
+
+@celery_app.task(name="backend.observe_runtime")
+def observe_runtime():
+    from backend.models import RuntimeObservation
+    from backend.services.observation import capture_samples
+    from backend.services.agent_gateway import check_health
+    import httpx
+    # Do not make HTTP calls while holding database locks. No paid model request.
+    with get_session_factory()() as db:
+        if not db.scalar(select(RuntimeObservation.id).where(RuntimeObservation.ends_at >= utc_now()).limit(1)):
+            return {"observations": 0}
+    health = {"worker_and_broker": True}
+    try:
+        check_health(get_settings())
+        health["agent"] = True
+    except Exception:
+        health["agent"] = False
+    try:
+        with httpx.Client(timeout=3, trust_env=False, follow_redirects=False) as client:
+            health["api"] = client.get("http://api:8000/health/ready").status_code == 200
+    except httpx.HTTPError:
+        health["api"] = False
+    with get_session_factory()() as db, db.begin():
+        return {"observations": capture_samples(db, utc_now(), health)}
+
+
+@celery_app.task(name="backend.index_event", soft_time_limit=720, time_limit=780)
+def index_event(event_id: str):
+    """Index one current document version; duplicate deliveries cannot commit twice."""
+    event_uuid, token = UUID(event_id), uuid4()
+    settings = get_settings()
+    if getattr(settings, "index_provider", "internal") != "internal" or not settings.embedding_configured:
+        return {"ignored": True, "reason": "embedding_not_configured"}
+    with get_session_factory()() as db, db.begin():
+        event = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.id == event_uuid).with_for_update())
+        if event is None or event.status != "queued" or event.attempts >= 3:
+            return {"ignored": True}
+        document = db.get(Document, event.document_id)
+        if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != event.content_hash:
+            event.status, event.detail = "superseded", {"reason": "document_version_changed"}
+            return {"ignored": True, "reason": "superseded"}
+        event.status, event.lease_token = "indexing", token
+        event.lease_until = utc_now() + timedelta(seconds=900)
+        event.attempts += 1
+        source_text, expected_hash = document.content, document.content_hash
+    try:
+        chunks = split_text(source_text)
+        if not chunks:
+            raise EmbeddingError("embedding_empty_document")
+        vectors = embed_texts([chunk.excerpt for chunk in chunks], settings)
+        with get_session_factory()() as db, db.begin():
+            event = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.id == event_uuid).with_for_update())
+            if event.lease_token != token or event.status != "indexing":
+                return {"ignored": True}
+            document = db.scalar(select(Document).where(Document.id == event.document_id).with_for_update())
+            if document is None or document.deleted_at is not None or not document.ai_relevant or document.content_hash != expected_hash:
+                event.status, event.detail = "superseded", {"reason": "document_version_changed"}
+                event.lease_token = event.lease_until = None
+                return {"ignored": True, "reason": "superseded"}
+            count = store_chunks(db, document, chunks, vectors, settings)
+            event.status = "indexed"
+            document.indexed_at = utc_now()
+            event.detail = {"index_id": f"postgres-array:{event.id}", "chunks": count,
+                            "model": settings.embedding_model, "dimensions": settings.embedding_dimensions,
+                            "method": "exact_cosine"}
+            event.lease_token = event.lease_until = event.available_at = None
+        return {"indexed": count}
+    except Exception as error:
+        code = error.code if isinstance(error, EmbeddingError) else f"index_{type(error).__name__}"[:100]
+        with get_session_factory()() as db, db.begin():
+            event = db.scalar(select(KnowledgeEvent).where(KnowledgeEvent.id == event_uuid).with_for_update())
+            if event.lease_token == token and event.status == "indexing":
+                event.status = "pending" if event.attempts < 3 else "failed"
+                event.detail = {"error_code": code}
+                event.available_at = (utc_now() + timedelta(seconds=10 * (2 ** (event.attempts - 1)))
+                                      if event.status == "pending" else None)
+                event.lease_token = event.lease_until = None
+        return {"failed_or_retrying": True, "error_code": code}

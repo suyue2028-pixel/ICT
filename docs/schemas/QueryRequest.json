@@ -1,0 +1,206 @@
+{
+  "$defs": {
+    "Filters": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Identifier",
+          "type": "array"
+        },
+        "product": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product"
+        },
+        "doc_types": {
+          "items": {
+            "enum": [
+              "vulnerability",
+              "advisory",
+              "paper",
+              "standard",
+              "policy",
+              "blog"
+            ],
+            "type": "string"
+          },
+          "title": "Doc Types",
+          "type": "array"
+        },
+        "source_kinds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Kinds",
+          "type": "array"
+        },
+        "published_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published From"
+        },
+        "published_to": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published To"
+        },
+        "min_cvss_score": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Cvss Score"
+        },
+        "cvss_version": {
+          "anyOf": [
+            {
+              "enum": [
+                "2.0",
+                "3.0",
+                "3.1",
+                "4.0"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cvss Version"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        }
+      },
+      "title": "Filters",
+      "type": "object"
+    },
+    "Message": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 12000,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "Message",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "question": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Message"
+      },
+      "maxItems": 8,
+      "title": "History",
+      "type": "array"
+    },
+    "context": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Context",
+      "type": "object"
+    },
+    "filters": {
+      "$ref": "#/$defs/Filters"
+    },
+    "timezone": {
+      "default": "Asia/Shanghai",
+      "title": "Timezone",
+      "type": "string"
+    },
+    "now": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Now"
+    }
+  },
+  "required": [
+    "question"
+  ],
+  "title": "QueryRequest",
+  "type": "object"
+}

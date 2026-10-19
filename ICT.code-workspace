@@ -1,0 +1,16 @@
+{
+  "folders": [
+    { "name": "前端 · Vue 3", "path": "frontend" },
+    { "name": "后端 · FastAPI", "path": "backend" },
+    { "name": "Agent · LangGraph / RAG", "path": "packages/rag_agent" },
+    { "name": "共享文档", "path": "docs" },
+    { "name": "集成脚本", "path": "scripts" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/node_modules": true
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "repository": "suyue2028-pixel/ICT",
+  "integration_branch": "main",
+  "organized_on": "2026-10-19",
+  "modules": {
+    "frontend": {
+      "branches": [
+        "codex/frontend-demo",
+        "feature/frontend-enrichment-evidence-20261015"
+      ],
+      "commits": [
+        "5aac03d1b1bf252cc4ca3940071b1acce3dca199",
+        "14ce87a9c98bd28121987c946526f9442cd1e527"
+      ],
+      "directory": "frontend",
+      "merge": "three-way"
+    },
+    "backend": {
+      "branch": "feature/backend-integration",
+      "commit": "a036610d2a019ac33971b4f1ee7e945207309710",
+      "directory": "backend",
+      "compatibility_adjustments": [
+        "long-answer-budget",
+        "timeouts",
+        "llm-call-metadata"
+      ]
+    },
+    "agent": {
+      "branch": "agent-dev",
+      "commit": "b69804c67477cc8f20340bde94aab45113183abf",
+      "directory": "packages/rag_agent",
+      "compatibility_adjustments": [
+        "Windows tzdata conditional dependency"
+      ]
+    }
+  },
+  "legacy_agent_branch": "feature/agent-qa-relevance",
+  "runtime_note": "Source integration only. No new runtime, model or end-to-end validation. Secrets and runtime databases are not committed."
+}

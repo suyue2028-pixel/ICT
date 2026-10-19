@@ -1,0 +1,23 @@
+{
+  "repository": "suyue2028-pixel/ICT",
+  "modules": {
+    "frontend": {
+      "branch": "codex/frontend-demo",
+      "commit": "f9b9f541d11be541d185a083fe20600b60dbd199",
+      "tree": "72522632988e08a0cca064960596412d9a8455f7",
+      "directory": "reports/local/integration/frontend",
+      "runtime_base_commit": "f9b9f541d11be541d185a083fe20600b60dbd199"
+    },
+    "backend": {
+      "branch": "feature/backend-integration",
+      "commit": "050d99f40411b6d700478a7f11dabd0eff878c04",
+      "tree": "97d433004d6003dfaf55060dc2267dd040e58a84",
+      "directory": "reports/local/integration/backend",
+      "runtime_base_commit": "050d99f40411b6d700478a7f11dabd0eff878c04"
+    }
+  },
+  "agent_branch": "agent-dev",
+  "main_unchanged": "31392b03e7771f28062122461d367fcc8794b8d1",
+  "published_on": "2026-10-12",
+  "runtime_note": "Runtime sources match the published frontend/backend code, including semantic routing and preserved teammate traceability/quality features. Model and search credentials stay private."
+}

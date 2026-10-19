@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "EnrichmentCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "format": "uuid",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "source_url": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "excerpt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Excerpt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "content_hash",
+        "source_url",
+        "locator",
+        "excerpt"
+      ],
+      "title": "EnrichmentCitation",
+      "type": "object"
+    },
+    "EnrichmentField": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "known",
+            "unknown",
+            "unprocessed",
+            "not_found",
+            "failed",
+            "pending_review"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        },
+        "method": {
+          "enum": [
+            "source_structured",
+            "source_link",
+            "rule",
+            "model"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EnrichmentCitation"
+          },
+          "maxItems": 20,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state",
+        "method"
+      ],
+      "title": "EnrichmentField",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "document_id": {
+      "format": "uuid",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "content_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "provider": {
+      "pattern": "^[A-Za-z0-9_.-]{1,40}$",
+      "title": "Provider",
+      "type": "string"
+    },
+    "fields": {
+      "additionalProperties": {
+        "$ref": "#/$defs/EnrichmentField"
+      },
+      "maxProperties": 8,
+      "minProperties": 1,
+      "title": "Fields",
+      "type": "object"
+    }
+  },
+  "required": [
+    "document_id",
+    "content_hash",
+    "provider",
+    "fields"
+  ],
+  "title": "EnrichmentWrite",
+  "type": "object"
+}

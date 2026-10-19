@@ -1,0 +1,383 @@
+{
+  "recorded_date": "2026-10-04",
+  "scope": "Agent core and backend V1 adapter; not full competition or live backend acceptance",
+  "regression": {
+    "passed": 54,
+    "total": 54,
+    "elapsed_seconds": 1.34,
+    "material": "synthetic regression fixtures"
+  },
+  "real_source_reference_evaluation": {
+    "metrics": {
+      "sample_count": 25,
+      "automated_passed": 25,
+      "retrieval_recall_at_5": 0.9649122807017544,
+      "recall_scored_questions": 19,
+      "citation_locatable_rate": 1.0,
+      "citation_sample_count": 75,
+      "field_accuracy_within_declared_cvss_reference_slots": 1.0,
+      "field_accuracy_answered_count": 7,
+      "field_coverage": 1.0,
+      "field_expected_count": 7,
+      "human_citation_support_rate": null,
+      "cross_document_reasoning_correctness": null,
+      "human_evaluation_status": "pending_human_review",
+      "cold_first_query_ms": 3727.2990420024144,
+      "warm_same_query_ms": 13.45391699942411,
+      "end_to_end_p50_ms": 4.083667001395952,
+      "end_to_end_p95_ms": 26.901691598322913,
+      "all_cases_elapsed_ms": 3939.395624998724,
+      "llm_calls": 0,
+      "tool_calls": 47
+    },
+    "configuration": {
+      "python": "3.11.16",
+      "platform": "macOS-26.5.1-arm64-arm-64bit",
+      "processor": "arm",
+      "embedding": {
+        "model_id": "intfloat/multilingual-e5-small",
+        "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+        "dimension": 384,
+        "prefix_policy": "e5-query-passage-v1"
+      },
+      "embedding_mode": "live",
+      "generation_mode": "extractive",
+      "device": "cpu",
+      "documents": 19,
+      "chunks": 97,
+      "generation": 20,
+      "dependencies": {
+        "langgraph": "1.2.12",
+        "sentence-transformers": "6.1.0",
+        "pydantic": "2.13.5",
+        "numpy": "2.4.6",
+        "torch": "2.14.1"
+      }
+    },
+    "human_review_status": "pending_human_review",
+    "reference_author": "implementation-authored from inspected source excerpts"
+  },
+  "v1_http": {
+    "date": "2026-10-04",
+    "material": "SYNTHETIC backend revision fixtures; not real vulnerabilities",
+    "transport": "actual HTTP over loopback",
+    "embedding": "real local E5",
+    "remote_llm_calls": 0,
+    "backend_runtime": "not connected; actual backend Pydantic answer model imported for validation",
+    "passed": 27,
+    "checks": [
+      {
+        "name": "missing_auth_401",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "bad_auth_401",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_e5_scoped_health",
+        "passed": true,
+        "detail": {
+          "schema_version": "1",
+          "status": "ok",
+          "llm_mode": "extractive",
+          "embedding_provider": "e5",
+          "embedding_mode": "live",
+          "backend_documents": {
+            "real": 1,
+            "demo": 1
+          }
+        }
+      },
+      {
+        "name": "demo_query_200",
+        "passed": true,
+        "detail": {
+          "status": 200
+        }
+      },
+      {
+        "name": "demo_actual_backend_schema",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_exact_identity_and_excerpts",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_backend_locator_exact",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_generation_disclosed",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_real_instrumented_tools",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_transport_budget",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_index_proof",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "demo_wrong_hash_rejected",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_query_200",
+        "passed": true,
+        "detail": {
+          "status": 200
+        }
+      },
+      {
+        "name": "real_scope_fixture_actual_backend_schema",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_exact_identity_and_excerpts",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_backend_locator_exact",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_generation_disclosed",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_real_instrumented_tools",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_transport_budget",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_index_proof",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "real_scope_fixture_wrong_hash_rejected",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "exact_identifier_scope_isolation",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "one_token_conservative_bound",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "tool_budget_429",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "non_boolean_scope_422",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "wrong_schema_422",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "blank_query_422",
+        "passed": true,
+        "detail": null
+      }
+    ]
+  },
+  "core_manual_boundaries": {
+    "passed": 9,
+    "material": "synthetic documents and mock embedding",
+    "record": "local ignored core_changes.json"
+  },
+  "absence_proof_manual": {
+    "passed": 4,
+    "material": "synthetic backend identities; actual SQLite checks",
+    "record": "local ignored absence_proof_validation.json"
+  },
+  "backend_locator_boundaries": {
+    "passed": 3,
+    "cases": [
+      "original content Unicode character range",
+      "original revision JSON Unicode character range",
+      "missing excerpt rejected"
+    ]
+  },
+  "backend_readiness": {
+    "status": "unavailable",
+    "postgres": false,
+    "redis": false,
+    "migration": false
+  },
+  "live_remote_generation": {
+    "calls": 0,
+    "status": "no model API key configured; unverified"
+  },
+  "pending": [
+    "live PostgreSQL/Redis claim-index-HTTP proof-ACK lifecycle",
+    "real model provider request and generation",
+    "human citation support and cross-document quality review"
+  ],
+  "excluded_from_first_version": [
+    "complete CPE applicability resolution",
+    "authorized asset matching",
+    "POC execution",
+    "continuous collector scheduling owned by backend",
+    "full competition deployment"
+  ],
+  "worker_manual": {
+    "total": 21,
+    "passed": 21,
+    "failed": [],
+    "http_transport": "httpx.MockTransport; no real backend HTTP or PostgreSQL/Redis",
+    "real_index_cases": 7,
+    "controlled_index_double_cases": 14,
+    "index_material": "synthetic backend UUID/revisions; isolated SQLite and real local E5",
+    "source_unchanged_during_validation": true,
+    "remote_llm_calls": 0,
+    "cases": [
+      {
+        "name": "real_add_proof_before_ack",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "same_uuid_demo_scope_isolated",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "real_update_supersedes_old_mapping",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "old_hash_delete_rejected_keeps_current",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "real_delete_proof_and_history_preserved",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "never_imported_delete_actual_absence_proof",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "document_document_id_mismatch_fails",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "document_content_hash_mismatch_fails",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "document_is_demo_mismatch_fails",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "document_is_current_mismatch_fails",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "canonical_revision_hash_failure_before_ingest",
+        "passed": true,
+        "index_scope": "real isolated SQLite + offline real E5"
+      },
+      {
+        "name": "lease_expired_at_claim_no_ack",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "lease_expires_after_read_no_ingest_or_ack",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "lease_expires_after_index_no_ack",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "claim_503_never_retried",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "claim_timeout_never_retried",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "read_transient_retries_once_exact_identity",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "ack_transient_retry_same_body_and_lease",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "ack_409_no_second_state_transition",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "read_409_no_failed_ack",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      },
+      {
+        "name": "wrong_local_proof_never_success_ack",
+        "passed": true,
+        "index_scope": "controlled IndexDouble"
+      }
+    ],
+    "limitations": [
+      "No real backend endpoint, lease database, token configuration, or gateway HTTP proof call was exercised.",
+      "Controlled index doubles validate worker transport/lease control flow only; their proof is not evidence of real embeddings.",
+      "No answer quality, factual correctness, or human evaluation metric is derived from this worker validation."
+    ]
+  }
+}

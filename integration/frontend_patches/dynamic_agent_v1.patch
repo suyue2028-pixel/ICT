@@ -1,0 +1,853 @@
+diff --git a/frontend/src/api/http.ts b/frontend/src/api/http.ts
+--- a/frontend/src/api/http.ts
++++ b/frontend/src/api/http.ts
+@@ -1,52 +1,80 @@
+ import axios from 'axios'
+ import { shallowRef } from 'vue'
++import { classifyFailure, isVerifiedUserIdentity, knownSessionExpired, shouldInvalidateCredential } from '@/utils/requestFailure'
+ 
+-// Ordinary user credential only, in memory. Never put admin/model keys here.
++// User credentials stay in memory. Platform/admin/model keys never belong here.
+ export const userToken = shallowRef('')
++export const sessionState = shallowRef<'unauthorized' | 'checking' | 'authorized' | 'expired'>('unauthorized')
++export const sessionExpiresAt = shallowRef<string | null>(null)
+ let sessionAttempt: Promise<void> | undefined
+-export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 40_000 })
+-export async function ensureSession() {
+-  if (!sessionAttempt) sessionAttempt = (async () => {
+-    if (!import.meta.env.DEV) return
++export const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 65_000 })
++export class UserAuthorizationRequired extends Error {
++  constructor() { super('user_token_required') }
++}
++export function clearUserSession(expired = true) {
++  userToken.value = ''
++  sessionExpiresAt.value = null
++  sessionState.value = expired ? 'expired' : 'unauthorized'
++}
++http.interceptors.request.use(config => {
++  // Explicit credentials are used while validating a new user token.
++  if (userToken.value && !config.headers.Authorization) config.headers.Authorization = `Bearer ${userToken.value}`
++  return config
++})
++http.interceptors.response.use(response => response, error => {
++  // A failed old request must not invalidate a newly authorized session.
++  if (axios.isAxiosError(error) && shouldInvalidateCredential(error.config?.headers?.Authorization, userToken.value,
++    { status: error.response?.status, data: error.response?.data })) clearUserSession(true)
++  return Promise.reject(error)
++})
++export async function authorizeUser(token: string, expiresAt?: string | null) {
++  const clean = token.trim()
++  if (!clean || clean.length > 256 || /\s/.test(clean)) throw new UserAuthorizationRequired()
++  const previousState = sessionState.value
++  sessionState.value = 'checking'
++  try {
++    const config = { headers: { Authorization: `Bearer ${clean}` } }
+     try {
+-      const response = await fetch('/__local/session', { cache: 'no-store' })
+-      if (!response.ok) return
+-      const result = await response.json() as { access_token?: string; expires_at?: string }
+-      if (result.access_token && Date.parse(result.expires_at || '') > Date.now()) userToken.value = result.access_token
+-    } catch { /* A deployed app uses its own user sign-in. */ }
+-  })()
++      const response = await http.get('/auth/me', config)
++      if (!isVerifiedUserIdentity(response.data)) throw new Error('invalid_user_identity_response')
++    } catch (error) {
++      // Older backend releases can validate with the existing require_user endpoint.
++      if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error
++      const response = await http.get('/agent/sessions', { ...config, params: { page: 1, page_size: 1 } })
++      if (!Array.isArray(response.data?.items) || typeof response.data?.total !== 'number') throw new Error('invalid_user_identity_response')
++    }
++    userToken.value = clean
++    sessionExpiresAt.value = expiresAt || null
++    sessionState.value = 'authorized'
++  } catch (error) {
++    sessionState.value = userToken.value ? 'authorized' : previousState === 'expired' ? 'expired' : 'unauthorized'
++    throw error
++  }
++}
++export async function ensureSession(force = false) {
++  if (!force && userToken.value && !knownSessionExpired(sessionExpiresAt.value)) return
++  if (userToken.value && knownSessionExpired(sessionExpiresAt.value)) clearUserSession(true)
++  if (!import.meta.env.DEV) return
++  if (!sessionAttempt) {
++    sessionAttempt = (async () => {
++      try {
++        // Read an administrator-issued credential. This endpoint never issues one.
++        const response = await fetch('/__local/session', { cache: 'no-store' })
++        if (!response.ok) return
++        const result = await response.json() as { access_token?: string; expires_at?: string }
++        if (typeof result.access_token === 'string' && Date.parse(result.expires_at || '') > Date.now()) await authorizeUser(result.access_token, result.expires_at)
++      } catch { /* Keep explicit user reauthorization available. */ }
++    })().finally(() => { sessionAttempt = undefined })
++  }
+   await sessionAttempt
+ }
+-http.interceptors.request.use(config => {
+-  if (userToken.value) config.headers.Authorization = `Bearer ${userToken.value}`
+-  return config
+-})
+-export function errorMessage(error: unknown) {
+-  if (axios.isAxiosError(error)) {
+-    const code = error.response?.data?.error?.code || error.response?.data?.detail
+-    if (error.response?.status === 401) return '用户会话未授权或已过期，请重新登录。'
+-    if (error.response?.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code || '')) return '回答超时，请缩小问题范围后重试。'
+-    const explanations: Record<string, string> = {
+-      model_relevance_failed: '模型服务未能完成资料相关性核验，本次回答中断。这不代表知识库没有相关资料，请稍后重试。',
+-      model_verification_failed: '模型服务未能完成回答的事实核验，本次未返回未经核实的答案。这不代表知识库没有相关资料，请稍后重试。',
+-      model_generation_failed: '模型服务未能完成回答生成。这不代表知识库没有相关资料，请稍后重试。',
+-      backend_index_unavailable: '资料检索索引暂不可用，本次未能完成检索。这不代表知识库没有相关资料，请检查服务状态后重试。',
+-      backend_index_embedding_signature_mismatch: '资料检索索引与当前向量模型配置不一致，本次未能完成检索。这不代表知识库没有相关资料，请更新索引配置后重试。',
+-      retrieval_failed: '资料检索服务异常，本次未能完成检索。这不代表知识库没有相关资料，请稍后重试。',
+-      agent_query_failed: '问答处理异常，本次未能取得完整回答。这不代表知识库没有相关资料，请稍后重试。',
+-      agent_rate_limited: '问答服务当前请求过多，请稍后重试。',
+-      user_query_budget_exceeded: '当前用户的问答请求额度已用完，请等待额度恢复后重试。',
+-      agent_call_budget_exceeded: '本次回答达到调用次数限制，请缩小问题范围后重试。',
+-    }
+-    if (typeof code === 'string' && explanations[code]) return explanations[code]
+-    if (error.response?.status === 429) return '请求过于频繁或额度已用完，请稍后重试。'
+-    return typeof code === 'string' ? `请求失败：${code}` : '无法连接服务，请检查服务状态后重试。'
+-  }
+-  return '请求失败，请重试。'
++export function requestFailure(error: unknown) {
++  if (error instanceof UserAuthorizationRequired) return classifyFailure({ status: 401, data: { detail: 'user_token_required' } })
++  if (axios.isAxiosError(error)) return classifyFailure({ status: error.response?.status, data: error.response?.data, code: error.code })
++  return { kind: 'service' as const, heading: '请求失败', message: '请求失败，问题已保留，请重试。' }
+ }
++export function errorMessage(error: unknown) { return requestFailure(error).message }
+ export async function apiGet<T>(path: string, params?: Record<string, string | number | boolean | undefined>) {
+   return (await http.get<T>(path, { params })).data
+ }
+-export async function apiPost<TResponse, TBody>(path: string, body: TBody) {
+-  return (await http.post<TResponse>(path, body)).data
+-}
++export async function apiPost<TResponse, TBody>(path: string, body: TBody) { return (await http.post<TResponse>(path, body)).data }
+diff --git a/frontend/src/router/index.ts b/frontend/src/router/index.ts
+--- a/frontend/src/router/index.ts
++++ b/frontend/src/router/index.ts
+@@ -20,6 +20,7 @@
+       meta: { title: '情报分类' },
+     },
+     { path: '/qa', component: () => import('@/views/QaView.vue'), meta: { title: '可追溯问答' } },
++    { path: '/login', component: () => import('@/views/LoginView.vue'), meta: { title: '用户授权' } },
+     { path: '/tasks', redirect: '/' },
+     { path: '/:pathMatch(.*)*', redirect: '/' },
+   ],
+diff --git a/frontend/src/views/QaView.vue b/frontend/src/views/QaView.vue
+--- a/frontend/src/views/QaView.vue
++++ b/frontend/src/views/QaView.vue
+@@ -1,11 +1,16 @@
+ <script setup lang="ts">
+-import { computed } from 'vue'
++import { computed, shallowRef, watch } from 'vue'
+ import ChatComposer from '@/components/chat/ChatComposer.vue'
+ import ChatConversation from '@/components/chat/ChatConversation.vue'
+ import { useDemoChat } from '@/composables/useDemoChat'
+ import { useIntelligenceStore } from '@/stores/intelligence'
++import { sessionState } from '@/api/http'
++import { readQuestionDraft, saveQuestionDraft } from '@/utils/queryDraft'
+ const store = useIntelligenceStore()
+-const { messages, sending, submit, reset, userToken } = useDemoChat(() => store.items)
++const { messages, sending, submit, reset, userToken, failedQuestion } = useDemoChat(() => store.items)
++const draft = shallowRef(readQuestionDraft(store.isDemo))
++watch(draft, value => saveQuestionDraft(store.isDemo, value))
++watch(() => store.isDemo, () => { draft.value = readQuestionDraft(store.isDemo) })
+ const hasConversation = computed(() => messages.value.some(message => message.role === 'user'))
+ const suggestions = computed(() => {
+   if (store.loading || store.error) return ['你能做什么？']
+@@ -32,12 +37,17 @@
+   <div class="qa-layout">
+     <section class="panel chat-panel" aria-label="情报问答">
+       <div class="qa-context">{{ store.isDemo ? '虚构样本范围' : '真实资料范围' }} · 支持基础对话，资料问答附来源</div>
++      <div v-if="!userToken" class="session-notice" role="status">
++        <p>{{ sessionState === 'expired' ? '用户授权已过期，已输入的问题会保留。' : '尚未获得有效的用户授权，可先输入问题。' }}</p>
++        <router-link :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ sessionState === 'expired' ? '重新授权' : '前往用户授权' }} ↗</router-link>
++      </div>
+       <ChatConversation :messages="messages" :sending="sending" />
+-      <ChatComposer :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
+-    </section>
+-    <section v-if="!userToken" class="qa-authorization">
+-      <h3>用户授权</h3><p>填写后端签发的短期用户令牌。</p>
+-      <input v-model="userToken" type="password" autocomplete="off" aria-label="短期用户令牌" />
++      <div v-if="failedQuestion" class="failed-query" role="status"><p>上次未完成的问题：{{ failedQuestion }}</p>
++        <button class="ghost-button" type="button" :disabled="sending || !userToken" @click="submit(failedQuestion)">重试此问题</button>
++        <button class="ghost-button" type="button" :disabled="sending" @click="draft = failedQuestion">放回输入框</button>
++        <router-link v-if="!userToken" :to="{ path: '/login', query: { returnTo: '/qa' } }">授权后重试 ↗</router-link>
++      </div>
++      <ChatComposer v-model="draft" :disabled="!userToken" :sending="sending" :suggestions="suggestions" :suggestions-hint="suggestionsHint" @submit="submit" />
+     </section>
+     <details class="qa-help">
+       <summary>使用说明与资料范围</summary>
+diff --git a/frontend/src/composables/useDemoChat.ts b/frontend/src/composables/useDemoChat.ts
+--- a/frontend/src/composables/useDemoChat.ts
++++ b/frontend/src/composables/useDemoChat.ts
+@@ -1,12 +1,15 @@
+ import { computed, onMounted, shallowRef, watch } from 'vue'
+ import axios from 'axios'
+-import { apiGet, ensureSession, errorMessage, http, userToken } from '@/api/http'
++import { apiGet, ensureSession, http, requestFailure, UserAuthorizationRequired, userToken } from '@/api/http'
++import { normalizeWorkflow, normalizeToolTrace, returnedWorkflow } from '@/utils/answerWorkflow'
++import { readFailedQuestion, saveFailedQuestion } from '@/utils/queryDraft'
+ import { useIntelligenceStore } from '@/stores/intelligence'
+ import type { AnswerCoverage, AnswerStatus, ChatMessage, IntelligenceItem, ResponseKind, RetrievalMode } from '@/types'
+ interface Answer {
+   status: AnswerStatus; answer: string; session_id: string; request_id: string;
+   partial_errors: string[]; retrieval_mode: RetrievalMode; response_kind?: ResponseKind;
+-  coverage?: AnswerCoverage;
++  coverage?: AnswerCoverage; workflow?: unknown; tool_trace?: unknown; invocation_id?: string;
++  question_type?: string | null; requirement_coverage?: unknown; retrieval_summary?: unknown; limitations?: unknown;
+   sources: { document_id: string; title: string }[];
+   evidence: NonNullable<ChatMessage['evidence']>;
+ }
+@@ -16,8 +19,9 @@
+   const messages = shallowRef<ChatMessage[]>([{ id: 'welcome', role: 'assistant', content:
+     '你好！可以先聊聊你想了解什么，也可以输入漏洞编号或 AI 安全问题。我会为资料问答保留来源。', time: '', responseKind: 'conversation' }])
+   const sending = shallowRef(false), sessionId = shallowRef<string | null>(null)
++  const failedQuestion = shallowRef(readFailedQuestion(store.isDemo))
+   let sequence = 0, context = 0
+-  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'status' | 'coverage'>
++  type Metadata = Pick<ChatMessage, 'generationMode' | 'warnings' | 'citations' | 'responseKind' | 'status' | 'coverage' | 'workflow' | 'toolTrace' | 'invocationId' | 'requestId'>
+   let metadata: Metadata[] = []
+   const metadataKey = (id: string) => `ict:answer-meta:${id}`
+   function remember(id: string, row: Metadata) {
+@@ -30,6 +34,7 @@
+     sessionId.value = null
+     messages.value = [{ id: 'welcome', role: 'assistant', content: '你好！可以直接交流，也可以在当前资料范围输入安全问题。', time: '', responseKind: 'conversation' }]
+     metadata = []
++    failedQuestion.value = readFailedQuestion(store.isDemo)
+   }
+   async function restore() {
+     const version = context, key = sessionKey()
+@@ -58,13 +63,19 @@
+           responseKind: row.role === 'assistant' ? kind : undefined,
+           status: saved?.status,
+           coverage: saved?.coverage,
++          workflow: normalizeWorkflow(saved?.workflow, row.citations.length),
++          toolTrace: normalizeToolTrace(saved?.toolTrace),
++          invocationId: saved?.invocationId, requestId: saved?.requestId,
+           warnings: saved?.warnings,
+           evidence: row.citations, citations: row.citations.filter((item, index, rows) => rows.findIndex(x => x.document_id === item.document_id && x.content_hash === item.content_hash) === index).map(item => ({ intelligenceId: item.document_id,
+             contentHash: item.content_hash, label: saved?.citations?.find(x => x.intelligenceId === item.document_id && x.contentHash === item.content_hash)?.label || getItems().find(x => x.id === item.document_id)?.title || '原始来源文档' })) }
+       })
+       while (metadata.length < assistantIndex) metadata.push({})
+-    } catch {
+-      if (version === context) { sessionId.value = null; sessionStorage.removeItem(key) }
++    } catch (cause) {
++      // A stale credential or transient failure must not discard conversation history.
++      if (version === context && axios.isAxiosError(cause) && [403, 404].includes(cause.response?.status || 0)) {
++        sessionId.value = null; sessionStorage.removeItem(key)
++      }
+     }
+   }
+   function reset() {
+@@ -104,17 +115,6 @@
+       : []
+     return { answered_topics: topics(answer.coverage.answered_topics), missing_topics: topics(answer.coverage.missing_topics) }
+   }
+-  function failureLabel(cause: unknown) {
+-    if (!axios.isAxiosError(cause)) return '请求失败'
+-    const detail = cause.response?.data?.error?.code || cause.response?.data?.detail
+-    if (['model_relevance_failed', 'model_verification_failed', 'model_generation_failed'].includes(detail)) return '模型服务异常 · 未生成回答'
+-    if (['backend_index_unavailable', 'backend_index_embedding_signature_mismatch', 'retrieval_failed'].includes(detail)) return '检索服务异常 · 未取得证据'
+-    if (cause.response?.status === 429 || detail === 'agent_rate_limited') return '请求受限 · 请稍后重试'
+-    if (cause.response?.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(cause.code || '')) return '回答超时'
+-    if (cause.response?.status === 401) return '用户会话未授权或已过期'
+-    if ([502, 503].includes(cause.response?.status || 0)) return '问答服务异常 · 未取得回答'
+-    return '请求失败'
+-  }
+   function answerWarnings(answer: Answer) {
+     return answer.partial_errors.filter(x => !x.startsWith('generation_mode:') && !x.startsWith('conversation_local_reply:') && !x.startsWith('relevance_filter:'))
+   }
+@@ -127,33 +127,39 @@
+     try {
+       await ensureSession()
+       if (version !== context) return
+-      if (!userToken.value) throw new Error('user_not_authorized')
++      if (!userToken.value) throw new UserAuthorizationRequired()
+       const response = await http.post<Answer>('/agent/query', { query: clean, session_id: previousSession,
+         is_demo: scope }, { headers: { 'Idempotency-Key': crypto.randomUUID() } })
+       const answer = response.data
+       sessionStorage.setItem(key, answer.session_id)
+       if (version !== context) return
+       sessionId.value = answer.session_id
++      failedQuestion.value = ''; saveFailedQuestion(scope, '')
++      const workflow = returnedWorkflow(answer, answer.evidence.length), toolTrace = normalizeToolTrace(answer.tool_trace)
+       remember(answer.session_id, { generationMode: modeLabel(answer, response.headers),
+         responseKind: responseKind(answer),
+         status: answer.status, coverage: coverage(answer),
++        workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
+         warnings: answerWarnings(answer),
+         citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
+           contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) })
+       messages.value = [...messages.value, { id: `a-${++sequence}`, role: 'assistant', content: answer.answer,
+-        time: clock.format(new Date()), evidence: answer.evidence, requestId: answer.request_id,
++        time: clock.format(new Date()), evidence: answer.evidence,
+         generationMode: modeLabel(answer, response.headers),
+         responseKind: responseKind(answer),
+         status: answer.status, coverage: coverage(answer),
++        workflow, toolTrace, invocationId: answer.invocation_id, requestId: answer.request_id,
+         warnings: answerWarnings(answer),
+         citations: answer.sources.map(source => ({ intelligenceId: source.document_id,
+           contentHash: answer.evidence.find(x => x.document_id === source.document_id)?.content_hash, label: source.title })) }]
+     } catch (cause) {
+       if (version !== context) return
++      failedQuestion.value = clean; saveFailedQuestion(scope, clean)
++      const failure = requestFailure(cause)
+       messages.value = [...messages.value, { id: `error-${++sequence}`, role: 'assistant',
+-        content: userToken.value ? errorMessage(cause) : '尚未获得用户会话，请填写短期用户令牌或重新启动本地服务。',
+-        time: clock.format(new Date()), status: 'request_failed', generationMode: failureLabel(cause) }]
++        content: failure.message, failureKind: failure.kind,
++        time: clock.format(new Date()), status: 'request_failed', generationMode: failure.heading }]
+     } finally { sending.value = false }
+   }
+-  return { messages: computed(() => messages.value), sending: computed(() => sending.value), sessionId, submit, reset, userToken }
++  return { messages: computed(() => messages.value), sending: computed(() => sending.value), sessionId, failedQuestion, submit, reset, userToken }
+ }
+diff --git a/frontend/src/types/index.ts b/frontend/src/types/index.ts
+--- a/frontend/src/types/index.ts
++++ b/frontend/src/types/index.ts
+@@ -88,6 +88,27 @@
+   answered_topics: string[]
+   missing_topics: string[]
+ }
++export interface RequirementCoverage {
++  requirement_id: string
++  label: string
++  status: 'supported' | 'partial' | 'conflicting' | 'missing'
++  evidence_ids: string[]
++  reason: string
++}
++export interface AnswerWorkflow {
++  question_type: string
++  requirement_coverage: RequirementCoverage[]
++  retrieval_summary: { rounds: number; stop_reason: string; initial_tools: string[]; supplemental_tools: string[] }
++  limitations: string[]
++}
++export interface AnswerToolTrace {
++  tool: string
++  status: 'completed' | 'failed' | 'empty'
++  duration_ms: number
++  error_code?: string | null
++  input_summary?: string | null
++  document_ids?: string[]
++}
+ export interface ChatMessage {
+   id: string
+   role: 'user' | 'assistant'
+@@ -102,4 +123,8 @@
+   warnings?: string[]
+   evidence?: { document_id: string; content_hash: string; content: string; source: string; locator: string }[]
+   requestId?: string
++  invocationId?: string
++  workflow?: AnswerWorkflow
++  toolTrace?: AnswerToolTrace[]
++  failureKind?: 'user_auth' | 'model' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
+ }
+diff --git a/frontend/src/components/chat/ChatConversation.vue b/frontend/src/components/chat/ChatConversation.vue
+--- a/frontend/src/components/chat/ChatConversation.vue
++++ b/frontend/src/components/chat/ChatConversation.vue
+@@ -2,6 +2,7 @@
+ import { nextTick, useTemplateRef, watch } from 'vue'
+ import type { ChatMessage } from '@/types'
+ import AnswerContent from './AnswerContent.vue'
++import { coverageStatusLabel, questionTypeLabel, stopReasonLabel, traceStatusLabel } from '@/utils/answerWorkflow'
+ 
+ const props = defineProps<{ messages: ChatMessage[]; sending: boolean }>()
+ const feed = useTemplateRef<HTMLElement>('feed')
+@@ -31,6 +32,12 @@
+   if (message.status === 'request_failed') return '请求异常'
+   if (message.status === 'insufficient_evidence') return '资料不足'
+   return message.status === 'partial' ? '部分资料回答' : '资料回答'
++}
++function revealEvidence(messageId: string, id: string) {
++  const element = document.getElementById(`evidence-${messageId}-${id}`)
++  const details = element?.closest('details')
++  if (details) details.open = true
++  element?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+ }
+ watch(
+   () => props.messages.length,
+@@ -62,12 +69,39 @@
+         </div>
+         <div v-if="message.generationMode" class="simulated-label small">{{ message.generationMode }}</div>
+         <div class="message-bubble"><AnswerContent v-if="message.role === 'assistant'" :content="message.content" /><template v-else>{{ message.content }}</template></div>
+-        <div v-if="message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length" class="citation-box">
++        <router-link v-if="message.failureKind === 'user_auth'" :to="{ path: '/login', query: { returnTo: '/qa' } }" class="retry-authorization">重新授权，保留问题后重试 ↗</router-link>
++        <div v-if="message.workflow?.requirement_coverage.length" class="citation-box requirement-coverage">
++          <strong>问题范围与证据覆盖</strong>
++          <ul><li v-for="requirement in message.workflow.requirement_coverage" :key="requirement.requirement_id">
++            <strong>{{ requirement.label }}</strong> · {{ coverageStatusLabel[requirement.status] }}
++            <p v-if="requirement.reason">{{ requirement.reason }}</p>
++            <a v-for="id in requirement.evidence_ids" :key="id" :href="`#evidence-${message.id}-${id}`" @click.prevent="revealEvidence(message.id, id)">证据 {{ id }} ↗</a>
++          </li></ul>
++        </div>
++        <div v-else-if="message.coverage?.answered_topics?.length || message.coverage?.missing_topics?.length" class="citation-box">
+           <div v-if="message.coverage?.answered_topics?.length"><strong>已有证据支持</strong><ul><li v-for="topic in message.coverage?.answered_topics || []" :key="topic">{{ topic }}</li></ul></div>
+           <div v-if="message.coverage?.missing_topics?.length"><strong>尚未核实的范围</strong><ul><li v-for="topic in message.coverage?.missing_topics || []" :key="topic">{{ topic }}</li></ul></div>
+         </div>
+         <p v-if="message.status === 'partial' && !message.coverage?.missing_topics?.length" class="muted">回答尚不完整，请结合原文证据和提示阅读。</p>
+-        <details v-if="message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :key="index"><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
++        <details v-if="message.evidence?.length" class="citation-box"><summary>核对原文证据（{{ message.evidence.length }}）</summary><div v-for="(item, index) in message.evidence" :id="`evidence-${message.id}-${index + 1}`" :key="index"><strong>证据 {{ index + 1 }}</strong><p>{{ item.content }}</p><small style="overflow-wrap:anywhere">版本 {{ item.content_hash }} · {{ item.locator }}</small><a :href="item.source" target="_blank" rel="noopener noreferrer">原始来源 ↗</a></div></details>
++        <details v-if="message.workflow || message.toolTrace?.length" class="citation-box execution-record">
++          <summary>检索与执行记录{{ message.toolTrace?.length ? `（${message.toolTrace.length}）` : '' }}</summary>
++          <p>以下为服务端已经返回的执行记录。</p>
++          <template v-if="message.workflow">
++            <p v-if="message.workflow.question_type">问题类型：{{ questionTypeLabel(message.workflow.question_type) }}</p>
++            <p>检索轮次：{{ message.workflow.retrieval_summary.rounds }} · {{ stopReasonLabel(message.workflow.retrieval_summary.stop_reason) }}</p>
++            <p v-if="message.workflow.retrieval_summary.initial_tools.length">初始工具：{{ message.workflow.retrieval_summary.initial_tools.join('、') }}</p>
++            <p v-if="message.workflow.retrieval_summary.supplemental_tools.length">补充工具：{{ message.workflow.retrieval_summary.supplemental_tools.join('、') }}</p>
++          </template>
++          <ol v-if="message.toolTrace?.length"><li v-for="(trace, index) in message.toolTrace" :key="index">
++            <strong>{{ trace.tool }}</strong> · {{ traceStatusLabel[trace.status] }} · {{ trace.duration_ms }} ms
++            <p v-if="trace.input_summary">{{ trace.input_summary }}</p>
++            <p v-if="trace.document_ids?.length">返回文档：{{ trace.document_ids.join('、') }}</p>
++            <small v-if="trace.error_code">错误代码：{{ trace.error_code }}</small>
++          </li></ol>
++          <p v-if="message.requestId" class="trace-reference">请求编号：{{ message.requestId }}</p>
++        </details>
++        <div v-if="message.workflow?.limitations.length" class="citation-box"><strong>资料与运行限制</strong><ul><li v-for="limitation in message.workflow.limitations" :key="limitation">{{ limitation }}</li></ul></div>
+         <p v-if="warningText(message.warnings || [])" class="muted">{{ warningText(message.warnings || []) }}</p>
+         <div v-if="message.citations?.length" class="citation-box">
+           <span>引用的来源资料</span
+@@ -75,7 +109,7 @@
+             v-for="citation in message.citations"
+             :key="citation.intelligenceId + (citation.contentHash || '')"
+             :to="{ path: `/intelligence/${citation.intelligenceId}`, query: citation.contentHash ? { content_hash: citation.contentHash } : {} }"
+-            >{{ citation.intelligenceId }} · {{ citation.label }} ↗</router-link
++            >{{ citation.label }} ↗</router-link
+           >
+         </div>
+         <div
+@@ -86,6 +120,6 @@
+         </div>
+       </div>
+     </article>
+-    <div v-if="sending" class="thinking" role="status">正在整理回复…</div>
++    <div v-if="sending" class="thinking" role="status">请求处理中，正在等待服务端回答与执行记录…</div>
+   </div>
+ </template>
+diff --git a/frontend/src/components/chat/ChatComposer.vue b/frontend/src/components/chat/ChatComposer.vue
+--- a/frontend/src/components/chat/ChatComposer.vue
++++ b/frontend/src/components/chat/ChatComposer.vue
+@@ -1,12 +1,12 @@
+ <script setup lang="ts">
+-import { shallowRef } from 'vue'
++import { computed } from 'vue'
+ 
+-const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
++const props = withDefaults(defineProps<{ modelValue: string; disabled: boolean; sending: boolean; suggestions?: string[]; suggestionsHint?: string }>(), {
+   suggestions: () => ['你能做什么？'],
+   suggestionsHint: '可以先了解助手的能力，也可以直接输入问题。',
+ })
+-const emit = defineEmits<{ submit: [question: string] }>()
+-const question = shallowRef('')
++const emit = defineEmits<{ submit: [question: string]; 'update:modelValue': [value: string] }>()
++const question = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
+ function submit(value = question.value) {
+   if (props.disabled || props.sending) return
+   const clean = value.trim()
+@@ -40,10 +40,10 @@
+       ><textarea
+         id="chat-question"
+         v-model="question"
+-        :disabled="disabled || sending"
++        :disabled="sending"
+         name="question"
+         autocomplete="off"
+-        maxlength="300"
++        maxlength="4000"
+         rows="2"
+         placeholder="输入 CVE 编号或你想查询的问题"
+         @keydown.enter.exact="enter"
+@@ -51,6 +51,6 @@
+         {{ sending ? '回复中…' : '发送' }}
+       </button>
+     </form>
+-    <small>Enter 发送，Shift + Enter 换行。安全资料问答附来源，资料不足时会明确说明。</small>
++    <small>Enter 发送，Shift + Enter 换行。安全资料问答附来源，资料不足时会明确说明。{{ disabled ? '可先输入问题，授权后发送。' : '' }}</small>
+   </div>
+ </template>
+diff --git a/frontend/src/components/layout/WorkspaceLayout.vue b/frontend/src/components/layout/WorkspaceLayout.vue
+--- a/frontend/src/components/layout/WorkspaceLayout.vue
++++ b/frontend/src/components/layout/WorkspaceLayout.vue
+@@ -5,6 +5,7 @@
+ import WorkspaceSearch from './WorkspaceSearch.vue'
+ import SidebarSwipeFeedback from './SidebarSwipeFeedback.vue'
+ import { useSidebarSwipeNavigation } from '@/composables/useSidebarSwipeNavigation'
++import { sessionState, userToken } from '@/api/http'
+ 
+ const store = useIntelligenceStore()
+ const sampleDate = computed(() => store.latest[0]?.publishedAt || '暂无数据')
+@@ -30,6 +31,7 @@
+       </div>
+       <select class="native-select" aria-label="资料范围" :value="String(store.isDemo)" :disabled="store.loading" @change="store.setScope(($event.target as HTMLSelectElement).value === 'true')"><option value="false">真实资料</option><option value="true">虚构样本</option></select>
+       <button type="button" class="demo-pill" :disabled="store.loading" @click="store.loadDemo">刷新资料</button>
++      <router-link class="demo-pill" :to="{ path: '/login', query: { returnTo: '/qa' } }">{{ userToken ? '用户已授权' : sessionState === 'expired' ? '重新授权' : '用户授权' }}</router-link>
+       <WorkspaceNavigation mode="tabs" />
+     </header>
+     <aside ref="sidebar" class="sidebar" aria-label="工作台导航">
+diff --git a/frontend/src/assets/conversation-theme.css b/frontend/src/assets/conversation-theme.css
+--- a/frontend/src/assets/conversation-theme.css
++++ b/frontend/src/assets/conversation-theme.css
+@@ -192,3 +192,15 @@
+ .conversation-theme .chat-compose form:focus-within { border-color: #000000; box-shadow: none; }
+ .conversation-theme .message-feed { scrollbar-color: #000000 #ffffff; }
+ .conversation-theme :is(a, button, input, textarea, select, summary):focus-visible { outline-color: #000000; }
++.conversation-theme :is(.session-notice, .failed-query) { border: 1px solid #000; border-radius: 10px; padding: 14px 16px; margin: 14px 0; overflow-wrap: anywhere; }
++.conversation-theme :is(.session-notice, .failed-query) p { margin: 0 0 10px; }
++.conversation-theme .failed-query :is(button, a) { margin: 0 12px 6px 0; }
++.conversation-theme .login-panel { max-width: 700px; padding: 24px; }
++.conversation-theme .login-panel form { display: grid; gap: 12px; margin: 24px 0; }
++.conversation-theme .login-panel input { color: #000; background: #fff; border: 1px solid #000; border-radius: 8px; padding: 12px; min-width: 0; }
++.conversation-theme .login-panel .primary-link { justify-self: start; }
++.conversation-theme .login-panel .ghost-button { margin: 0 12px 8px 0; }
++.conversation-theme .requirement-coverage li, .conversation-theme .execution-record li { margin: 12px 0; }
++.conversation-theme .requirement-coverage a { margin-right: 12px; }
++.conversation-theme .trace-reference, .conversation-theme .execution-record p { overflow-wrap: anywhere; }
++.conversation-theme .retry-authorization { display: inline-block; margin-top: 12px; }
+diff --git a/frontend/package.json b/frontend/package.json
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -4,6 +4,7 @@
+   "private": true,
+   "type": "module",
+   "scripts": {
++    "test:unit": "node --test tests/*.test.mjs",
+     "dev": "vite",
+     "build": "run-p type-check \"build-only {@}\" --",
+     "preview": "vite preview",
+diff --git a/frontend/src/utils/requestFailure.ts b/frontend/src/utils/requestFailure.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/utils/requestFailure.ts
+@@ -0,0 +1,68 @@
++/** Classify public error codes. An upstream 401 is not a user sign-in failure. */
++export interface RequestFailureInput { status?: number; code?: string; data?: unknown }
++export type FailureKind = 'user_auth' | 'model' | 'retrieval' | 'timeout' | 'rate_limit' | 'service' | 'network'
++const userCodes = new Set(['user_token_required', 'invalid_user_token', 'user_session_expired', 'user_session_revoked'])
++export function publicErrorCode(data: unknown): string {
++  if (!data || typeof data !== 'object') return ''
++  const row = data as Record<string, unknown>, error = row.error
++  if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).code === 'string') return (error as Record<string, unknown>).code as string
++  if (typeof row.detail === 'string') return row.detail
++  if (row.detail && typeof row.detail === 'object' && typeof (row.detail as Record<string, unknown>).code === 'string') return (row.detail as Record<string, unknown>).code as string
++  return ''
++}
++export function isUserAuthorizationFailure(input: RequestFailureInput): boolean {
++  return input.status === 401 && userCodes.has(publicErrorCode(input.data))
++}
++export function shouldInvalidateCredential(sent: unknown, current: string, input: RequestFailureInput): boolean {
++  return Boolean(current) && String(sent || '') === `Bearer ${current}` && isUserAuthorizationFailure(input)
++}
++export function knownSessionExpired(expiresAt: string | null, now = Date.now()): boolean {
++  return Boolean(expiresAt) && (!Number.isFinite(Date.parse(expiresAt || '')) || Date.parse(expiresAt || '') <= now)
++}
++export function isVerifiedUserIdentity(value: unknown): boolean {
++  if (!value || typeof value !== 'object') return false
++  const row = value as Record<string, unknown>
++  return row.authenticated === true && typeof row.owner_id === 'string' && Boolean(row.owner_id.trim())
++}
++const messages: Record<string, string> = {
++  model_relevance_failed: '模型服务未能完成资料相关性核验，本次回答中断。这不代表知识库没有相关资料，请稍后重试。',
++  model_verification_failed: '模型服务未能完成回答的事实核验，本次未返回未经核实的答案，请稍后重试。',
++  model_generation_failed: '模型服务未能完成回答生成，请稍后重试。',
++  model_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
++  llm_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
++  deepseek_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
++  platform_model_auth_failed: '平台模型服务认证失败，请联系平台管理员检查服务器端配置。你的用户登录状态未因此失效。',
++  platform_model_rate_limited: '平台模型服务限流，请稍后重试。',
++  platform_model_timeout: '平台模型服务响应超时，请稍后重试或缩小问题范围。',
++  platform_model_unavailable: '平台模型服务暂不可用，请稍后重试。',
++  platform_model_format_invalid: '平台模型返回的格式未通过校验，本次回答中断，请稍后重试。',
++  platform_model_capability_unsupported: '当前模型不支持本次工作流所需的能力，请联系平台管理员检查模型配置。',
++  platform_model_not_configured: '平台默认模型尚未配置，请联系平台管理员；普通用户无需填写模型 API Key。',
++  model_rate_limited: '平台模型服务限流，请稍后重试。',
++  llm_rate_limited: '平台模型服务限流，请稍后重试。',
++  model_timeout: '平台模型服务响应超时，请稍后重试或缩小问题范围。',
++  llm_timeout: '平台模型服务响应超时，请稍后重试或缩小问题范围。',
++  model_capability_unsupported: '当前模型不支持本次工作流所需的能力，请联系平台管理员检查模型配置。',
++  backend_index_unavailable: '资料检索索引暂不可用，这不代表知识库没有相关资料，请稍后重试。',
++  backend_index_embedding_signature_mismatch: '资料索引与向量模型配置不一致，请联系平台管理员检查索引配置。',
++  retrieval_failed: '资料检索服务异常，这不代表知识库没有相关资料，请稍后重试。',
++  agent_query_failed: '问答处理异常，本次未能取得完整回答，请稍后重试。',
++  agent_rate_limited: '问答服务当前请求过多，请稍后重试。',
++  user_query_budget_exceeded: '当前用户的问答请求额度已用完，请等待额度恢复后重试。',
++  agent_call_budget_exceeded: '本次回答达到调用次数限制，请缩小问题范围后重试。',
++}
++export function classifyFailure(input: RequestFailureInput): { kind: FailureKind; heading: string; message: string } {
++  const code = publicErrorCode(input.data)
++  if (isUserAuthorizationFailure(input)) return { kind: 'user_auth', heading: '用户授权已失效', message: '用户会话未授权或已过期。问题已保留，请重新授权后重试。' }
++  if (/^(platform_model_|model_|llm_|deepseek_)/.test(code)) return { kind: 'model', heading: '平台模型服务异常', message: messages[code] || '平台模型服务暂不可用，请稍后重试。你的用户登录状态未因此失效。' }
++  if (['backend_index_unavailable', 'backend_index_embedding_signature_mismatch', 'retrieval_failed'].includes(code)) return { kind: 'retrieval', heading: '检索服务异常', message: messages[code] || '资料检索服务异常，请稍后重试。' }
++  if (input.status === 504 || ['ECONNABORTED', 'ETIMEDOUT'].includes(input.code || '')) return { kind: 'timeout', heading: '回答超时', message: '回答超时，问题已保留，可以缩小问题范围后重试。' }
++  if (input.status === 429) return { kind: 'rate_limit', heading: '请求受限', message: messages[code] || '请求过于频繁或额度已用完，请稍后重试。' }
++  if (input.status === 401) return { kind: 'service', heading: '服务认证异常', message: '服务返回认证异常，但未标明为用户会话失效。请联系平台管理员检查服务配置。' }
++  if (!input.status) return { kind: 'network', heading: '连接异常', message: '无法连接服务，问题已保留，请检查服务状态后重试。' }
++  return { kind: 'service', heading: '问答服务异常', message: messages[code] || '服务请求失败，问题已保留，请稍后重试。' }
++}
++/** Only an internal path can be used after sign-in; no external redirect. */
++export function safeReturnPath(value: unknown): string {
++  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') && !value.startsWith('/login') ? value : '/qa'
++}
+diff --git a/frontend/src/utils/queryDraft.ts b/frontend/src/utils/queryDraft.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/utils/queryDraft.ts
+@@ -0,0 +1,10 @@
++const draftKey = (isDemo: boolean) => `ict:qa-draft:${isDemo ? 'demo' : 'real'}`
++const failedKey = (isDemo: boolean) => `ict:qa-failed:${isDemo ? 'demo' : 'real'}`
++function read(key: string) { try { return sessionStorage.getItem(key) || '' } catch { return '' } }
++function write(key: string, value: string) {
++  try { value ? sessionStorage.setItem(key, value.slice(0, 4000)) : sessionStorage.removeItem(key) } catch { /* Optional storage. */ }
++}
++export const readQuestionDraft = (isDemo: boolean) => read(draftKey(isDemo))
++export const saveQuestionDraft = (isDemo: boolean, value: string) => write(draftKey(isDemo), value)
++export const readFailedQuestion = (isDemo: boolean) => read(failedKey(isDemo))
++export const saveFailedQuestion = (isDemo: boolean, value: string) => write(failedKey(isDemo), value)
+diff --git a/frontend/src/utils/answerWorkflow.ts b/frontend/src/utils/answerWorkflow.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/utils/answerWorkflow.ts
+@@ -0,0 +1,60 @@
++import type { AnswerWorkflow, AnswerToolTrace, RequirementCoverage } from '../types/index'
++const record = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
++const text = (value: unknown, max = 500): string => typeof value === 'string' ? value.trim().slice(0, max) : ''
++const strings = (value: unknown, max = 12): string[] => Array.isArray(value) ? [...new Set(value.map(row => text(row, 120)).filter(Boolean))].slice(0, max) : []
++export function normalizeWorkflow(value: unknown, evidenceCount: number): AnswerWorkflow | undefined {
++  const row = record(value)
++  if (!row) return undefined
++  const summary = record(row.retrieval_summary)
++  const requirements: RequirementCoverage[] = Array.isArray(row.requirement_coverage) ? row.requirement_coverage.slice(0, 40).flatMap(value => {
++    const requirement = record(value)
++    if (!requirement) return []
++    const label = text(requirement.label, 120), id = text(requirement.requirement_id, 120)
++    if (!label || !id || !['supported', 'partial', 'conflicting', 'missing'].includes(String(requirement.status))) return []
++    const ids = [...new Set(strings(requirement.evidence_ids, 50).filter(id => /^\d+$/.test(id) && Number(id) > 0 && Number(id) <= evidenceCount).map(id => String(Number(id))))]
++    const rawStatus = requirement.status as RequirementCoverage['status']
++    // Display cannot credit a source that is absent from the actual response.
++    const status = rawStatus !== 'missing' && !ids.length ? 'missing' : rawStatus
++    return [{ requirement_id: id, label, status, evidence_ids: ids, reason: status !== rawStatus ? '返回结果未包含可核验的对应证据。' : text(requirement.reason) }]
++  }) : []
++  return { question_type: text(row.question_type, 80), requirement_coverage: requirements,
++    retrieval_summary: { rounds: typeof summary?.rounds === 'number' && Number.isInteger(summary.rounds) ? Math.max(0, Math.min(10, summary.rounds)) : 0,
++      stop_reason: text(summary?.stop_reason, 160), initial_tools: strings(summary?.initial_tools, 30), supplemental_tools: strings(summary?.supplemental_tools, 30) },
++    limitations: strings(row.limitations, 20) }
++}
++/** The V1 backend contract is flat. Accept an older nested extension as fallback. */
++export function returnedWorkflow(value: unknown, evidenceCount: number): AnswerWorkflow | undefined {
++  const row = record(value)
++  if (!row) return undefined
++  if (['question_type', 'requirement_coverage', 'retrieval_summary', 'limitations'].some(key => key in row)) {
++    const hasRequirements = Array.isArray(row.requirement_coverage) && row.requirement_coverage.length > 0
++    if (!text(row.question_type) && !hasRequirements && !record(row.retrieval_summary) && !strings(row.limitations).length) return undefined
++    return normalizeWorkflow(row, evidenceCount)
++  }
++  return normalizeWorkflow(row.workflow, evidenceCount)
++}
++export function normalizeToolTrace(value: unknown): AnswerToolTrace[] {
++  return Array.isArray(value) ? value.slice(0, 30).flatMap(value => {
++    const row = record(value)
++    if (!row || !text(row.tool, 80) || !['completed', 'empty', 'failed'].includes(String(row.status))
++      || typeof row.duration_ms !== 'number' || !Number.isFinite(row.duration_ms) || row.duration_ms < 0) return []
++    return [{ tool: text(row.tool, 80), status: row.status as AnswerToolTrace['status'], duration_ms: Math.round(row.duration_ms),
++      error_code: text(row.error_code, 100), input_summary: text(row.input_summary, 500), document_ids: strings(row.document_ids, 30) }]
++  }) : []
++}
++export const coverageStatusLabel = { supported: '证据支持', partial: '部分支持', conflicting: '来源冲突', missing: '资料缺失' } as const
++export const traceStatusLabel = { completed: '已完成', empty: '没有结果', failed: '调用失败' } as const
++export function stopReasonLabel(reason: string): string {
++  const labels: Record<string, string> = { sufficient_evidence: '已有足够证据', no_missing_requirements: '已覆盖所需范围',
++    no_new_evidence: '没有新增证据', budget_exhausted: '已达到调用预算', max_rounds: '已达到检索轮次限制',
++    requirements_supported: '已取得需求对应资料，结论另经核验', clarification_required: '需要明确查询对象或输入条件',
++    tool_budget_reserved: '已为完成回答预留工具预算', deadline_reserved: '已接近请求时间上限',
++    model_budget_reserved: '已为答案生成与核验预留模型预算', model_failed: '模型生成或核验失败',
++    available_tools_exhausted: '可用工具已执行，未找到更多资料', not_started: '尚未开始资料检索',
++    insufficient_evidence: '当前资料不足', tool_unavailable: '所需工具尚不可用', conversation: '基础对话不执行资料检索' }
++  return labels[reason] || (reason ? '工作流已结束，具体原因以服务端记录为准' : '未提供停止原因')
++}
++export function questionTypeLabel(kind: string): string {
++  const labels: Record<string, string> = { cve: 'CVE 漏洞查询', security_knowledge: '安全知识问题', comparison: '资料对比', package: '依赖包漏洞查询', clarification: '需要澄清的问题', conversation: '基础对话' }
++  return labels[kind] || '其他问题'
++}
+diff --git a/frontend/src/views/LoginView.vue b/frontend/src/views/LoginView.vue
+new file mode 100644
+--- /dev/null
++++ b/frontend/src/views/LoginView.vue
+@@ -0,0 +1,45 @@
++<script setup lang="ts">
++import { computed, shallowRef } from 'vue'
++import { useRoute, useRouter } from 'vue-router'
++import { authorizeUser, clearUserSession, ensureSession, errorMessage, sessionState, userToken } from '@/api/http'
++import { safeReturnPath } from '@/utils/requestFailure'
++const route = useRoute(), router = useRouter()
++const token = shallowRef(''), busy = shallowRef(false), error = shallowRef('')
++const returnPath = computed(() => safeReturnPath(route.query.returnTo))
++const isLocal = import.meta.env.DEV
++async function authorize() {
++  if (busy.value) return
++  busy.value = true; error.value = ''
++  try { await authorizeUser(token.value); token.value = ''; await router.replace(returnPath.value) }
++  catch (cause) { error.value = errorMessage(cause) }
++  finally { busy.value = false }
++}
++async function recoverLocal() {
++  if (busy.value) return
++  busy.value = true; error.value = ''
++  try {
++    await ensureSession(true)
++    if (!userToken.value) error.value = '本地没有有效的用户授权。请让管理员重新签发短期用户令牌后再次获取，或在下方填写已签发的令牌。'
++    else await router.replace(returnPath.value)
++  } finally { busy.value = false }
++}
++</script>
++<template>
++  <section class="login-page">
++    <div class="page-heading"><div><h1>用户授权</h1><p>验证平台用户身份后，可直接使用平台默认模型。</p></div></div>
++    <div class="panel login-panel">
++      <p>当前版本使用管理员签发的短期用户令牌。这里填写的是用户访问凭证，不是大模型 API Key。</p>
++      <p v-if="sessionState === 'expired'" role="status">原用户授权已失效。已输入的问题仍保留在问答页面。</p>
++      <p v-if="userToken">当前用户授权有效。<router-link :to="returnPath">返回问答</router-link>，或更换授权。</p>
++      <form @submit.prevent="authorize">
++        <label for="user-access-token">短期用户令牌</label>
++        <input id="user-access-token" v-model="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="256" :disabled="busy" />
++        <button class="primary-link" type="submit" :disabled="busy || !token.trim()">{{ busy ? '正在验证…' : '验证并进入' }}</button>
++      </form>
++      <p v-if="error" role="alert">{{ error }}</p>
++      <button v-if="isLocal" class="ghost-button" type="button" :disabled="busy" @click="recoverLocal">重新获取本地用户授权</button>
++      <button v-if="userToken" class="ghost-button" type="button" :disabled="busy" @click="clearUserSession(false)">清除当前用户授权</button>
++      <p class="muted">令牌只保留在当前页面运行内存中，刷新页面后需再次授权。本地开发可以读取已有的有效授权；页面不能自行签发令牌。</p>
++    </div>
++  </section>
++</template>
+diff --git a/frontend/tests/session-workflow.test.mjs b/frontend/tests/session-workflow.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/frontend/tests/session-workflow.test.mjs
+@@ -0,0 +1,127 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { classifyFailure, isUserAuthorizationFailure, isVerifiedUserIdentity, knownSessionExpired, publicErrorCode, safeReturnPath, shouldInvalidateCredential } from '../src/utils/requestFailure.ts'
++import { normalizeToolTrace, normalizeWorkflow, returnedWorkflow } from '../src/utils/answerWorkflow.ts'
++import { readFailedQuestion, readQuestionDraft, saveFailedQuestion, saveQuestionDraft } from '../src/utils/queryDraft.ts'
++import { readFileSync } from 'node:fs'
++import { parse } from '@vue/compiler-sfc'
++import { compile } from '@vue/compiler-dom'
++import * as Vue from 'vue'
++import { renderToString } from '@vue/server-renderer'
++
++test('only explicit user authorization errors invalidate a user credential', () => {
++  for (const code of ['user_token_required', 'invalid_user_token', 'user_session_expired', 'user_session_revoked']) {
++    assert.equal(isUserAuthorizationFailure({ status: 401, data: { detail: code } }), true)
++    assert.equal(classifyFailure({ status: 401, data: { error: { code } } }).kind, 'user_auth')
++  }
++  for (const code of ['platform_model_auth_failed', 'deepseek_auth_failed', 'invalid_api_key', 'unknown']) {
++    assert.equal(isUserAuthorizationFailure({ status: 401, data: { detail: code } }), false)
++  }
++  assert.equal(isUserAuthorizationFailure({ status: 502, data: { detail: 'invalid_user_token' } }), false)
++})
++test('upstream model authentication, timeout and rate limit stay separate from sign-in', () => {
++  for (const [status, code] of [[502, 'platform_model_auth_failed'], [504, 'platform_model_timeout'], [503, 'platform_model_rate_limited']]) {
++    const result = classifyFailure({ status, data: { error: { code } } })
++    assert.equal(result.kind, 'model')
++    assert.doesNotMatch(result.message, /重新登录|重新授权/)
++  }
++  assert.equal(classifyFailure({ status: 401, data: { detail: 'upstream_unauthorized' } }).kind, 'service')
++  assert.equal(classifyFailure({ code: 'ECONNABORTED' }).kind, 'timeout')
++  assert.equal(classifyFailure({ status: 503, data: { detail: 'retrieval_failed' } }).kind, 'retrieval')
++})
++test('old request failures cannot clear a newly authorized credential', () => {
++  const failure = { status: 401, data: { detail: 'invalid_user_token' } }
++  assert.equal(shouldInvalidateCredential('Bearer old-user', 'new-user', failure), false)
++  assert.equal(shouldInvalidateCredential('Bearer current-user', 'current-user', failure), true)
++  assert.equal(shouldInvalidateCredential('', '', failure), false)
++  assert.equal(knownSessionExpired('2026-10-11T00:00:00Z', Date.parse('2026-10-11T01:00:00Z')), true)
++  assert.equal(knownSessionExpired(null), false)
++  assert.equal(knownSessionExpired('invalid-date'), true)
++})
++test('a proxy HTML response or unverified identity cannot authorize the user', () => {
++  assert.equal(isVerifiedUserIdentity({ authenticated: true, owner_id: 'test-owner' }), true)
++  for (const response of ['<html>index</html>', { owner_id: 'test-owner' }, { authenticated: false, owner_id: 'test-owner' }, { authenticated: true, owner_id: '' }]) assert.equal(isVerifiedUserIdentity(response), false)
++})
++test('redirects remain internal and error bodies are never displayed verbatim', () => {
++  assert.equal(safeReturnPath('/qa'), '/qa')
++  for (const path of ['https://outside.example', '//outside.example', '/\\outside.example', '/login', null]) assert.equal(safeReturnPath(path), '/qa')
++  assert.equal(publicErrorCode({ detail: { code: 'platform_model_not_configured' } }), 'platform_model_not_configured')
++  assert.doesNotMatch(classifyFailure({ status: 502, data: { detail: 'arbitrary-private-body' } }).message, /arbitrary-private-body/)
++})
++test('workflow is optional, evidence references are bounded, and missing sources are not credited', () => {
++  assert.equal(normalizeWorkflow(undefined, 0), undefined)
++  const result = normalizeWorkflow({ question_type: 'security_topic', requirement_coverage: [
++    { requirement_id: 'a', label: '已支持', status: 'supported', evidence_ids: ['01', '1', '2', '99'], reason: '原始证据' },
++    { requirement_id: 'b', label: '无证据', status: 'supported', evidence_ids: ['99'], reason: '不可接受' },
++    { requirement_id: 'c', label: '冲突', status: 'conflicting', evidence_ids: ['2'], reason: '来源分歧' },
++  ], retrieval_summary: { rounds: 2, stop_reason: 'no_new_evidence', initial_tools: ['hybrid_search'], supplemental_tools: ['query_nvd'] }, limitations: ['资料不完整'] }, 2)
++  assert.deepEqual(result.requirement_coverage[0].evidence_ids, ['1', '2'])
++  assert.equal(result.requirement_coverage[1].status, 'missing')
++  assert.equal(result.requirement_coverage[2].status, 'conflicting')
++  assert.equal(result.retrieval_summary.rounds, 2)
++})
++test('only completed/failed/empty returned tool records are displayed', () => {
++  assert.deepEqual(normalizeToolTrace(undefined), [])
++  const traces = normalizeToolTrace([
++    { tool: 'query_cve', status: 'completed', duration_ms: 12, document_ids: ['doc-1'] },
++    { tool: 'hypothetical-live-step', status: 'running', duration_ms: 0 },
++    { tool: 'invalid', status: 'completed', duration_ms: -1 },
++    { tool: 'query_nvd', status: 'empty', duration_ms: 7 },
++  ])
++  assert.equal(traces.length, 2)
++  assert.equal(traces[1].status, 'empty')
++})
++test('flat V1 workflow fields take precedence while old and nested responses remain compatible', () => {
++  const workflow = { question_type: 'cve', requirement_coverage: [], retrieval_summary: { rounds: 2, stop_reason: 'no_new_evidence' }, limitations: ['字段缺失'] }
++  assert.equal(returnedWorkflow({ answer: 'answer', ...workflow }, 1).question_type, 'cve')
++  assert.equal(returnedWorkflow({ workflow }, 1).retrieval_summary.rounds, 2)
++  assert.equal(returnedWorkflow({ answer: 'older answer', evidence: [] }, 0), undefined)
++  assert.equal(returnedWorkflow({ response_kind: 'conversation', question_type: null, requirement_coverage: [], retrieval_summary: null, limitations: [] }, 0), undefined)
++  assert.equal(returnedWorkflow({ ...workflow, workflow: { question_type: 'wrong' } }, 1).question_type, 'cve')
++})
++test('multi-CVE requirement rows retain the V1 bound of forty independent requirements', () => {
++  const rows = Array.from({ length: 40 }, (_, index) => ({ requirement_id: `cvss_${index}`, label: `需求 ${index}`, status: 'missing', evidence_ids: [], reason: '缺少资料' }))
++  assert.equal(returnedWorkflow({ question_type: 'cve', requirement_coverage: rows }, 0).requirement_coverage.length, 40)
++})
++test('draft and failed question survive authorization navigation, with real/demo scopes separated', () => {
++  const values = new Map()
++  globalThis.sessionStorage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
++  saveQuestionDraft(false, '真实资料问题')
++  saveFailedQuestion(false, '未完成的问题')
++  saveQuestionDraft(true, '虚构样本问题')
++  assert.equal(readQuestionDraft(false), '真实资料问题')
++  assert.equal(readFailedQuestion(false), '未完成的问题')
++  assert.equal(readQuestionDraft(true), '虚构样本问题')
++  assert.equal(readFailedQuestion(true), '')
++  saveFailedQuestion(false, '')
++  assert.equal(readFailedQuestion(false), '')
++  assert.equal([...values.keys()].some(key => /token|api-key/i.test(key)), false)
++})
++test('rendered coverage prefers workflow and source text shows the title while retaining its route and version', async () => {
++  const source = readFileSync(new URL('../src/components/chat/ChatConversation.vue', import.meta.url), 'utf8')
++  const template = parse(source).descriptor.template.content
++  const render = new Function('Vue', compile(template, { mode: 'function', prefixIdentifiers: true }).code)(Vue)
++  async function html(message) {
++    const app = Vue.createSSRApp({ render, setup: () => ({ messages: [message], sending: false,
++      messageHeading: () => '资料回答', warningText: () => '', coverageStatusLabel: { supported: '证据支持' },
++      questionTypeLabel: () => '安全知识问题', stopReasonLabel: () => '已结束', traceStatusLabel: {}, revealEvidence: () => {} }) })
++    app.component('AnswerContent', { props: ['content'], setup: props => () => Vue.h('p', props.content) })
++    app.component('router-link', { props: ['to'], setup: (props, { slots }) => () => Vue.h('a', {
++      href: props.to.path + (props.to.query ? `?${new URLSearchParams(props.to.query)}` : ''),
++    }, slots.default?.()) })
++    return renderToString(app)
++  }
++  const common = { id: 'render-test', role: 'assistant', content: '正文', time: '',
++    coverage: { answered_topics: ['旧支持标签'], missing_topics: ['旧缺失标签'] },
++    citations: [{ intelligenceId: 'source-uuid', contentHash: 'source-version', label: '真实来源标题' }] }
++  const modern = await html({ ...common, workflow: { question_type: 'security_knowledge',
++    requirement_coverage: [{ requirement_id: 'permissions', label: '新权限需求', status: 'supported', evidence_ids: [], reason: '' }],
++    retrieval_summary: { rounds: 1, stop_reason: 'requirements_supported', initial_tools: [], supplemental_tools: [] }, limitations: [] } })
++  assert.match(modern, /新权限需求/)
++  assert.doesNotMatch(modern, /旧支持标签|旧缺失标签/)
++  assert.match(modern, /href="\/intelligence\/source-uuid\?content_hash=source-version"[^>]*>真实来源标题 ↗<\/a>/)
++  assert.doesNotMatch(modern, />source-uuid · /)
++  const legacy = await html(common)
++  assert.match(legacy, /旧支持标签/)
++  assert.match(legacy, /旧缺失标签/)
++})

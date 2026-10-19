@@ -1,0 +1,868 @@
+{
+  "schema_version": "1",
+  "purpose": "Thirty bounded routing, tool, citation-location and requirement-reporting checks; not semantic answer accuracy.",
+  "reference_policy": "No model-generated factual gold. Real backend identifiers are copied only from the existing saved acceptance set; fixture intelligence remains explicitly synthetic.",
+  "mock_fixture": {
+    "synthetic": true,
+    "path": "packages/rag_agent/tests/fixtures/documents.json"
+  },
+  "real_reference_dataset": "data/evaluation/acceptance.json",
+  "categories": [
+    "greeting",
+    "mixed_cve",
+    "invalid_cve",
+    "reference",
+    "concept",
+    "tool_audit",
+    "cve_multi_requirement",
+    "insufficient_evidence",
+    "source_conflict",
+    "source_failure"
+  ],
+  "cases": [
+    {
+      "id": "DQ01",
+      "category": "greeting",
+      "synthetic": false,
+      "mock_request": {
+        "question": "你好"
+      },
+      "expected": {
+        "question_types": [
+          "conversation"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "你好"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ02",
+      "category": "greeting",
+      "synthetic": false,
+      "mock_request": {
+        "question": "谢谢"
+      },
+      "expected": {
+        "question_types": [
+          "conversation"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "谢谢"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ03",
+      "category": "greeting",
+      "synthetic": false,
+      "mock_request": {
+        "question": "你能做什么？"
+      },
+      "expected": {
+        "question_types": [
+          "conversation"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "你能做什么？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ04",
+      "category": "mixed_cve",
+      "synthetic": true,
+      "mock_request": {
+        "question": "你好，CVE-2099-1234 是什么漏洞？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "你好，CVE-2024-37032 是什么漏洞？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-37032"
+      ]
+    },
+    {
+      "id": "DQ05",
+      "category": "mixed_cve",
+      "synthetic": true,
+      "mock_request": {
+        "question": "谢谢，还是想了解 CVE-2099-5678 的风险。"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "谢谢，还是想了解 CVE-2024-34359 的风险。"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-34359"
+      ]
+    },
+    {
+      "id": "DQ06",
+      "category": "mixed_cve",
+      "synthetic": true,
+      "mock_request": {
+        "question": "你好，请分析 CVE-2099-1234 的评分和修复依据。"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "你好，请分析 CVE-2024-3571 的评分和修复依据。"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-3571"
+      ]
+    },
+    {
+      "id": "DQ07",
+      "category": "invalid_cve",
+      "synthetic": false,
+      "mock_request": {
+        "question": "CVE-2024-12 是什么问题？"
+      },
+      "expected": {
+        "question_types": [
+          "clarification"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-2024-12 是什么问题？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ08",
+      "category": "invalid_cve",
+      "synthetic": false,
+      "mock_request": {
+        "question": "CVE-YYYY-1234 的影响范围？"
+      },
+      "expected": {
+        "question_types": [
+          "clarification"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-YYYY-1234 的影响范围？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ09",
+      "category": "invalid_cve",
+      "synthetic": false,
+      "mock_request": {
+        "question": "请查询 CVE-2024-ABCD。"
+      },
+      "expected": {
+        "question_types": [
+          "clarification"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "请查询 CVE-2024-ABCD。"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ10",
+      "category": "reference",
+      "synthetic": true,
+      "mock_request": {
+        "question": "这个漏洞的修复版本是什么？",
+        "history": [
+          {
+            "role": "user",
+            "content": "CVE-2099-5678"
+          }
+        ]
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "这个漏洞的修复版本是什么？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-34359"
+      ],
+      "backend_prelude": [
+        "CVE-2024-34359 是什么漏洞？"
+      ]
+    },
+    {
+      "id": "DQ11",
+      "category": "reference",
+      "synthetic": true,
+      "mock_request": {
+        "question": "它的评分是什么？",
+        "history": [
+          {
+            "role": "user",
+            "content": "比较 CVE-2099-1234 和 CVE-2099-5678"
+          }
+        ]
+      },
+      "expected": {
+        "question_types": [
+          "clarification"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "它的评分是什么？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-37032",
+        "CVE-2024-34359"
+      ],
+      "backend_prelude": [
+        "比较 CVE-2024-37032 和 CVE-2024-34359"
+      ]
+    },
+    {
+      "id": "DQ12",
+      "category": "reference",
+      "synthetic": true,
+      "mock_request": {
+        "question": "它的受影响版本是什么？",
+        "history": [
+          {
+            "role": "assistant",
+            "content": "CVE-2099-1234"
+          }
+        ]
+      },
+      "expected": {
+        "question_types": [
+          "clarification"
+        ],
+        "required_tools": [],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_skip_reason": "An assistant-only fabricated history cannot be supplied through the authenticated backend session API."
+    },
+    {
+      "id": "DQ13",
+      "category": "concept",
+      "synthetic": false,
+      "mock_request": {
+        "question": "什么是提示注入风险？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "什么是提示注入风险？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "llm01-prompt-injection"
+      ]
+    },
+    {
+      "id": "DQ14",
+      "category": "concept",
+      "synthetic": false,
+      "mock_request": {
+        "question": "训练和嵌入数据投毒有什么风险？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "训练和嵌入数据投毒有什么风险？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "llm042025-data-and-model-poisoning"
+      ]
+    },
+    {
+      "id": "DQ15",
+      "category": "concept",
+      "synthetic": false,
+      "mock_request": {
+        "question": "RAG 的访问控制为什么需要关注？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "RAG 的访问控制为什么需要关注？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "llm082025-vector-and-embedding-weaknesses"
+      ]
+    },
+    {
+      "id": "DQ16",
+      "category": "tool_audit",
+      "synthetic": false,
+      "mock_request": {
+        "question": "智能体工具审计有什么风险？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": [
+          "permissions",
+          "tool_execution",
+          "audit_logging",
+          "prompt_injection"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "智能体工具审计有什么风险？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ17",
+      "category": "tool_audit",
+      "synthetic": false,
+      "mock_request": {
+        "question": "工具调用日志如何支持可追溯审计？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": [
+          "audit_logging"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "工具调用日志如何支持可追溯审计？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ18",
+      "category": "tool_audit",
+      "synthetic": false,
+      "mock_request": {
+        "question": "提示注入对智能体工具调用有什么影响？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": [
+          "prompt_injection"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "提示注入对智能体工具调用有什么影响？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ19",
+      "category": "cve_multi_requirement",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-1234 的说明、CVSS评分和修复依据是什么？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [
+          "overview",
+          "cvss",
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-2024-37032 的说明、CVSS评分和修复依据是什么？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-37032"
+      ]
+    },
+    {
+      "id": "DQ20",
+      "category": "cve_multi_requirement",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-5678 的受影响版本、修复和在野利用情况？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [
+          "affected_version",
+          "mitigation",
+          "exploitation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-2024-34359 的受影响版本、修复和在野利用情况？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-34359"
+      ]
+    },
+    {
+      "id": "DQ21",
+      "category": "cve_multi_requirement",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-1234 的产品影响、评分和缓解依据？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [
+          "affected_version",
+          "cvss",
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-2024-3571 的产品影响、评分和缓解依据？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-3571"
+      ]
+    },
+    {
+      "id": "DQ22",
+      "category": "insufficient_evidence",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-9999999 的漏洞详情？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [],
+        "no_sources": true
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ23",
+      "category": "insufficient_evidence",
+      "synthetic": false,
+      "mock_request": {
+        "question": "海底香蕉量子发动机有什么安全风险？"
+      },
+      "expected": {
+        "question_types": [
+          "security_knowledge"
+        ],
+        "required_tools": [
+          "hybrid_search"
+        ],
+        "required_requirement_ids": [],
+        "no_sources": true
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "海底香蕉量子发动机有什么安全风险？"
+      },
+      "backend_synthetic": false
+    },
+    {
+      "id": "DQ24",
+      "category": "insufficient_evidence",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-5678 的已验证修复版本是什么？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [
+          "mitigation"
+        ],
+        "mock_missing_requirements": [
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_request": {
+        "question": "CVE-2024-34359 的已验证修复版本是什么？"
+      },
+      "backend_synthetic": false,
+      "real_reference_external_ids": [
+        "CVE-2024-34359"
+      ]
+    },
+    {
+      "id": "DQ25",
+      "category": "source_conflict",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-1234 的 CVSS 3.1 评分是否一致？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [],
+        "mock_conflicting_requirements": [
+          "cvss"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ26",
+      "category": "source_conflict",
+      "synthetic": true,
+      "mock_request": {
+        "question": "比较 CVE-2099-1234 两份来源的修复版本。"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [],
+        "mock_conflicting_requirements": [
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ27",
+      "category": "source_conflict",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-1234 的修复版本和 CVSS 3.1 评分有什么分歧？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": [],
+        "mock_conflicting_requirements": [
+          "cvss",
+          "mitigation"
+        ]
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ28",
+      "category": "source_failure",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-9999999 目前是否在野利用？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "mock_source_fault": "synthetic_source_timeout",
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ29",
+      "category": "source_failure",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-5678 的最新 CVSS 和修复情况？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "mock_source_fault": "synthetic_source_rate_limited",
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    },
+    {
+      "id": "DQ30",
+      "category": "source_failure",
+      "synthetic": true,
+      "mock_request": {
+        "question": "CVE-2099-9999999 的最新详细信息？"
+      },
+      "expected": {
+        "question_types": [
+          "cve"
+        ],
+        "required_tools": [
+          "exact_lookup"
+        ],
+        "required_requirement_ids": []
+      },
+      "semantic_review": {
+        "status": "not_evaluated",
+        "reviewer": null,
+        "notes": null
+      },
+      "mock_source_fault": "synthetic_source_format_invalid",
+      "backend_skip_reason": "Synthetic fixture behavior requires an isolated seeded test store."
+    }
+  ]
+}
